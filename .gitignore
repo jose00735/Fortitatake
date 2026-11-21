@@ -1,0 +1,16 @@
+# Figures extracted from official guides: local only, never committed
+assets-local/
+*.ftpack
+*.ftbackup
+# Build output
+dist/
+build/
+android/app/build/
+android/.gradle/
+*.apk
+*.aab
+*.exe
+# Local data
+.data/
+*.log
+.DS_Store
