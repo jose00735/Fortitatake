@@ -7,9 +7,23 @@ An intensive, offline study engine for Fortinet Professional Services interviews
 - 4-hour study sessions built on retrieval practice, spaced repetition (FSRS), interleaving, worked examples, PS scenarios and spoken interview drills.
 - Two skins: **Fabric** (enterprise) and **Hellforge** (molten, game-style).
 
+## Run it
+
+**Windows:** unzip the release and double-click `fortitatake.exe`. It opens its own window (WebView2, built into Windows 10/11); if WebView2 is missing it opens your default browser instead. Progress is saved in `%APPDATA%\FortiTatake\events.jsonl`. Back it up from Settings.
+
+Flags: `-browser` (use the browser instead of the window), `-data <dir>`, `-port <n>`, `-no-open`, `-version`.
+
+**Build from source** (Go 1.24+, Python 3 with PyYAML):
+
+```
+python3 tools/build_content.py          # lint content/*.yaml and write web/content/bundle.json
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H windowsgui -s -w" -o dist/fortitatake.exe .
+go run . -browser                       # any OS, opens in your browser
+```
+
 ## Status
 
-Blueprint stage. Start here:
+v0.1.0: Windows engine MVP plus six modules (about 24 hours of sorties). Android and LAN sync are next. Docs:
 
 | Doc | What it covers |
 |---|---|

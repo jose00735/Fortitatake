@@ -1,0 +1,527 @@
+id: I1
+title: "Kickoff: recruiter screen and why you're a strong PS asset"
+kind: interview
+stage: INT
+stage_title: "Interview track"
+order: 10
+est_sessions: 1
+objectives:
+  - Deliver your pitch in 30 seconds, 90 seconds and 3 minutes, from evidence only
+  - Answer the logistics questions (salary, availability, travel, English, location) cleanly
+  - Explain the Netskope exit and the return to Fortinet in a neutral, confident way
+  - Position yourself as a strong PS consultant with proof points and honest gaps
+  - Ask the recruiter questions that move the process forward
+sources:
+  - "Your evidence: super-cv (roles, dates, achievements, certifications)"
+  - "Your Cato cheatsheet: answer frameworks (technical, behavioural, 'why us')"
+  - "Verizon 2026 DBIR and IBM Cost of a Data Breach 2026: business context"
+
+units:
+  - id: I1.u1
+    title: What the recruiter is really screening for
+    tier: 1
+    est_min: 8
+    body: |
+      A recruiter screen is a **filter**, not a technical exam. In 20–30 minutes the recruiter checks five things, and the hiring manager trusts their notes:
+
+      1. **Fit to the role on paper:** can you explain, simply, why your background fits professional services?
+      2. **Motivation:** why Fortinet, why now, why PS?
+      3. **Logistics:** location, availability, travel, salary range, English level.
+      4. **Red flags:** gaps, short tenures, how you talk about previous employers.
+      5. **Communication:** clear, structured, friendly, concise.
+
+      Your situation has two strengths to lead with: you're a **former Fortinet TAC P3 engineer** (2022–2024), so you know FortiOS and the support side from inside, and you're **referred by the PS manager**. Mention the referral early and naturally: *"I was referred by [name] from the PS team, and I'm very excited about this role."*
+
+      ## Rules for this call
+
+      - Answers of **30–60 seconds**. Stop, and let them ask more.
+      - Every claim comes from your real experience. No numbers you can't back up.
+      - Positive about every former employer. Never vent.
+      - Have your CV, the job description and your notes open, and your salary range written down.
+
+      :::recall
+      Q: Five things a recruiter screens for?
+      A: Fit on paper, motivation, logistics, red flags, communication.
+      :::
+
+      :::tip
+      Smile while you talk; it changes your voice on a call. Stand up for the pitch if it helps your energy.
+      :::
+  - id: I1.u2
+    title: Your pitch, three lengths
+    tier: 2
+    est_min: 12
+    body: |
+      Use the **behavioural skeleton** from your Cato notes: context → specific actions → measurable results, and a "why us" close (company strength → your skills → contribution).
+
+      ## 30 seconds
+
+      > "I'm a network security engineer with five years in customer-facing security roles. I was a Technical Support Engineer P3 at Fortinet, one of the escalation points for North American and Brazilian enterprise customers, with more than 2,000 cases closed. Then I spent two years at Netskope as a Customer Success Manager owning enterprise accounts. I want to bring both sides, the FortiOS depth and the customer ownership, to Fortinet's professional services team."
+
+      ## 90 seconds: add proof
+
+      - **Fortinet (2022–2024):** escalation point for NAM and Brazil, 2,000+ cases with a CSAT above 4.7; FortiOS end to end: NAT (the team's go-to), SD-WAN designs, IPsec and FortiClient VPN, HA including AWS and Azure, debug flow and captures; defects escalated to development with reproduction steps.
+      - **Netskope (2024–2026):** about 60 named enterprise accounts, then a 2,000+ account scale book; finished partners' half-delivered PS projects in stages; rollouts (one account from below 50 % to 70 % utilisation); kept more than USD 900k in contract value through a hostile escalation.
+      - **Before that:** Cisco TAC (via SYKES) on ISE, AAA and 802.1X.
+      - **Close:** "PS is where those two meet: designing and changing things safely, and keeping the customer aligned. I work in English, Spanish and Portuguese, and I can travel anywhere."
+
+      ## 3 minutes: add one story
+
+      Add **one** story with a result, for example the partner PS completion, or the escalation you turned into a license exchange. End with why Fortinet PS, now.
+
+      :::pitfall
+      The Cato cheatsheet contains figures that your super-cv does not support ("four years", "$50M", "153 %", "85 %"). Don't use them unless you can confirm them.
+      :::
+
+      :::recall
+      Q: Your two lead proof points in the 30-second pitch?
+      A: Former Fortinet TAC P3 escalation point (2,000+ cases, CSAT above 4.7) and two years owning enterprise accounts at Netskope.
+      :::
+  - id: I1.u3
+    title: Logistics and the tricky questions
+    tier: 2
+    est_min: 12
+    body: |
+      ## Salary
+
+      Give a **range**, as a total monthly package, and stay flexible on structure: *"Based on my research for this kind of role in Colombia, I'm looking at [your range] per month as a total package, and I'm flexible on how it's structured."* Prepare your range before the call and confirm it with your referrer if you can. Don't give a number below your real floor; the first number anchors the rest.
+
+      ## Availability, location, travel, English
+
+      - **Availability:** immediately.
+      - **Location:** Santa Marta, Colombia, working remotely; open to relocating or travelling for customers.
+      - **Travel:** "As much as the role needs, including international. I have a current US visa."
+      - **English:** full professional proficiency; you worked daily with North American enterprise customers and executives. Spanish native, Portuguese professional (you supported Brazil).
+
+      ## Why did you leave Netskope?
+
+      Keep it **short, neutral and forward-looking**. Don't give details you'd rather keep private, and never criticise them:
+
+      > "My time at Netskope ended in September. It was a great two years owning enterprise accounts, and it gave me a clear view of what I want next: to go back to hands-on Fortinet work, on the delivery side."
+
+      ## Why come back to Fortinet?
+
+      > "I know the product deeply from TAC, I liked the people and the culture, and PS lets me use both the technical depth and the customer skills I built at Netskope. Coming back on the delivery side is the natural next step."
+
+      ## "You've been in support and CS, not PS"
+
+      Own it, then bridge: the pieces you've done (designs, rollouts, recoveries, partner PS completion) and how you'd ramp up.
+
+      :::recall
+      Q: The three-sentence Netskope answer: what does each sentence do?
+      A: States the fact neutrally, says something positive about the experience, and points forward to why this role.
+      :::
+
+      :::why
+      Q: Why give a range as a total package instead of one base number?
+      A: It anchors the conversation on your real expectations while leaving room to negotiate structure (base, bonus, benefits).
+      :::
+  - id: I1.u4
+    title: Why you're a strong PS asset, and the threat story
+    tier: 3
+    est_min: 10
+    body: |
+      ## Positioning lines (all evidenced)
+
+      - **Inside knowledge:** ex-Fortinet TAC P3. You know how FortiOS behaves under stress and how TAC and development work, so your escalations will be fast and clean.
+      - **Delivery mindset:** at Netskope you completed partially delivered partner PS projects in stages, ran health checks and proofs of concept, and planned rollouts with partners such as Cloudrise, AccessIT Group, CDW and Deloitte.
+      - **Design from requirements:** SD-WAN steering and failover, SSL deep inspection rollouts with the CA pushed by Group Policy, HA in AWS and Azure, Terraform labs to test before changing production.
+      - **Executive communication:** QBRs with C-level and VPs; turning telemetry into business evidence.
+      - **Certifications:** NSE 7, NSE 5 FortiManager and FortiAnalyzer, NSE 4, SD-WAN Architect, plus OSCP for an attacker's view. They expired, and you're re-studying on 7.6/8.0 right now.
+      - **Field-ready:** English, Spanish, Portuguese; travel anywhere.
+
+      ## Use the threat landscape for the "why it matters"
+
+      The recruiter won't test you on it, but a line of business context makes you memorable:
+
+      - Exploiting vulnerabilities is now the **top initial access vector at 31 %** of breaches (Verizon DBIR 2026), and only **26 %** of known-exploited vulnerabilities were fully fixed in 2025. Firewalls with IPS and virtual patching buy customers time.
+      - The average breach costs **USD 4.99 million**, **USD 11.5 million** in the US (IBM 2026). Getting deployments right and fast is real money for customers.
+
+      ## Questions to ask the recruiter
+
+      - "What does success look like in the first six months for this role?"
+      - "How is the PS team organised in LATAM, and what kind of projects are most common?"
+      - "What are the next steps and the timeline of the process?"
+      - "Is there anything in my background you'd like me to clarify for the hiring manager?"
+
+      :::recall
+      Q: One-line business reason why firewall PS matters in 2026?
+      A: Vulnerability exploitation is now the top way in (31 %, DBIR 2026) and breaches average USD 4.99M (IBM 2026); deploying controls correctly and fast directly reduces that risk.
+      :::
+
+cards:
+  - { id: I1.c01, unit: I1.u1, tier: 1, front: "Your Fortinet role and dates?", back: "Technical Support Engineer P3, May 2022 – Aug 2024." }
+  - { id: I1.c02, unit: I1.u1, tier: 1, front: "Your Netskope roles and dates?", back: "Customer Success Manager (named enterprise accounts), then Scale CSM; Aug 2024 – Sept 2026." }
+  - { id: I1.c03, unit: I1.u1, tier: 1, front: "Your role before Fortinet?", back: "Cisco TAC Security AAA/ISE Engineer at SYKES LATAM, Oct 2021 – May 2022." }
+  - { id: I1.c04, unit: I1.u2, tier: 1, front: "Your Fortinet headline numbers?", back: "2,000+ cases closed, CSAT above 4.7, 300+ positive reviews; escalation point for NAM and Brazil enterprise customers." }
+  - { id: I1.c05, unit: I1.u2, tier: 2, front: "Your Netskope headline numbers?", back: "About 60 named enterprise accounts (USD 6.2M ARR), then a 2,000+ account book; kept more than USD 900k TCV in a hostile escalation; one account from below 50 % to 70 % utilisation." }
+  - { id: I1.c06, unit: I1.u2, tier: 2, front: "Close of your 90-second pitch?", back: "PS is where FortiOS depth and customer ownership meet; English, Spanish, Portuguese; travel anywhere." }
+  - { id: I1.c07, unit: I1.u3, tier: 1, front: "Your availability answer?", back: "Immediately." }
+  - { id: I1.c08, unit: I1.u3, tier: 2, front: "Your travel answer?", back: "As much as the role needs, including international; current US visa." }
+  - { id: I1.c09, unit: I1.u3, tier: 2, front: "Three parts of the Netskope exit answer?", back: "Neutral fact (ended in September), something positive, forward-looking reason for this role." }
+  - { id: I1.c10, unit: I1.u3, tier: 2, front: "How do you give salary expectations?", back: "As a range for the total monthly package, flexible on structure; never below your real floor." }
+  - { id: I1.c11, unit: I1.u4, tier: 2, front: "Your Fortinet certifications (expired)?", back: "NSE 7, NSE 5 FortiManager, NSE 5 FortiAnalyzer, NSE 4, SD-WAN Architect, SASE, FortiEDR, FortiSIEM, FortiSOAR, cloud security; being re-studied on 7.6/8.0." }
+  - { id: I1.c12, unit: I1.u4, tier: 2, front: "DBIR 2026: top initial access vector?", back: "Exploitation of vulnerabilities, 31 %; credential abuse down to 13 %." }
+  - { id: I1.c13, unit: I1.u4, tier: 2, front: "IBM 2026: average breach cost (global / US)?", back: "USD 4.99M (+12 %) / USD 11.5M." }
+  - { id: I1.c14, unit: I1.u4, tier: 2, front: "Four good questions for the recruiter?", back: "Success in 6 months; how LATAM PS is organised; next steps and timeline; anything to clarify for the hiring manager." }
+  - { id: I1.c15, unit: I1.u4, tier: 3, front: "Partners you planned initiatives with at Netskope?", back: "Cloudrise, AccessIT Group, CDW, Deloitte (NAM and LATAM)." }
+
+quiz:
+  - id: I1.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "The recruiter asks: 'Tell me about yourself.' What should the first answer be?"
+    options:
+      - { id: a, text: "A 30–60 second pitch: who you are, two proof points, why this role", correct: true }
+      - { id: b, text: "Your full career story from university", why_wrong: "Too long; they'll ask for more if they want it." }
+      - { id: c, text: "Your certifications list", why_wrong: "A list isn't a story and doesn't explain fit." }
+      - { id: d, text: "Why you left your last job", why_wrong: "Leads with the weakest topic." }
+    explanation: Short, structured, ends with why this role.
+  - id: I1.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "'Why did you leave Netskope?' Which answer is best?"
+    options:
+      - { id: a, text: "A short, neutral fact, something positive, and why this role is your next step", correct: true }
+      - { id: b, text: "A detailed account of what went wrong", why_wrong: "Invites more questions and sounds negative." }
+      - { id: c, text: "Avoid the question", why_wrong: "Evasion is a red flag." }
+      - { id: d, text: "Say you're still there", why_wrong: "Untrue, and easy to verify." }
+    explanation: Neutral, positive, forward-looking. Keep private details private.
+  - id: I1.q03
+    type: single
+    tier: 2
+    pretest: true
+    stem: The recruiter asks for your salary expectation. Best approach?
+    options:
+      - { id: a, text: "A researched range for the total monthly package, flexible on structure", correct: true }
+      - { id: b, text: "Say 'whatever you think is fair'", why_wrong: "Gives away your anchor." }
+      - { id: c, text: "Give a single number below your real floor to look flexible", why_wrong: "The first number anchors the offer." }
+      - { id: d, text: "Refuse to answer", why_wrong: "Recruiters need it to move you forward." }
+    explanation: A range anchored on research, as a total package.
+  - id: I1.q04
+    type: single
+    tier: 1
+    pretest: true
+    stem: When should you mention that the PS manager referred you?
+    options:
+      - { id: a, text: "Early and naturally, e.g. in your opening or pitch", correct: true }
+      - { id: b, text: "Never; it looks like name-dropping", why_wrong: "A referral is a legitimate, strong signal." }
+      - { id: c, text: "Only if they ask", why_wrong: "They may not know; it's context they want." }
+      - { id: d, text: "Repeatedly in every answer", why_wrong: "Once is enough." }
+    explanation: Mention it once, early.
+  - id: I1.q05
+    type: multi
+    tier: 2
+    stem: Which of these belong in your 90-second pitch? Select all that apply.
+    options:
+      - { id: a, text: "Former Fortinet TAC P3, escalation point for NAM and Brazil", correct: true }
+      - { id: b, text: "Netskope: enterprise accounts, partner PS completion, USD 900k+ TCV kept", correct: true }
+      - { id: c, text: "Languages and travel readiness", correct: true }
+      - { id: d, text: "A figure from the Cato cheatsheet you can't back up", why_wrong: "Only evidenced claims; unverified numbers break under follow-up." }
+    explanation: Evidence, scope, readiness.
+  - id: I1.q06
+    type: single
+    tier: 2
+    stem: "'You've worked in support and customer success, not PS. Why should we hire you?' Best response?"
+    options:
+      - { id: a, text: "Acknowledge it, show the PS pieces you've done, and explain how you'd ramp up", correct: true }
+      - { id: b, text: "Say support and PS are the same", why_wrong: "Not true, and it shows you don't understand PS." }
+      - { id: c, text: "Claim you've done PS projects", why_wrong: "Untrue claims collapse under follow-up." }
+      - { id: d, text: "Say you'll learn on the job", why_wrong: "True but weak without evidence." }
+    explanation: Honest, specific, forward-looking.
+  - id: I1.q07
+    type: single
+    tier: 2
+    stem: How long should most recruiter-screen answers be?
+    options:
+      - { id: a, text: "About 30–60 seconds, then let them ask more", correct: true }
+      - { id: b, text: "3–5 minutes so they get everything", why_wrong: "Loses the listener and the time box." }
+      - { id: c, text: "One word", why_wrong: "Too thin to judge fit." }
+      - { id: d, text: "As long as needed to cover all your experience", why_wrong: "They'll ask for more if they want it." }
+    explanation: Short answers, more conversation.
+  - id: I1.q08
+    type: numeric
+    tier: 2
+    stem: "DBIR 2026: what percentage of breaches with a known initial access vector began with vulnerability exploitation?"
+    answer: 31
+    explanation: 31 %, now the top vector; credential abuse fell to 13 %.
+    source: Verizon 2026 DBIR, Key topics and findings
+  - id: I1.q09
+    type: single
+    tier: 3
+    stem: Which question is best to ask the recruiter at the end?
+    options:
+      - { id: a, text: "What does success look like in the first six months, and what are the next steps?", correct: true }
+      - { id: b, text: "How many vacation days do I get?", why_wrong: "Fine later, but weak as your main question in a first screen." }
+      - { id: c, text: "Did I get the job?", why_wrong: "Puts the recruiter on the spot." }
+      - { id: d, text: "No questions", why_wrong: "Signals low interest." }
+    explanation: Ask about success and process.
+  - id: I1.q10
+    type: single
+    tier: 3
+    stem: "'Why do you want to come back to Fortinet?' Which answer is strongest?"
+    options:
+      - { id: a, text: "You know the product deeply from TAC, like the culture, and PS uses both your technical and customer skills", correct: true }
+      - { id: b, text: "Because you need a job", why_wrong: "Honest but gives no reason to choose you." }
+      - { id: c, text: "Because Netskope was worse", why_wrong: "Never criticise former employers." }
+      - { id: d, text: "Because the salary is higher", why_wrong: "Motivation should be about the work." }
+    explanation: Product, people, and the role as the natural next step.
+  - id: I1.q11
+    type: single
+    tier: 2
+    stem: "IBM 2026: the average global cost of a data breach was…"
+    options:
+      - { id: a, text: "USD 4.99 million", correct: true }
+      - { id: b, text: "USD 1.93 million", why_wrong: "That's the saving from extensive security AI and automation." }
+      - { id: c, text: "USD 11.5 million", why_wrong: "That's the US average." }
+      - { id: d, text: "USD 6.29 million", why_wrong: "That's financial services." }
+    explanation: USD 4.99M globally, up 12 %.
+    source: IBM Cost of a Data Breach Report 2026
+  - id: I1.q12
+    type: single
+    tier: 3
+    stem: Which positioning line is evidenced and strongest for PS?
+    options:
+      - { id: a, text: "At Netskope I completed partners' half-delivered PS projects in stages, acting as QA on their work", correct: true }
+      - { id: b, text: "I led dozens of Fortinet PS projects", why_wrong: "Not evidenced." }
+      - { id: c, text: "I eliminated shadow AI across all my accounts", why_wrong: "Near zero applied to a couple of accounts only." }
+      - { id: d, text: "I have four years of SASE PS delivery", why_wrong: "Not evidenced." }
+    explanation: Use exactly what you can back up.
+
+scenarios:
+  - id: I1.sc1
+    kind: situation
+    tier: 3
+    title: "The salary push-back"
+    situation: |
+      You give your range. The recruiter says: "That's a bit above what we had in mind for this level. Would you consider something lower?"
+    ask: What do you say?
+    right_thinking:
+      - "Don't drop your number immediately"
+      - "Ask about the full package and the level they have in mind"
+      - "Restate the value you bring to this specific role"
+      - "Show flexibility on structure, not on your floor"
+    what: Keep the conversation open without anchoring lower.
+    why: The first concession sets the offer; understanding the package and level gives you room.
+    how: ["Ask what range they have", "Ask about bonus and benefits", "Restate value", "Flexible on structure"]
+    model_answer: |
+      "I appreciate you telling me. Could you share the range you have for this level, and how the package is structured, bonus and benefits? I'm coming in with Fortinet TAC experience, so I'd ramp up fast. I'm flexible on how the package is built, and I'm sure we can find something that works once I understand the full picture."
+    best_way: "Help me understand the full package and the level; I'm flexible on structure, and I'll ramp up fast because I know the product."
+    rubric: ["stay calm", "ask before conceding", "restate value", "flexibility on structure"]
+  - id: I1.sc2
+    kind: situation
+    tier: 3
+    title: "'Why did it end at Netskope?' - the follow-up"
+    situation: |
+      You gave your neutral answer. The recruiter asks: "Was it your decision?"
+    ask: How do you answer without oversharing or lying?
+    right_thinking:
+      - "Stay truthful and brief"
+      - "Don't volunteer private details"
+      - "Pivot to what you learned and what you want next"
+    what: A short, truthful, forward-looking answer.
+    why: Recruiters screen for red flags in how you talk about exits; calm and brief reads as mature.
+    how: ["Brief and truthful", "One positive line", "Pivot to the role"]
+    model_answer: |
+      "[One truthful sentence in your own words; no details.] I'm at peace with it, and I'm proud of what I did there: enterprise accounts, partner projects and a big escalation I turned around. And it made me choose deliberately what I want next, which is hands-on Fortinet delivery."
+    could_have_added: ["Keep it to two or three sentences, then stop and smile"]
+    best_way: "One truthful sentence, then: I'm proud of the work, and it made me choose this path on purpose."
+    rubric: ["truthful", "brief", "positive", "forward-looking"]
+  - id: I1.sc3
+    kind: situation
+    tier: 2
+    title: The English check
+    situation: |
+      Halfway through, the recruiter switches to English: "Could you describe a technical problem you solved recently, in simple words?"
+    ask: Pick a story and say it in about a minute.
+    right_thinking:
+      - "Choose a story you can tell without jargon"
+      - "Problem → what you did → result"
+      - "Speak slowly and finish with the impact"
+    what: A simple, clear one-minute technical story.
+    why: They test clarity and fluency, not depth.
+    how: ["Pick the MTU or debug-flow story", "Use simple words", "End with impact"]
+    model_answer: |
+      "A customer's users could open small web pages over a new VPN, but big downloads froze. The VPN adds extra headers, so large packets no longer fit and were being dropped. I proved it with a packet capture, then told the firewall to make the connections use slightly smaller packets. Downloads worked again, and I added that test to the customer's checklist so it wouldn't happen again."
+    best_way: "Small pages worked, big downloads froze; the packets were too big for the tunnel. I made them smaller and it worked."
+    rubric: ["clear structure", "simple words", "pace", "impact"]
+
+interview:
+  - id: I1.r01
+    stage: recruiter
+    question: Tell me about yourself.
+    testing: Structure, relevance, confidence
+    framework: "Who you are → two proof points → why this role"
+    model_answer: |
+      "I'm a network security engineer with five years in customer-facing security roles. I was a Technical Support Engineer P3 at Fortinet, one of the escalation points for North American and Brazilian enterprise customers, with more than 2,000 cases closed and a CSAT above 4.7. Then I spent two years at Netskope as a Customer Success Manager owning enterprise accounts, where I also finished partners' half-delivered professional-services projects. I was referred by [name] from your PS team, and this role is where my FortiOS depth and my customer work come together."
+    best_way: "Fortinet TAC depth plus two years owning enterprise customers: PS is where they meet."
+    target: "1:00"
+  - id: I1.r02
+    stage: recruiter
+    question: Why do you want to come back to Fortinet?
+    testing: Motivation
+    framework: "Company strength → your skills → contribution"
+    model_answer: |
+      "I know FortiOS from the inside: two years of escalated cases taught me how it behaves and how to fix it. I liked the people and the pace. Coming back on the delivery side, in PS, lets me use that depth together with the customer skills I built at Netskope: planning rollouts, executive reviews and finishing projects others had left half done."
+    best_way: "I know the product from inside, and PS lets me use that with the customer skills I built since."
+    target: "0:45"
+  - id: I1.r03
+    stage: recruiter
+    question: Why did you leave Netskope?
+    testing: Red flags, maturity
+    framework: "Neutral fact → positive → forward"
+    model_answer: |
+      "My time at Netskope ended in September. It was a great two years owning enterprise accounts and working with partners, and it gave me a clear view of what I want next: to go back to hands-on Fortinet work, on the delivery side."
+    best_way: "It ended in September; great two years; now I'm choosing hands-on Fortinet delivery on purpose."
+    target: "0:30"
+  - id: I1.r04
+    stage: recruiter
+    question: What are your salary expectations?
+    testing: Preparation, realism
+    framework: "Research → range (total package) → flexibility"
+    model_answer: |
+      "Based on my research for professional services roles like this in Colombia, I'm looking at [your range] per month as a total package. I'm flexible on how it's structured between base, bonus and benefits."
+    could_have_added: ["If they share their range first, react to it instead of repeating yours"]
+    best_way: "[Your range] per month, total package, flexible on structure."
+    target: "0:20"
+  - id: I1.r05
+    stage: recruiter
+    question: When could you start?
+    testing: Logistics
+    framework: "Direct answer"
+    model_answer: |
+      "Immediately. I'm available now."
+    best_way: "Immediately."
+    target: "0:05"
+  - id: I1.r06
+    stage: recruiter
+    question: This role requires customer travel. How do you feel about that?
+    testing: Fit
+    framework: "Direct answer + proof"
+    model_answer: |
+      "Happy to. I can travel as much as the role needs, including internationally, and I have a current US visa. I've worked with customers across North America and Latin America, including Brazil, so I'm used to different time zones and cultures."
+    best_way: "As much as you need, including international. Current US visa."
+    target: "0:20"
+  - id: I1.r07
+    stage: recruiter
+    question: Where are you based? Would you relocate?
+    testing: Logistics
+    framework: "Direct answer"
+    model_answer: |
+      "I'm in Santa Marta, Colombia, and I work remotely. I'm open to relocating or spending time on-site if the role needs it."
+    best_way: "Santa Marta, remote, open to relocating or on-site time."
+    target: "0:15"
+  - id: I1.r08
+    stage: recruiter
+    question: How would you rate your English?
+    testing: Self-assessment with proof
+    framework: "Level → proof"
+    model_answer: |
+      "Full professional proficiency. For five years I've worked every day in English with enterprise customers and executives in North America, including escalations and business reviews. Spanish is my native language and I work professionally in Portuguese too; I supported Brazilian customers at Fortinet."
+    best_way: "Full professional: five years of daily escalations and executive reviews in English, plus Spanish and Portuguese."
+    target: "0:25"
+  - id: I1.r09
+    stage: recruiter
+    question: What do you know about professional services at Fortinet?
+    testing: Preparation
+    framework: "What PS does → why it matters → your fit"
+    model_answer: |
+      "PS turns what the customer bought into a working deployment: design, implementation, migrations and knowledge transfer, usually on FortiGate with FortiManager and FortiAnalyzer, and increasingly SD-WAN, ZTNA and the Security Fabric. From TAC I saw the other side: many cases were implementations that would have gone better with a solid design and change plan. That's the part I want to own."
+    could_have_added: ["Ask the recruiter what kind of projects are most common in LATAM"]
+    best_way: "PS makes the purchase work: design, implement, migrate, transfer knowledge. I've seen from TAC what happens when that's done poorly."
+    target: "0:45"
+  - id: I1.r10
+    stage: recruiter
+    question: What's your experience with FortiManager and FortiAnalyzer?
+    testing: Product match
+    framework: "Honest scope → specifics"
+    model_answer: |
+      "I worked with both in Fortinet support cases, customer deployments and labs, and I was NSE 5 certified on both. Those certifications expired, and I'm re-studying them right now on the current versions."
+    best_way: "Support cases, deployments and labs; NSE 5 on both, now refreshing on current versions."
+    target: "0:25"
+  - id: I1.r11
+    stage: recruiter
+    question: Why are your Fortinet certifications expired?
+    testing: Honesty, initiative
+    framework: "Fact → action"
+    model_answer: |
+      "They lapsed during my two years at Netskope, where I worked on a different platform. I'm already re-studying with the FortiOS 8.0 and FortiManager 7.6 guides, and I plan to re-certify as soon as possible."
+    best_way: "They lapsed while I was at Netskope; I'm already re-studying on the current versions."
+    target: "0:20"
+  - id: I1.r12
+    stage: recruiter
+    question: What's your biggest strength?
+    testing: Self-awareness with evidence
+    framework: "Strength → proof → value for this role"
+    model_answer: |
+      "Turning tense technical situations into progress. At Fortinet I was an escalation point and handed development clean reproductions of real defects. At Netskope I turned a hostile escalation into a license exchange by fixing the underlying technical issue first, keeping more than 900 thousand dollars in contract value. In PS, that's the calm in a hard change window."
+    best_way: "I turn tense technical situations into progress, with evidence: fix the real problem, and the trust follows."
+    target: "0:45"
+  - id: I1.r13
+    stage: recruiter
+    question: What's a weakness you're working on?
+    testing: Self-awareness
+    framework: "Real weakness → what you changed"
+    model_answer: |
+      "Early in my customer roles I let work scatter across email, chat and the CRM. I fixed it by building my own Python and AI workflows that consolidate account activity into one view and turn notes into action items. Now I set up one tracker and a weekly status from day one."
+    best_way: "I used to let tasks scatter; now I build systems so nothing slips."
+    target: "0:30"
+  - id: I1.r14
+    stage: recruiter
+    question: Are you interviewing elsewhere?
+    testing: Timeline, interest
+    framework: "Honest, brief, clear preference"
+    model_answer: |
+      "Yes, I have a few processes open, but Fortinet PS is my first choice, because it's the role that fits my background best and I was referred by the team."
+    best_way: "A few processes, but this is my first choice."
+    target: "0:15"
+  - id: I1.r15
+    stage: recruiter
+    question: Tell me about a time you dealt with a difficult customer.
+    testing: Composure, outcome
+    framework: "STAR, short"
+    model_answer: |
+      "At Netskope an enterprise account escalated and was ready to leave. I treated it as a technical problem, not just a relationship one: I diagnosed the underlying issue, fixed it, and with that credibility we restructured the agreement as a license exchange instead of a cancellation. We kept more than 900 thousand dollars in contract value."
+    best_way: "I fixed the real technical problem first; the relationship and over 900k in contract value followed."
+    target: "0:45"
+  - id: I1.r16
+    stage: recruiter
+    question: Why should we move you to the hiring manager?
+    testing: Closing confidence
+    framework: "Three reasons"
+    model_answer: |
+      "Three reasons. I know FortiOS from the inside, as a former TAC escalation engineer. I know how to own customers and finish delivery work others left half done. And I'm ready for the field: three languages, travel anywhere, available immediately, and already re-studying the current versions."
+    best_way: "Inside product knowledge, proven customer ownership, and ready to go now."
+    target: "0:30"
+  - id: I1.r17
+    stage: recruiter
+    question: What questions do you have for me?
+    testing: Interest
+    framework: "Two or three prepared questions"
+    model_answer: |
+      "What does success look like in the first six months? How is the PS team organised in LATAM, and what projects are most common? And what are the next steps and timeline? Also, is there anything in my background you'd like me to clarify for the hiring manager?"
+    best_way: "Success in six months, the LATAM team and projects, next steps, and anything to clarify."
+    target: "0:30"
+  - id: I1.r18
+    stage: technical
+    question: In one minute, why does a firewall consultant matter to a CFO in 2026?
+    testing: Business framing (often asked by HM or panels)
+    framework: "Risk → cost → what we do"
+    model_answer: |
+      "Because the front door changed. Exploiting vulnerabilities is now the most common way attackers get in, 31 % of breaches in Verizon's 2026 report, and the average breach costs about 5 million dollars, over 11 in the US, according to IBM. A well-designed and well-deployed FortiGate, with IPS, segmentation and good logging, buys time while systems get patched and shortens incidents. My job as a consultant is to get that right the first time, without disrupting the business."
+    best_way: "Attackers now walk in through unpatched systems, and a breach costs about 5 million dollars. Good deployments buy time and cut that cost."
+    target: "1:00"
+
+field_reports:
+  - id: I1.fr1
+    title: The numbers you can quote
+    body: |
+      **DBIR 2026:** vulnerability exploitation 31 % (top vector), ransomware in 48 % of breaches, third-party involvement 48 %, human element 62 %. **IBM 2026:** average breach USD 4.99M (US USD 11.5M), AI-driven attacks up 56 %, adding USD 1M; extensive security AI/automation saves USD 1.93M and 65 days.
+    source: Verizon 2026 DBIR; IBM Cost of a Data Breach Report 2026
+  - id: I1.fr2
+    title: Shadow AI is mainstream
+    body: |
+      **45 %** of employees are now regular AI users on corporate devices, and Shadow AI became the third most common non-malicious insider action in DLP data (DBIR 2026). Your Netskope work getting a couple of accounts to near-zero unsanctioned AI traffic is a timely story.
+    source: Verizon 2026 DBIR, Key topics and findings

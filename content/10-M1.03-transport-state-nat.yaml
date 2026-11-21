@@ -1,0 +1,592 @@
+id: M1.03
+title: Transport, state and NAT theory
+stage: S1
+stage_title: "S1 · Network foundations"
+order: 20
+est_sessions: 1
+objectives:
+  - Explain TCP setup, teardown and reset, and what a stateful firewall remembers about each flow
+  - Explain how UDP and ICMP get "state" on a firewall even though they have none themselves
+  - Tell SNAT, DNAT, PAT and hairpin NAT apart and say when each is used
+  - Explain MTU, MSS and why large transfers stall over tunnels while small pages work
+  - Explain why some protocols (FTP active mode, SIP) need a session helper or ALG to survive NAT
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Policies, anti-replay, TCP MSS and session TTL (pp. 2104–2110)"
+  - "FortiOS 8.0.2 Admin Guide: IP pool types (pp. 2166–2170), Hairpin NAT (pp. 2229–2231)"
+  - "FortiOS 8.0.2 Admin Guide: Asymmetric routing (pp. 653–655)"
+  - "RFC 9293 (TCP), RFC 768 (UDP), RFC 3022 (NAT) — general knowledge"
+
+units:
+  - id: M1.03.u1
+    title: TCP from SYN to FIN, as a firewall sees it
+    tier: 1
+    est_min: 10
+    body: |
+      TCP gives applications a reliable, ordered byte stream on top of IP, which is happy to lose, duplicate or reorder packets. It does this with **sequence numbers**, **acknowledgements**, a **receive window** and a strict **connection life cycle**. A firewall engineer doesn't need to memorise every RFC detail, but must be able to read that life cycle in a capture and explain it to a customer.
+
+      ## Setup: the three-way handshake
+
+      1. **SYN**: the client picks an initial sequence number and asks to open a connection. Options travel here too, most importantly the **MSS** (the largest segment it can receive).
+      2. **SYN/ACK**: the server answers with its own sequence number and acknowledges the client's.
+      3. **ACK**: the client acknowledges the server. The connection is now *established* and data flows.
+
+      If the server port is closed, the server (or a firewall in between) answers the SYN with a **RST**. If nothing answers at all, the client retries the SYN with growing back-off: that is the classic "connection timed out" a user sees when a firewall silently drops traffic.
+
+      ## Teardown: FIN versus RST
+
+      A graceful close uses **FIN** in each direction, each acknowledged. The side that closes first waits in **TIME_WAIT** so late packets from the old connection can't pollute a new one. A **RST** tears the connection down immediately with no goodbye. RSTs are normal in small doses (a browser abandoning a tab) but a burst of them points at a middlebox or an application crashing.
+
+      ## What a stateful firewall remembers
+
+      A stateful firewall evaluates the **first packet** of a flow against the policy table. If a policy allows it, the firewall creates a **session** keyed by the 5-tuple: source IP, destination IP, source port, destination port and protocol. Every later packet, in both directions, is matched against that session instead of the whole policy table. That is why you only write a policy for the direction that *starts* the conversation: replies ride the session.
+
+      FortiOS can also check that TCP packets make sense for the session's state. The **anti-replay** option checks TCP flags per policy, so a stray ACK that doesn't belong to a known handshake is dropped.
+
+      :::recall
+      Q: Why does a firewall only need a policy for the direction that opens a TCP connection?
+      A: The first packet creates a session (5-tuple). Replies match the session, not the policy table, so the return direction is allowed automatically.
+      :::
+
+      :::why
+      Q: Why is "connection timed out" usually a silent drop while "connection refused" is usually a RST?
+      A: A drop gives the client nothing back, so it keeps retrying the SYN until it gives up. A RST is an explicit answer that the port is closed or the connection was rejected.
+      :::
+
+      :::tip
+      On a support call, ask "timed out or refused?" first. It tells you whether to look for a drop (routing, policy, RPF) or for an active reject (closed port, server firewall, IPS reset).
+      :::
+  - id: M1.03.u2
+    title: UDP, ICMP and session timers
+    tier: 2
+    est_min: 9
+    body: |
+      **UDP** has no handshake, no acknowledgements and no teardown. DNS, NTP, syslog, SNMP, RADIUS, voice media (RTP) and QUIC all run on it. A firewall still builds a session for UDP: the first packet that matches a policy creates a 5-tuple entry, and the reply matches it. The difference is how the session ends. With no FIN, the firewall relies on a **timer**: if the session sees no packets for its time-to-live, it is removed.
+
+      **ICMP** is the network's messenger: echo request and reply (ping), destination unreachable, time exceeded (traceroute), and "fragmentation needed" (path MTU discovery). Firewalls track echo using the ICMP identifier so a reply can match its request.
+
+      ## Session TTL
+
+      Every protocol has a session time-to-live: how long an idle session stays in the table. FortiOS lets you change it globally and **per policy** with `set session-ttl <seconds>` (or `never` for a few special cases). Two classic problems come from TTLs:
+
+      - **Too short:** a database or ERP client keeps an idle TCP connection open for an hour. The firewall drops the idle session after its TTL, the next packet arrives with no session and is dropped, and users see "the app freezes after lunch".
+      - **Too long:** huge numbers of dead UDP sessions fill the table on a busy gateway.
+
+      :::recall
+      Q: How does a firewall know a UDP "conversation" is over?
+      A: It doesn't get a signal. The session expires when it has been idle for longer than its TTL.
+      :::
+
+      :::pitfall
+      Raising the TTL for one application is fine on its own policy. Raising it globally to fix one app can bloat the session table for everyone.
+      :::
+
+      :::cli
+      config firewall policy
+          edit 12
+              set session-ttl 7200
+          next
+      end
+      :::
+
+      :::why
+      Q: Why might a VoIP phone lose incoming calls after a few minutes of quiet even though outgoing calls always work?
+      A: The phone's registration and the pinhole for incoming SIP live in a UDP session. If the session expires before the phone re-registers, inbound INVITEs find no session and are dropped.
+      :::
+  - id: M1.03.u3
+    title: NAT, PAT and hairpin NAT
+    tier: 2
+    est_min: 12
+    body: |
+      **Network Address Translation** rewrites addresses as packets cross the firewall, and the session remembers the rewrite so replies can be translated back.
+
+      | Type | What changes | Typical use |
+      |---|---|---|
+      | **SNAT** | Source IP (and often port) | Users going out to the internet |
+      | **PAT** (overload) | Source IP *and* port, many users share one IP | Almost every office internet edge |
+      | **Static 1:1** | One inside IP always maps to one outside IP | A server that must always appear from the same address |
+      | **DNAT** | Destination IP (and optionally port) | Publishing an internal server (FortiOS calls this a VIP) |
+      | **Hairpin** | Both, for inside users reaching an inside server by its public address | Bookmarks with public names that must work in the office too |
+
+      ## How many users fit behind one IP?
+
+      PAT distinguishes sessions by the translated source port. FortiOS documents **60,416 usable ports per IP** in an overload IP pool. The limit applies **per destination service** (same protocol, destination IP and port), so a single public IP supports far more than 60,416 total sessions as long as they go to different destinations. When many users hammer the *same* service, a pool with more IPs, or a fixed-port-range / port-block-allocation pool, is the answer.
+
+      ## Hairpin NAT
+
+      A user inside the office types `portal.company.com`, which resolves to the public IP. The packet goes to the FortiGate, which sees its own external address as the destination, applies the VIP (DNAT) **and** must make the server reply back through the firewall. FortiOS's hairpin example uses a VIP plus a policy for the DNAT and a SNAT policy so the return traffic comes back through the FortiGate. Split DNS (an internal answer with the private IP) is the alternative that avoids hairpinning.
+
+      :::recall
+      Q: Why does PAT need to change the source port, not just the source IP?
+      A: Many inside hosts share one outside IP. The translated source port is what lets the firewall tell their sessions apart and send replies to the right host.
+      :::
+
+      :::why
+      Q: Why do inside users sometimes fail to reach their own published web server by its public name, while internet users can?
+      A: Without hairpin NAT (or split DNS) the inside user's packet to the public IP is either not translated or the server replies directly to the inside client, bypassing the firewall, so the session breaks.
+      :::
+
+      :::threat ref=dbir-2026-vuln-exploitation-31pct
+      Every DNAT/VIP publishes a service to the internet. Exploiting vulnerabilities is now the top initial access vector at 31 % of breaches (Verizon DBIR 2026). Each VIP you configure for a customer needs an owner, a patch plan and IPS on its policy.
+      :::
+  - id: M1.03.u4
+    title: MTU, MSS and protocols that fight NAT
+    tier: 3
+    est_min: 12
+    body: |
+      ## MTU and MSS
+
+      The **MTU** is the largest IP packet a link carries: 1500 bytes on standard Ethernet. The **MSS** is the largest TCP payload: MTU minus the IP header (20) and TCP header (20), so **1460** on plain Ethernet. Each side announces its MSS in the SYN.
+
+      Tunnels and encapsulations add headers: PPPoE adds 8 bytes, GRE 24, IPsec ESP typically 50–80 depending on cipher and NAT-T. If a full-size packet no longer fits and the sender set "don't fragment", a router should send back **ICMP fragmentation needed** so the sender lowers its packet size (path MTU discovery). When that ICMP is blocked somewhere, small exchanges work but full-size packets vanish. Users report: **"the page half-loads", "small emails send but attachments hang", "SSH works but file copy stalls"**.
+
+      ## The fix: MSS clamping
+
+      The firewall rewrites the MSS option in the SYN so both ends agree to smaller segments that fit the tunnel. In FortiOS you can clamp per policy:
+
+      :::cli
+      config firewall policy
+          edit 10
+              set tcp-mss-sender 1350
+              set tcp-mss-receiver 1350
+          next
+      end
+      :::
+
+      You can also set `tcp-mss` on an interface. Clamping only helps TCP; UDP-heavy apps over tunnels still need a correct MTU.
+
+      ## Protocols that carry addresses inside the payload
+
+      NAT rewrites headers. Some protocols also write IP addresses and ports **inside the payload**:
+
+      - **FTP active mode**: the client tells the server, in the PORT command, which IP and port to connect back to. Behind NAT that is a private address the server can't reach.
+      - **SIP** (VoIP signalling): SDP bodies carry the IP and ports for the RTP media streams.
+
+      Firewalls solve this with **session helpers / ALGs**: they read the control channel, rewrite the embedded addresses and open the expected secondary connection (a pinhole). When helpers fight with a phone system that already handles NAT itself, you get **one-way audio** or calls that drop at 30 seconds, and the fix is to decide which side does NAT traversal, not both.
+
+      :::recall
+      Q: What MSS does a host announce on a standard 1500-byte Ethernet link, and why?
+      A: 1460: 1500 MTU minus 20 bytes of IP header and 20 bytes of TCP header.
+      :::
+
+      :::why
+      Q: Why do large downloads stall over an IPsec tunnel while web pages with small objects still load?
+      A: Full-size packets exceed the tunnel MTU after ESP overhead. If the ICMP "fragmentation needed" messages are lost, the sender keeps sending packets that are dropped. Small packets fit and pass. MSS clamping fixes it for TCP.
+      :::
+
+      :::ps
+      In a cutover plan, add an MSS test (a large file copy and an HTTPS download through each new tunnel) to the acceptance checklist. It catches the problem before users do.
+      :::
+
+cards:
+  - { id: M1.03.c01, unit: M1.03.u1, tier: 1, front: "Name the three packets of the TCP handshake in order.", back: "SYN → SYN/ACK → ACK." }
+  - { id: M1.03.c02, unit: M1.03.u1, tier: 1, front: "Which TCP option, sent in the SYN, announces the largest segment a host can receive?", back: "MSS (maximum segment size)." }
+  - { id: M1.03.c03, unit: M1.03.u1, tier: 1, front: "What five fields identify a firewall session?", back: "Source IP, destination IP, source port, destination port, protocol (the 5-tuple)." }
+  - { id: M1.03.c04, unit: M1.03.u1, tier: 2, front: "A user says 'connection refused'. What did the client most likely receive?", back: "A TCP RST: the port is closed or something actively rejected the connection." }
+  - { id: M1.03.c05, unit: M1.03.u1, tier: 2, front: "Which TCP state does the side that closes first wait in, and why?", back: "TIME_WAIT, so late packets from the old connection can't be mistaken for a new one." }
+  - { id: M1.03.c06, unit: M1.03.u1, tier: 2, front: "What does the FortiOS per-policy `anti-replay` option check?", back: "TCP flags, so packets that don't fit the session's TCP state are dropped." }
+  - { id: M1.03.c07, unit: M1.03.u2, tier: 1, front: "How does a UDP session leave a firewall's session table?", back: "When it is idle longer than its session TTL; UDP has no FIN." }
+  - { id: M1.03.c08, unit: M1.03.u2, tier: 2, front: "FortiOS CLI to give one policy's sessions a 2-hour TTL?", back: "`set session-ttl 7200` under that policy in `config firewall policy`." }
+  - { id: M1.03.c09, unit: M1.03.u2, tier: 2, front: "Symptom of a session TTL that is too short for an app with long idle connections?", back: "The app freezes after being idle; the next packet finds no session and is dropped." }
+  - { id: M1.03.c10, unit: M1.03.u2, tier: 1, front: "Which ICMP message drives path MTU discovery?", back: "Destination unreachable – fragmentation needed (DF set)." }
+  - { id: M1.03.c11, unit: M1.03.u3, tier: 1, front: "SNAT vs DNAT in one line each.", back: "SNAT rewrites the source (users going out). DNAT rewrites the destination (publishing a server inside)." }
+  - { id: M1.03.c12, unit: M1.03.u3, tier: 1, front: "What does FortiOS call a DNAT object?", back: "A virtual IP (VIP)." }
+  - { id: M1.03.c13, unit: M1.03.u3, tier: 2, front: "How many usable ports per IP does FortiOS document for an overload IP pool?", back: "60,416 per IP, per destination service (protocol, destination IP and port).", source: "FortiOS 8.0.2 Admin Guide p. 2167" }
+  - { id: M1.03.c14, unit: M1.03.u3, tier: 2, front: "What is hairpin NAT?", back: "Letting inside users reach an inside server through its public address: DNAT to the server plus SNAT so replies return through the firewall." }
+  - { id: M1.03.c15, unit: M1.03.u3, tier: 2, front: "Alternative to hairpin NAT for inside users?", back: "Split DNS: inside resolvers answer with the server's private IP." }
+  - { id: M1.03.c16, unit: M1.03.u4, tier: 1, front: "MSS on a standard 1500-byte Ethernet link?", back: "1460 (1500 − 20 IP − 20 TCP)." }
+  - { id: M1.03.c17, unit: M1.03.u4, tier: 2, front: "Classic user symptom of an MTU/MSS problem over a tunnel?", back: "Small things work, large transfers stall: half-loaded pages, hanging attachments, stuck file copies." }
+  - { id: M1.03.c18, unit: M1.03.u4, tier: 2, front: "FortiOS policy options to clamp TCP MSS?", back: "`set tcp-mss-sender <n>` and `set tcp-mss-receiver <n>`." }
+  - { id: M1.03.c19, unit: M1.03.u4, tier: 2, front: "Why does FTP active mode break behind NAT without a helper?", back: "The PORT command carries the client's private IP and port inside the payload; the server can't connect back to it." }
+  - { id: M1.03.c20, unit: M1.03.u4, tier: 3, front: "Classic sign that SIP ALG and the phone system are both doing NAT traversal?", back: "One-way audio or calls that drop after about 30 seconds." }
+
+quiz:
+  - id: M1.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: A firewall allows HTTPS from LAN to WAN. Why doesn't it need a second policy for the server's replies?
+    options:
+      - { id: a, text: "The reply packets match the session created by the first packet", correct: true }
+      - { id: b, text: "Replies on port 443 are always allowed by default", why_wrong: "There is no blanket rule for 443; replies are allowed because they match an existing session." }
+      - { id: c, text: "The implicit deny only applies to UDP", why_wrong: "The implicit deny applies to all traffic that matches no policy and no session." }
+      - { id: d, text: "NAT automatically opens the return path for any protocol", why_wrong: "NAT rewrites addresses; the session is what permits the reply." }
+    explanation: The first packet is checked against policies and creates a session keyed by the 5-tuple. Replies match the session.
+  - id: M1.03.q02
+    type: order
+    tier: 1
+    pretest: true
+    stem: Put the TCP connection setup in order.
+    items: ["Client sends SYN with its MSS", "Server sends SYN/ACK", "Client sends ACK", "Data flows"]
+    explanation: SYN, SYN/ACK, ACK, then data.
+  - id: M1.03.q03
+    type: numeric
+    tier: 1
+    pretest: true
+    stem: What MSS (in bytes) will a host announce on a plain 1500-byte Ethernet link with no IP or TCP options?
+    answer: 1460
+    explanation: 1500 − 20 (IP) − 20 (TCP) = 1460.
+  - id: M1.03.q04
+    type: single
+    tier: 2
+    pretest: true
+    stem: Users can browse small pages over a new IPsec tunnel, but large downloads stall. Most likely cause?
+    options:
+      - { id: a, text: "Packets larger than the tunnel MTU are dropped and path MTU discovery isn't working", correct: true }
+      - { id: b, text: "The IPsec phase 2 selectors are wrong", why_wrong: "Wrong selectors would break all traffic, not only large transfers." }
+      - { id: c, text: "DNS resolution is slow", why_wrong: "Slow DNS delays the start of every connection, small or large." }
+      - { id: d, text: "The session TTL is too long", why_wrong: "A long TTL keeps idle sessions longer; it doesn't affect packet size." }
+    explanation: The size-dependent symptom is the clue. ESP overhead lowers the usable MTU; clamp MSS or fix PMTUD.
+  - id: M1.03.q05
+    type: single
+    tier: 1
+    pretest: true
+    stem: What does a FortiOS virtual IP (VIP) do?
+    options:
+      - { id: a, text: "Destination NAT: maps an external address (and optionally port) to an internal one", correct: true }
+      - { id: b, text: "Source NAT for outbound users", why_wrong: "That is an IP pool or the outgoing interface address." }
+      - { id: c, text: "Creates a loopback interface", why_wrong: "Loopbacks are interfaces, not NAT objects." }
+      - { id: d, text: "Load-balances only between WAN links", why_wrong: "VIPs can load-balance servers, but their core job is DNAT." }
+    explanation: VIPs are FortiOS's DNAT objects.
+  - id: M1.03.q06
+    type: single
+    tier: 2
+    pretest: true
+    stem: An app freezes whenever users leave it idle for about an hour, then works after a restart. What do you check first?
+    options:
+      - { id: a, text: "The session TTL for that traffic", correct: true }
+      - { id: b, text: "The IPS signature database version", why_wrong: "IPS wouldn't cause an idle-time pattern." }
+      - { id: c, text: "The DHCP lease time", why_wrong: "A lease renewal doesn't break an open TCP connection to a server." }
+      - { id: d, text: "The interface speed and duplex", why_wrong: "Duplex problems cause errors under load, not after idle time." }
+    explanation: Idle-then-broken is the signature of a session expiring before the app sends its next packet.
+  - id: M1.03.q07
+    type: multi
+    tier: 2
+    stem: Which of these protocols carry IP addresses or ports inside their payload, and so often need a session helper (ALG) to cross NAT? Select all that apply.
+    options:
+      - { id: a, text: "FTP (active mode)", correct: true }
+      - { id: b, text: "SIP", correct: true }
+      - { id: c, text: "HTTPS", why_wrong: "HTTPS carries no IP/port pairs that the firewall must rewrite." }
+      - { id: d, text: "SSH", why_wrong: "SSH runs over one TCP connection with no embedded addresses." }
+    explanation: FTP's PORT command and SIP's SDP body embed addresses; helpers rewrite them and open pinholes.
+  - id: M1.03.q08
+    type: single
+    tier: 2
+    stem: In a capture you see SYN, SYN, SYN from the client with growing gaps and nothing back. What does it mean?
+    options:
+      - { id: a, text: "Something is silently dropping the SYN or the reply", correct: true }
+      - { id: b, text: "The server port is closed", why_wrong: "A closed port answers with RST." }
+      - { id: c, text: "The handshake completed but data is lost", why_wrong: "There was no SYN/ACK, so the handshake never completed." }
+      - { id: d, text: "The client's MSS is too high", why_wrong: "MSS problems appear after the handshake, with full-size data packets." }
+    explanation: "SYN retransmissions with no answer mean a drop somewhere: routing, policy, RPF or the server's own firewall."
+  - id: M1.03.q09
+    type: single
+    tier: 2
+    stem: Why can one public IP support far more than 60,416 simultaneous PAT sessions?
+    options:
+      - { id: a, text: "The port limit applies per destination service, so sessions to different destinations can reuse ports", correct: true }
+      - { id: b, text: "FortiGate compresses ports", why_wrong: "There is no port compression; ports are reused per destination." }
+      - { id: c, text: "UDP sessions don't use ports", why_wrong: "UDP uses ports exactly like TCP for PAT." }
+      - { id: d, text: "It can't; 60,416 is a hard total limit", why_wrong: "The guide states the figure per service (protocol, destination IP and port)." }
+    explanation: FortiOS documents 60,416 ports per IP for the same service, so the real total depends on how many destinations users reach.
+    source: FortiOS 8.0.2 Admin Guide p. 2167
+  - id: M1.03.q10
+    type: single
+    tier: 2
+    stem: Inside users can't open the company portal by its public name, but internet users can. The portal is published with a VIP. What do you propose?
+    options:
+      - { id: a, text: "Hairpin NAT (VIP plus a SNAT policy for inside users) or split DNS", correct: true }
+      - { id: b, text: "Raise the session TTL", why_wrong: "Timers are unrelated; the issue is the return path." }
+      - { id: c, text: "Disable the VIP for inside traffic", why_wrong: "Inside users still resolve the public IP and would hit nothing." }
+      - { id: d, text: "Add a static route to the public IP", why_wrong: "The public IP is the FortiGate's own; routing isn't the gap." }
+    explanation: Inside users need either hairpin NAT so replies come back through the FortiGate, or an internal DNS answer with the private IP.
+  - id: M1.03.q11
+    type: numeric
+    tier: 3
+    stem: A PPPoE link has an MTU of 1492. What MSS should hosts use for TCP without options?
+    answer: 1452
+    explanation: 1492 − 20 − 20 = 1452.
+  - id: M1.03.q12
+    type: single
+    tier: 3
+    stem: Which FortiOS configuration clamps MSS for traffic matching policy 10?
+    options:
+      - { id: a, text: "`set tcp-mss-sender` and `set tcp-mss-receiver` under policy 10", correct: true }
+      - { id: b, text: "`set mtu-override enable` under policy 10", why_wrong: "MTU override is an interface setting, not a policy option." }
+      - { id: c, text: "`set session-ttl 1350` under policy 10", why_wrong: "That sets a 1350-second timer, not a segment size." }
+      - { id: d, text: "`set anti-replay disable` under policy 10", why_wrong: "Anti-replay checks TCP flags; it doesn't change MSS." }
+    explanation: FortiOS policies support tcp-mss-sender and tcp-mss-receiver.
+    source: FortiOS 8.0.2 Admin Guide p. 2110
+  - id: M1.03.q13
+    type: single
+    tier: 3
+    stem: After a firewall migration, VoIP calls connect but the caller hears nothing. The PBX already handles NAT traversal. Best first move?
+    options:
+      - { id: a, text: "Check whether the firewall's SIP ALG is also rewriting the signalling and test with it disabled for that traffic", correct: true }
+      - { id: b, text: "Increase the TCP MSS", why_wrong: "SIP media is RTP over UDP; MSS is irrelevant." }
+      - { id: c, text: "Move the PBX to a different VLAN", why_wrong: "Doesn't address the double NAT traversal." }
+      - { id: d, text: "Reboot the phones", why_wrong: "A reboot won't stop the SDP being rewritten twice." }
+    explanation: One-way audio is the classic sign of two components fighting over NAT traversal. Decide who does it.
+  - id: M1.03.q14
+    type: order
+    tier: 3
+    stem: Order the life of a TCP session through a stateful firewall with SNAT.
+    items: ["First SYN is checked against the policy table", "A session is created with the original and translated 5-tuples", "The source is rewritten to the outside IP and port", "The reply matches the session and is translated back", "The session is removed after FIN/RST or the TTL"]
+    explanation: Policy lookup happens once, at the first packet. Everything after rides the session.
+  - id: M1.03.q15
+    type: single
+    tier: 4
+    stem: "Sniffer on the inside interface shows SYN → SYN/ACK → ACK, then the client's 1460-byte data segments repeat every few seconds with no ACK from the server. The path crosses an IPsec tunnel. What is the most likely root cause?"
+    options:
+      - { id: a, text: "Full-size segments exceed the tunnel MTU and are dropped; MSS isn't being clamped", correct: true }
+      - { id: b, text: "The firewall policy denies the traffic", why_wrong: "The handshake completed through the firewall, so the policy allowed the session." }
+      - { id: c, text: "The server is down", why_wrong: "It answered the SYN/ACK." }
+      - { id: d, text: "Asymmetric routing", why_wrong: "With asymmetry the handshake itself would usually fail at the firewall." }
+    explanation: "Handshake fine, full-size data lost, tunnel in the path: MTU/MSS. Clamp MSS (for example 1350) and retest."
+  - id: M1.03.q16
+    type: single
+    tier: 4
+    stem: A customer raised the global session TTL to 24 hours to fix one ERP app. A week later the firewall is close to its session limit. What do you recommend?
+    options:
+      - { id: a, text: "Restore the default globally and set a longer session-ttl only on the ERP policy", correct: true }
+      - { id: b, text: "Buy a bigger firewall", why_wrong: "The root cause is configuration, not capacity." }
+      - { id: c, text: "Disable anti-replay", why_wrong: "Unrelated to how long idle sessions live." }
+      - { id: d, text: "Turn on NAT for the ERP policy", why_wrong: "NAT doesn't change session lifetime." }
+    explanation: Scope the change to the policy that needs it. Global timers affect every session in the table.
+  - id: M1.03.q17
+    type: text
+    tier: 1
+    stem: "What is the common name for 'NAT loopback' / 'U-turn NAT' in the FortiOS guide? (two words)"
+    accept: ["hairpin nat", "hairpin"]
+    explanation: The FortiOS guide calls it Hairpin NAT.
+    source: FortiOS 8.0.2 Admin Guide p. 2229
+  - id: M1.03.q18
+    type: single
+    tier: 2
+    stem: Which statement about UDP sessions on a stateful firewall is correct?
+    options:
+      - { id: a, text: "The first packet creates a session; it ends when idle longer than its TTL", correct: true }
+      - { id: b, text: "UDP is never tracked; every packet is checked against policies", why_wrong: "Stateful firewalls track UDP with sessions too." }
+      - { id: c, text: "UDP sessions end with a FIN packet", why_wrong: "UDP has no FIN; timers end its sessions." }
+      - { id: d, text: "UDP replies always need their own policy", why_wrong: "Replies match the session like TCP." }
+    explanation: UDP gets pseudo-state from the 5-tuple and a timer.
+  - id: M1.03.q19
+    type: single
+    tier: 5
+    stem: A retail customer will put 9,000 users behind one public IP, all hitting the same SaaS endpoint on 443 at peak. What do you design?
+    options:
+      - { id: a, text: "An IP pool with more public IPs (or port block allocation) because one IP gives 60,416 ports per destination service", correct: true }
+      - { id: b, text: "One IP is enough; PAT has unlimited ports", why_wrong: "Ports per destination service are finite: 60,416 per IP." }
+      - { id: c, text: "Static 1:1 NAT for every user", why_wrong: "You'd need 9,000 public IPs." }
+      - { id: d, text: "Disable NAT and route private IPs to the internet", why_wrong: "Private addresses aren't routable on the internet." }
+    explanation: With one SaaS destination the per-service port budget matters. Size the pool from peak concurrent sessions per user to that service.
+  - id: M1.03.q20
+    type: single
+    tier: 3
+    stem: Which symptom best fits an FTP active-mode transfer through NAT with no session helper?
+    options:
+      - { id: a, text: "Login works, but directory listings and transfers fail", correct: true }
+      - { id: b, text: "The control connection on port 21 can't be opened", why_wrong: "The control connection is a normal outbound TCP session and works." }
+      - { id: c, text: "Only large files fail", why_wrong: "That points to MTU, not to FTP data channel setup." }
+      - { id: d, text: "DNS lookups for the server fail", why_wrong: "Name resolution is unrelated to the data channel." }
+    explanation: The control channel works; the data channel fails because the embedded address in PORT is private and no pinhole is opened.
+
+labs:
+  - id: M1.03.lab1
+    title: Clamp MSS for a site-to-site tunnel
+    goal: Traffic from branch LAN to HQ over the IPsec tunnel `to-HQ` stalls on large transfers. Clamp MSS to 1350 on the policy that allows it.
+    worked:
+      config: |
+        config firewall policy
+            edit 21
+                set name "LAN-to-HQ"
+                set srcintf "lan"
+                set dstintf "to-HQ"
+                set srcaddr "BRANCH-LAN"
+                set dstaddr "HQ-NETS"
+                set action accept
+                set schedule "always"
+                set service "ALL"
+                set tcp-mss-sender 1350
+                set tcp-mss-receiver 1350
+            next
+        end
+      notes:
+        - "tcp-mss-sender rewrites the MSS in SYNs from the original sender; tcp-mss-receiver does the same for the other side."
+        - "1350 leaves room for ESP, NAT-T and possible PPPoE overhead; tune after testing."
+        - "Clamping only affects TCP. Test with a large file copy before closing the change."
+    faded:
+      prompt: Fill in the missing words.
+      template: |
+        config firewall {{policy}}
+            edit 21
+                set tcp-mss-{{sender}} 1350
+                set tcp-mss-receiver {{1350}}
+            next
+        {{end}}
+    solo:
+      prompt: "Write the CLI to clamp MSS to 1380 on existing policy 7."
+      required: ["config firewall policy", "edit 7", "set tcp-mss-sender 1380", "set tcp-mss-receiver 1380", "end"]
+      solution: |
+        config firewall policy
+            edit 7
+                set tcp-mss-sender 1380
+                set tcp-mss-receiver 1380
+            next
+        end
+  - id: M1.03.lab2
+    title: Watch a handshake with the sniffer
+    goal: Prove whether SYNs to 10.0.10.20:443 reach the FortiGate and leave toward the server.
+    worked:
+      config: |
+        # diagnose sniffer packet any 'host 10.0.10.20 and tcp port 443' 4 20 l
+      notes:
+        - "Format: diagnose sniffer packet <interface> '<filter>' <verbose> <count> <tsformat>."
+        - "Interface `any` shows the packet arriving on one interface and leaving on another; verbose 4 prints the interface name."
+        - "Count 20 stops after 20 packets; `l` prints local absolute time."
+        - "Seeing the SYN in on `lan` but never out on `dmz` means the FortiGate dropped it: next step is debug flow."
+    faded:
+      template: |
+        # diagnose {{sniffer}} packet {{any}} 'host 10.0.10.20 and tcp port 443' {{4}} 20 l
+    solo:
+      prompt: "Sniff 50 packets on port1 for traffic to or from 192.168.1.10 on UDP 53, showing headers with the interface name."
+      required: ["diagnose sniffer packet port1", "host 192.168.1.10", "udp port 53", "4 50"]
+      solution: |
+        # diagnose sniffer packet port1 'host 192.168.1.10 and udp port 53' 4 50
+      notes: "Verbose 4 = headers with interface name. The filter goes in single quotes. Stop early with Ctrl+C."
+
+scenarios:
+  - id: M1.03.sc1
+    kind: situation
+    tier: 4
+    title: "The file shares are 'slow' after the SD-WAN cutover"
+    situation: |
+      You led the cutover of 12 branches to IPsec overlays last weekend. Monday 9:00 the customer's IT lead calls: browsing and Teams are fine, but copying files from the HQ file server "never finishes" and the ERP report export times out. It started after the cutover.
+    constraints: ["Change freeze for the rest of the week except emergency changes", "Branch PCs can't be touched"]
+    stakeholders: ["IT lead (calling you)", "CFO (needs the ERP exports for month-end)", "Your PS manager"]
+    ask: What do you think is happening, how do you prove it, and how do you fix it safely?
+    right_thinking:
+      - "Clarify: size-dependent? Only through the tunnels? All branches or some? Since exactly when?"
+      - "Hypothesis from the pattern: small works, large stalls, new tunnels in the path → MTU/MSS"
+      - "Prove: sniffer shows handshake fine and full-size segments retransmitted; a ping with DF and large size fails while small passes"
+      - "Fix with lowest risk: emergency change to clamp MSS on the branch-to-HQ policies (or tunnel interfaces), one branch first"
+      - "Validate with the IT lead: large file copy and ERP export from the pilot branch, then roll to all"
+      - "Communicate and document: root cause, fix, and add an MSS test to the cutover acceptance checklist"
+    what: MSS clamping on the overlay policies, piloted on one branch first.
+    why: ESP overhead lowered the usable MTU and PMTUD isn't working end to end, so full-size TCP segments are dropped. Clamping makes both ends agree on segments that fit.
+    how: ["Sniffer to confirm retransmitted full-size segments", "set tcp-mss-sender / tcp-mss-receiver 1350 on the overlay policies", "Pilot branch → validate → roll out", "Update the acceptance test plan"]
+    pitfalls: ["Changing all 12 branches at once during a freeze", "Blaming the file server or the WAN provider without evidence", "Forgetting that UDP-based apps need the MTU fixed, not MSS"]
+    model_answer: |
+      "This looks like an MTU problem the new tunnels introduced: small packets pass, full-size ones don't. I'd confirm it in ten minutes with a sniffer and a large DF ping from one branch. If confirmed, I'd raise an emergency change to clamp MSS to 1350 on that branch's overlay policy, test a large file copy and the ERP export with you, and then apply it to the other eleven. Afterwards I'll send the root cause and add an MSS test to our cutover checklist so it can't happen again."
+    could_have_added: ["Offer the CFO an interim workaround timeline for month-end", "Check whether the hub side also needs clamping for HQ-initiated transfers"]
+    best_way: "Small works, big stalls, new tunnels: that's MTU. I'll prove it on one branch, clamp MSS, test with your team and then roll it out, all inside an emergency change."
+    rubric: ["clarify", "hypothesis from evidence", "safe fix and rollback", "validation with the customer", "communication and prevention"]
+  - id: M1.03.sc2
+    kind: situation
+    tier: 3
+    title: Legacy FTP vendor can't send files anymore
+    situation: |
+      After replacing the customer's old firewall with a FortiGate, a supplier says they can log in to the customer's FTP server (published through a VIP) but listings and uploads fail.
+    stakeholders: ["Procurement (supplier relationship)", "Customer's IT"]
+    ask: What is going on and what are your options, from best to quick-fix?
+    right_thinking:
+      - "Clarify: active or passive mode? Which side initiates the data channel?"
+      - "Recognise the pattern: control channel works, data channel fails → embedded addresses in FTP"
+      - "Check the FTP session helper / protocol options are applied and the VIP maps the passive port range if passive"
+      - "Best long-term option: move the supplier to SFTP or FTPS with a defined port range"
+      - "Validate with the supplier on a call; document the passive range in the VIP and policy"
+    what: Make the FTP data channel work through NAT (helper or passive range) and plan the move to SFTP.
+    why: FTP carries IPs and ports in its payload; without a helper or a published passive range the data connection has nowhere to go.
+    how: ["Confirm the mode with the supplier", "Publish the passive range in the VIP or rely on the FTP helper", "Test listing and upload", "Propose SFTP as the target state"]
+    pitfalls: ["Opening a huge port range to any source", "Leaving clear-text FTP as the permanent answer"]
+    model_answer: |
+      "Login works and transfers don't, so the control channel is fine and the data channel isn't getting through NAT. I'll confirm whether they use active or passive mode, make sure the FTP helper is doing its job or publish a small passive port range limited to the supplier's IPs, and test with them on a call. Then I'll recommend moving them to SFTP, because FTP sends credentials in clear text."
+    could_have_added: ["Restrict the VIP policy source to the supplier's public IPs", "Log the policy so you can show the supplier's attempts"]
+    best_way: "Control works, data doesn't: that's FTP fighting NAT. I'll fix the data path today with a tight rule, and propose SFTP so we stop sending passwords in clear text."
+    rubric: ["clarify", "diagnosis", "safe fix", "security improvement", "communication"]
+  - id: M1.03.sc3
+    kind: raid
+    tier: 4
+    title: "Raid: one-way audio at the call centre"
+    situation: |
+      08:05. The customer's 200-seat call centre went live on the new FortiGate at 07:00. Agents can call out and the customer hears them, but agents hear silence. The voice vendor says "it's your firewall". The call centre manager is on the bridge, angry.
+    ask: Walk the bridge through your first 15 minutes.
+    right_thinking:
+      - "Stabilise the room: acknowledge impact, give a time-boxed plan and the next update time"
+      - "Gather: which direction fails (inbound RTP), all agents or some, since the cutover only"
+      - "Hypothesis: SIP ALG on the firewall and the PBX/SBC both handling NAT, so the SDP advertises the wrong address/ports for return media"
+      - "Test on a pilot: disable the SIP ALG for the voice traffic (or the PBX's NAT handling), place a test call"
+      - "If audio returns, apply to all voice traffic; if not, roll back and look at the RTP port range policy and session timers"
+      - "Document the decision of who owns NAT traversal; update the design"
+    what: Pick one owner for SIP NAT traversal and make the media path explicit.
+    why: When two devices rewrite SIP/SDP, return media goes to the wrong address or port, which is the classic one-way audio pattern.
+    how: ["Time-boxed plan on the bridge", "Pilot test with ALG off for voice", "Verify RTP policy and timers", "Roll out or roll back"]
+    pitfalls: ["Arguing with the vendor on the bridge", "Making several changes at once so you can't tell which fixed it"]
+    model_answer: |
+      "First I tell the bridge: 'Outbound audio works, inbound doesn't; that's a NAT traversal pattern. Give me 15 minutes on one agent, next update at 08:20.' Then I test one change only: SIP ALG off for the voice traffic, one test call. If the audio comes back, we apply it to all agents; if not, we roll back and check the RTP policy and timers. After the incident I'll document who owns NAT traversal so this design can't regress."
+    could_have_added: ["Ask the voice vendor to confirm on the bridge whether their SBC does NAT traversal", "Capture one call before and after the change for the report"]
+    best_way: "One change at a time, one agent first, next update in 15 minutes. One-way audio is two devices fighting over NAT; we'll make it one."
+    rubric: ["calm the room", "hypothesis", "one change at a time", "rollback ready", "documentation"]
+
+interview:
+  - id: M1.03.i1
+    stage: technical
+    question: Explain what a stateful firewall does with the first packet of a connection and with the rest.
+    testing: Fundamentals, and whether you can say them simply
+    framework: "Anchor definition → mechanism (session, 5-tuple) → why it matters"
+    model_answer: |
+      "A stateful firewall checks the first packet of a flow against its policy table, top to bottom. If a policy allows it, it creates a session keyed by the 5-tuple: source and destination IP, source and destination port, and protocol, plus any NAT it applied. Every later packet in both directions is matched against that session, not the policy table, which is faster and is why you only write policies for the side that starts the conversation. FortiGate adds checks on top, like TCP flag validation with anti-replay and timers per protocol."
+    could_have_added: ["Mention that the session also carries the security profile decisions and offload state"]
+    best_way: "First packet: policy lookup. Everything after: session lookup. That's what 'stateful' means."
+    follow_ups: ["What happens with UDP?", "How would asymmetric routing affect this?"]
+    target: "1:00"
+  - id: M1.03.i2
+    stage: technical
+    question: "A customer says: 'Small web pages load, big downloads hang, only since we added the VPN.' What do you tell them?"
+    testing: Pattern recognition and customer-friendly troubleshooting
+    framework: "Pattern → hypothesis → proof → fix → prevention"
+    model_answer: |
+      "That pattern, small works and big stalls after adding a tunnel, is almost always MTU. The VPN adds headers, so full-size packets no longer fit, and if the ICMP messages that tell the sender to shrink them are blocked, those packets just disappear. I'd prove it with a sniffer and a large ping with don't-fragment set, then clamp the TCP MSS on the VPN policy, for example to 1350, and test a big download with them before closing."
+    could_have_added: ["Mention you'd add it to the acceptance checklist for future tunnels"]
+    best_way: "Small works, big hangs after a VPN: MTU. I'll prove it in minutes and clamp MSS."
+    target: "1:00"
+  - id: M1.03.i3
+    stage: technical
+    question: What is the difference between SNAT, DNAT and PAT, and how does FortiGate implement each?
+    testing: Vocabulary mapped to FortiOS objects
+    framework: "Define each → FortiOS object → typical use"
+    model_answer: |
+      "SNAT rewrites the source, usually so private users can go out to the internet. PAT is SNAT where many users share one IP and the firewall uses the source port to keep their sessions apart. On FortiGate that's NAT on the policy with the outgoing interface address or an IP pool, or central SNAT if central NAT is enabled. DNAT rewrites the destination to publish an internal server, and FortiGate does it with a virtual IP, optionally with port forwarding."
+    could_have_added: ["The 60,416 ports per IP per destination service figure, and when you need more IPs in the pool"]
+    best_way: "SNAT changes who's talking, DNAT changes who you're talking to, PAT lets a crowd share one address. On FortiGate: IP pools for the first, VIPs for the second."
+    target: "1:15"
+  - id: M1.03.i4
+    stage: technical
+    question: Why do protocols like SIP and FTP give firewalls trouble with NAT?
+    testing: Depth beyond headers
+    framework: "Mechanism → symptom → fix"
+    model_answer: |
+      "Because they put IP addresses and ports inside the payload, not just in the headers NAT rewrites. FTP active mode tells the server where to connect back; SIP's SDP tells the other side where to send the audio. Behind NAT those embedded addresses are private, so the secondary connection fails. Firewalls use session helpers or ALGs to rewrite them and open pinholes. The catch is when the PBX or SBC also does NAT traversal; two rewrites give you one-way audio, so you pick one owner."
+    best_way: "They hide addresses inside the payload. Helpers fix it, unless someone else is fixing it too."
+    target: "1:00"
+  - id: M1.03.i5
+    stage: technical
+    question: How would you size NAT for 9,000 users going to the same SaaS service?
+    testing: Design thinking with numbers
+    framework: "Constraint → calculation → design → validation"
+    model_answer: |
+      "PAT gives about 60,416 ports per public IP per destination service, according to the FortiOS guide. If 9,000 users each open several concurrent connections to the same SaaS endpoint, one IP can run out at peak. I'd estimate peak concurrent sessions to that service, divide by 60,416 with headroom, and build an IP pool with that many public IPs, or use port block allocation if they need predictable per-user ports for logging. Then I'd watch pool usage in the first week."
+    could_have_added: ["Ask whether the SaaS rate-limits per source IP, which also argues for more IPs"]
+    best_way: "Ports per IP per destination are finite: 60,416. Measure peak, add headroom, size the pool."
+    target: "1:15"
+
+field_reports:
+  - id: M1.03.fr1
+    title: The front door is now the vulnerability
+    body: |
+      For years stolen credentials were the top way in. In the Verizon 2026 DBIR, **exploiting vulnerabilities** took first place at **31 %** of breaches with a known initial access vector, while credential abuse fell to 13 %. Only **26 %** of CISA KEV vulnerabilities were fully fixed in 2025, with a median of **43 days** to fix. Every VIP you publish is a door: put IPS on it and agree on who patches what behind it.
+    source: Verizon 2026 DBIR, Key topics and findings
+  - id: M1.03.fr2
+    title: Ransomware is half the story
+    body: |
+      Ransomware appeared in **48 %** of breaches in the 2026 DBIR, up from 44 %. The good news: **69 %** of victims didn't pay. Segmentation and tight NAT/VIP design are what keep one compromised host from becoming every host.
+    source: Verizon 2026 DBIR, Key topics and findings

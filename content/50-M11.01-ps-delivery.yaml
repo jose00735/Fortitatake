@@ -1,0 +1,582 @@
+id: M11.01
+title: "PS delivery: from kickoff to handover, plus your STAR bank"
+stage: S11
+stage_title: "S11 · Professional Services mastery"
+order: 60
+est_sessions: 1
+objectives:
+  - Describe the PS delivery lifecycle end to end and the document each phase produces
+  - Write a MOP with pre-checks, steps, validation and rollback, and run a change window
+  - Handle scope, risk and difficult stakeholders the way a hiring manager expects
+  - Tell twelve STAR stories from your real experience, honestly, including the gaps
+sources:
+  - "General PS practice (kickoff, discovery, HLD/LLD, MOP, ATP, as-built, knowledge transfer)"
+  - "Your evidence: super-cv (Fortinet TAC P3, Netskope CSM, SYKES Cisco TAC)"
+  - "FortiOS 8.0.2 Admin Guide: troubleshooting methodology and baselines (pp. 5544–5546); configuration backup (p. 4530)"
+
+units:
+  - id: M11.01.u1
+    title: The delivery lifecycle and its documents
+    tier: 1
+    est_min: 12
+    body: |
+      A professional services consultant turns what was **sold** into what **works**, on time, without surprises. Each phase has a purpose and a document. Hiring managers listen for whether you know the sequence and why each step exists.
+
+      | Phase | Purpose | Output |
+      |---|---|---|
+      | **Handoff from pre-sales** | Learn what was promised, to whom, and why | Notes on the SOW, BoM and the customer's goals |
+      | **Kickoff** | Align people, scope, timeline, communication | Kickoff deck, RACI, project plan |
+      | **Discovery** | Understand the current state and the requirements | Discovery notes, current config exports, requirement list |
+      | **Design** | Decide how it will work | **HLD** (architecture, why) and **LLD** (every interface, policy, IP, setting) |
+      | **Build and test** | Build it and prove it before production | Staged config (FortiManager), lab/test results |
+      | **Implementation** | Change production safely | **MOP**, change request, maintenance window |
+      | **Acceptance** | Prove it meets the requirements | **ATP** (acceptance test plan) signed off |
+      | **Handover** | Make the customer self-sufficient | **As-built** document, knowledge transfer, support handoff |
+
+      ## Scope is a contract
+
+      The **SOW** (statement of work) defines what is in scope. Anything else is a **change request**: you can do it, but it gets estimated, approved and scheduled. Scope creep, the "while you're here, can you also…", is the classic way projects slip. Saying "great idea, let me raise it as a change request so it gets done properly" protects both the customer and the project.
+
+      :::recall
+      Q: Difference between an HLD and an LLD?
+      A: HLD: the architecture and the reasons (what and why). LLD: every concrete setting needed to build it (how): interfaces, IPs, policies, objects, routing.
+      :::
+
+      :::why
+      Q: Why does a good consultant read the SOW and talk to pre-sales before the kickoff?
+      A: To know exactly what was promised and why the customer bought it, so expectations match the scope from day one.
+      :::
+
+      :::ps
+      Your Netskope experience maps here: you took over partner professional-services projects that were only partly delivered and completed them in stages, effectively acting as QA on the partner's work. That's discovery, gap analysis and staged delivery in one story.
+      :::
+  - id: M11.01.u2
+    title: Change windows, MOPs and rollback
+    tier: 2
+    est_min: 12
+    body: |
+      Production changes are where reputations are made. A **MOP** (method of procedure) is the script for the window.
+
+      ## A MOP that survives a bad night
+
+      1. **Header:** change ID, window, people and phone numbers, the customer's approver, go/no-go time.
+      2. **Pre-checks:**
+         - backup the configuration (and FortiManager revision)
+         - capture baseline outputs: `get system status`, `get system performance status`, routing table, session count
+         - confirm console access and a known-good firmware image
+      3. **Steps:** numbered, copy-paste-ready commands or FortiManager install steps, each with the expected result.
+      4. **Validation:** the tests from the ATP that prove success, run by you **and** the customer.
+      5. **Rollback:** the trigger ("if validation step 4 fails by 02:30") and the exact steps back (restore config or revision, re-patch cables).
+      6. **Communication:** who you tell at start, at go/no-go and at the end.
+
+      ## Rules that keep you safe
+
+      - **Go/no-go is a time, not a feeling.** Decide in advance when you roll back.
+      - **One change at a time** when troubleshooting inside a window.
+      - **Console first.** If a routing or interface change can cut you off, have console or out-of-band access ready. You've recovered FortiGates over console after bad routing, including TFTP restores and live static-route fixes, so you know why.
+      - **Reproduce before you recommend.** You used shared Terraform templates at Fortinet to reproduce customer scenarios and validate fixes first. In PS that becomes a lab or staging test before the window.
+
+      :::recall
+      Q: Name the six parts of a solid MOP.
+      A: Header/contacts, pre-checks (backup, baseline, console), numbered steps with expected results, validation, rollback with a trigger, communication.
+      :::
+
+      :::pitfall
+      "We'll roll back if it looks bad" isn't a plan. Write the trigger and the deadline.
+      :::
+
+      :::threat ref=ibm-2026-cost-499m
+      The average breach cost reached USD 4.99 million in IBM's 2026 report. Outages from badly run changes are a smaller cousin of that cost, and customers judge PS by how calm and reversible your changes are.
+      :::
+  - id: M11.01.u3
+    title: Stakeholders, scope and bad news
+    tier: 3
+    est_min: 10
+    body: |
+      PS consultants spend half their time on people. Patterns that work:
+
+      - **Map stakeholders at kickoff:** sponsor (why they bought), technical owner (who lives with it), approvers (change board), and blockers (who loses something).
+      - **Status every week, even when nothing happened:** done, next, risks, decisions needed. A short risk register avoids "why didn't you tell us?".
+      - **Bad news early, with a plan:** "We found X. Impact Y. Options A and B. I recommend A because…". Never only the problem.
+      - **Difficult stakeholders:** acknowledge the impact, separate facts from blame, offer a time-boxed next step, follow up in writing.
+      - **Partners and vendors:** keep the customer at the centre; evidence ends blame loops (debug flow, captures, logs).
+
+      ## Turning a hostile room around
+
+      Your Netskope escalation is the model: a hostile escalation where you diagnosed the underlying **technical** issue, resolved it, and used the restored trust to restructure the agreement as a license exchange, keeping more than **USD 900k** in Total Contract Value. The lesson for PS: fix the real problem first, then the relationship follows.
+
+      :::recall
+      Q: Four elements of a weekly status update?
+      A: Done, next, risks, decisions needed.
+      :::
+
+      :::why
+      Q: Why answer scope creep with "let's raise a change request" instead of just doing it?
+      A: It keeps the project's timeline and budget honest, gets the work properly estimated, tested and approved, and protects the customer from untracked changes.
+      :::
+  - id: M11.01.u4
+    title: Acceptance, handover and the honest gaps
+    tier: 3
+    est_min: 10
+    body: |
+      ## Acceptance test plan (ATP)
+
+      Each requirement gets a test with an expected result and a place for the customer's signature. Firewall projects need at least:
+
+      - every published service (VIP) from outside, and from inside if hairpin or split DNS applies
+      - outbound access per zone or VLAN
+      - VPN tunnels in both directions, including a **large transfer** (catches MTU/MSS problems)
+      - HA failover and failback
+      - logging reaching FortiAnalyzer or syslog
+      - admin access only from management networks
+
+      ## Handover
+
+      - **As-built:** the LLD updated to what was really built, plus the baseline outputs.
+      - **Knowledge transfer:** the customer's team runs the key tasks while you watch: policy change, debug flow, backups.
+      - **Support handoff:** how to open a case, what to send (you know exactly what TAC needs from the other side).
+
+      ## The honest gaps, and how to own them
+
+      Hiring managers will probe what you haven't done. Your truthful version:
+
+      - **"Have you owned end-to-end implementations?"** Your experience is TAC escalation on implementations in progress (routing, failover, switch integration), SD-WAN designs from requirements, SSL inspection rollouts, cloud HA support, and completing partners' half-delivered PS projects in stages at Netskope. You haven't been the named delivery owner of a full Fortinet PS project. Say that plainly, then show the transferable pieces and how you'd close the gap.
+      - **"Recent hands-on with 7.6/8.0?"** You're rebuilding it right now, with the 8.0 guides and labs, and you can name the changes (Agentless VPN, allow-traffic-redirect default).
+
+      :::recall
+      Q: Which ATP test catches MTU/MSS problems that pings miss?
+      A: A large file transfer (or large DF ping) through each tunnel.
+      :::
+
+      :::ps
+      Ending an answer with "and here is how I'd close that gap in my first 90 days" turns a weakness into a plan.
+      :::
+
+cards:
+  - { id: M11.01.c01, unit: M11.01.u1, tier: 1, front: "PS lifecycle phases in order?", back: "Pre-sales handoff → kickoff → discovery → design (HLD/LLD) → build and test → implementation → acceptance → handover." }
+  - { id: M11.01.c02, unit: M11.01.u1, tier: 1, front: "What does a SOW define?", back: "What is in scope: deliverables, assumptions, responsibilities, timeline." }
+  - { id: M11.01.c03, unit: M11.01.u1, tier: 1, front: "HLD vs LLD?", back: "HLD = architecture and why. LLD = every concrete setting to build it." }
+  - { id: M11.01.c04, unit: M11.01.u1, tier: 2, front: "Professional answer to scope creep?", back: "Welcome the idea and raise a change request so it is estimated, approved and scheduled." }
+  - { id: M11.01.c05, unit: M11.01.u1, tier: 2, front: "What is an as-built?", back: "The design document updated to what was actually built, with baseline outputs." }
+  - { id: M11.01.c06, unit: M11.01.u2, tier: 1, front: "What is a MOP?", back: "Method of procedure: the step-by-step script for a change window, with pre-checks, validation and rollback." }
+  - { id: M11.01.c07, unit: M11.01.u2, tier: 2, front: "Three pre-checks before any FortiGate change window?", back: "Config backup (and FortiManager revision), baseline outputs, console/out-of-band access ready." }
+  - { id: M11.01.c08, unit: M11.01.u2, tier: 2, front: "What makes a rollback plan real?", back: "A written trigger and deadline (go/no-go time) plus the exact steps back." }
+  - { id: M11.01.c09, unit: M11.01.u2, tier: 2, front: "Rule for troubleshooting inside a window?", back: "One change at a time, so you know what fixed (or broke) it." }
+  - { id: M11.01.c10, unit: M11.01.u3, tier: 1, front: "Weekly status: four parts?", back: "Done, next, risks, decisions needed." }
+  - { id: M11.01.c11, unit: M11.01.u3, tier: 2, front: "Formula for delivering bad news?", back: "What we found, impact, options, my recommendation and why." }
+  - { id: M11.01.c12, unit: M11.01.u3, tier: 2, front: "Stakeholder types to map at kickoff?", back: "Sponsor, technical owner, approvers, potential blockers." }
+  - { id: M11.01.c13, unit: M11.01.u4, tier: 2, front: "Minimum ATP tests for a firewall project?", back: "Published services, outbound per zone, VPNs both ways with a large transfer, HA failover, logging, admin access restrictions." }
+  - { id: M11.01.c14, unit: M11.01.u4, tier: 2, front: "Good knowledge transfer looks like…?", back: "The customer's team performs the key tasks themselves while you watch." }
+  - { id: M11.01.c15, unit: M11.01.u4, tier: 3, front: "Your honest gap for PS, in one line?", back: "I haven't been the named delivery owner of a full Fortinet PS project; I've done the pieces (designs, rollouts, recoveries, partner PS completion) and here's my 90-day plan." }
+  - { id: M11.01.c16, unit: M11.01.u3, tier: 2, front: "Your hostile-escalation result at Netskope?", back: "Resolved the technical issue and restructured as a license exchange; kept more than USD 900k in TCV." }
+  - { id: M11.01.c17, unit: M11.01.u2, tier: 2, front: "Your 'reproduce before you recommend' proof?", back: "Shared Terraform templates at Fortinet to reproduce customer scenarios and validate fixes first." }
+  - { id: M11.01.c18, unit: M11.01.u1, tier: 2, front: "Your partner-PS story in one line?", back: "At Netskope I took over partially delivered partner PS projects and completed them in stages, acting as QA on the partner's work." }
+
+quiz:
+  - id: M11.01.q01
+    type: order
+    tier: 1
+    pretest: true
+    stem: Put the PS delivery phases in order.
+    items: ["Pre-sales handoff", "Kickoff", "Discovery", "Design (HLD/LLD)", "Build and test", "Implementation", "Acceptance", "Handover"]
+    explanation: Handoff, kickoff, discovery, design, build/test, implement, accept, hand over.
+  - id: M11.01.q02
+    type: single
+    tier: 1
+    pretest: true
+    stem: During implementation the customer asks you to "also quickly set up SD-WAN for the two other branches", which isn't in the SOW. Best answer?
+    options:
+      - { id: a, text: "Welcome it and raise a change request so it's scoped, approved and scheduled", correct: true }
+      - { id: b, text: "Do it tonight to keep the customer happy", why_wrong: "Untracked work breaks timelines, testing and budgets." }
+      - { id: c, text: "Refuse; it's out of scope", why_wrong: "Correct on scope, wrong on relationship; offer the proper path." }
+      - { id: d, text: "Tell them to ask sales", why_wrong: "Own it: you can start the change request yourself." }
+    explanation: Protect scope without saying no to the customer.
+  - id: M11.01.q03
+    type: single
+    tier: 2
+    pretest: true
+    stem: Which document lists every interface, IP, policy and route needed to build the solution?
+    options:
+      - { id: a, text: "LLD", correct: true }
+      - { id: b, text: "HLD", why_wrong: "The HLD explains the architecture and reasoning, not every setting." }
+      - { id: c, text: "SOW", why_wrong: "The SOW defines scope and responsibilities." }
+      - { id: d, text: "ATP", why_wrong: "The ATP defines acceptance tests." }
+    explanation: Low-level design = the build sheet.
+  - id: M11.01.q04
+    type: multi
+    tier: 2
+    pretest: true
+    stem: Which belong in the pre-checks of a FortiGate change window? Select all that apply.
+    options:
+      - { id: a, text: "Configuration backup / FortiManager revision", correct: true }
+      - { id: b, text: "Baseline outputs (status, performance, routes, sessions)", correct: true }
+      - { id: c, text: "Console or out-of-band access confirmed", correct: true }
+      - { id: d, text: "Clearing the session table", why_wrong: "That's disruptive, not a pre-check." }
+    explanation: Backup, baseline, console. Then start.
+  - id: M11.01.q05
+    type: single
+    tier: 2
+    stem: What makes a rollback plan usable at 2 a.m.?
+    options:
+      - { id: a, text: "A written trigger with a deadline, and exact steps back", correct: true }
+      - { id: b, text: "The engineer's experience", why_wrong: "Tired people need a script, not memory." }
+      - { id: c, text: "A vendor TAC case opened in advance", why_wrong: "Useful backup, but not a rollback plan." }
+      - { id: d, text: "A full factory reset procedure", why_wrong: "Too destructive; restore the backup or revision instead." }
+    explanation: Decide when and how you roll back before you start.
+  - id: M11.01.q06
+    type: single
+    tier: 2
+    stem: Which weekly status format do hiring managers usually want to hear?
+    options:
+      - { id: a, text: "Done, next, risks, decisions needed", correct: true }
+      - { id: b, text: "A full log of every command", why_wrong: "Too detailed for stakeholders." }
+      - { id: c, text: "Only when there's a problem", why_wrong: "Silence breeds surprise; report every week." }
+      - { id: d, text: "Hours spent per task", why_wrong: "Useful internally, not the status customers need." }
+    explanation: Short, predictable, decision-oriented.
+  - id: M11.01.q07
+    type: single
+    tier: 3
+    stem: Validation fails 20 minutes before the agreed go/no-go time. What do you do?
+    options:
+      - { id: a, text: "Try one targeted fix if time allows; at the go/no-go time, roll back as planned and communicate", correct: true }
+      - { id: b, text: "Keep troubleshooting until it works", why_wrong: "That's how windows overrun into business hours." }
+      - { id: c, text: "Roll back immediately without telling anyone", why_wrong: "Rollback is fine; skipping communication isn't." }
+      - { id: d, text: "Leave it half-done and fix it tomorrow", why_wrong: "Never leave production in an untested state." }
+    explanation: The go/no-go time is a commitment you made to the customer.
+  - id: M11.01.q08
+    type: single
+    tier: 3
+    stem: Which ATP test is most likely to catch an MTU/MSS problem on new tunnels?
+    options:
+      - { id: a, text: "A large file transfer through each tunnel", correct: true }
+      - { id: b, text: "A ping between sites", why_wrong: "Small pings pass even when large packets don't." }
+      - { id: c, text: "Checking the tunnel status page", why_wrong: "A tunnel can be up while large packets are dropped." }
+      - { id: d, text: "An NTP sync", why_wrong: "Tiny UDP packets." }
+    explanation: Small things pass; big things reveal MTU problems.
+  - id: M11.01.q09
+    type: single
+    tier: 3
+    stem: "A hiring manager asks: 'Have you led full Fortinet implementations end to end?' Best answer?"
+    options:
+      - { id: a, text: "An honest 'not as the named delivery owner', then the concrete pieces you've done and how you'd close the gap", correct: true }
+      - { id: b, text: "Yes, many", why_wrong: "Untrue claims collapse under follow-up questions." }
+      - { id: c, text: "No, I've only done support", why_wrong: "True but undersells real design, rollout and recovery work." }
+      - { id: d, text: "Change the subject to certifications", why_wrong: "Evasion is noticed." }
+    explanation: Honesty plus evidence plus a plan beats both bluffing and underselling.
+  - id: M11.01.q10
+    type: single
+    tier: 2
+    stem: What's the strongest way to deliver bad news to a customer sponsor?
+    options:
+      - { id: a, text: "What we found, the impact, options, and my recommendation with reasons", correct: true }
+      - { id: b, text: "Wait until you have a fix", why_wrong: "Late news destroys trust." }
+      - { id: c, text: "Explain whose fault it was", why_wrong: "Blame doesn't help the customer decide." }
+      - { id: d, text: "Send a long technical email", why_wrong: "Sponsors need impact and options." }
+    explanation: Bad news early, always with a plan.
+  - id: M11.01.q11
+    type: single
+    tier: 4
+    stem: A partner did half of a customer's deployment and left. The customer is frustrated and the renewal is near. Based on your own experience, what's the best first move?
+    options:
+      - { id: a, text: "Audit what was delivered against what was promised, then propose a staged plan to complete it with quick wins first", correct: true }
+      - { id: b, text: "Start over from scratch", why_wrong: "Wastes what works and delays value." }
+      - { id: c, text: "Escalate to the partner's management only", why_wrong: "The customer still has a half-done deployment." }
+      - { id: d, text: "Offer a discount", why_wrong: "Doesn't fix the deployment." }
+    explanation: "That's exactly what you did at Netskope: gap analysis, then staged completion as QA on the partner's work."
+  - id: M11.01.q12
+    type: single
+    tier: 4
+    stem: Mid-window, a routing change cuts off your SSH session to the FortiGate. The MOP was followed. What should have been in place?
+    options:
+      - { id: a, text: "Console or out-of-band access, checked in pre-checks, plus the rollback steps", correct: true }
+      - { id: b, text: "A second SSH session", why_wrong: "It's cut off by the same routing change." }
+      - { id: c, text: "A reboot schedule", why_wrong: "A reboot doesn't undo a saved bad config." }
+      - { id: d, text: "Nothing; wait for the route to recover", why_wrong: "Hope isn't a plan." }
+    explanation: You've recovered FortiGates over console after bad routing; make console part of every pre-check.
+  - id: M11.01.q13
+    type: single
+    tier: 5
+    stem: The customer's CISO wants SSL deep inspection on 3,000 endpoints in one go next week. Which plan shows PS maturity?
+    options:
+      - { id: a, text: "Pilot group, CA via GPO, exemptions for pinned and sensitive apps, waves with rollback, success criteria agreed", correct: true }
+      - { id: b, text: "Enable it for everyone at once to meet the date", why_wrong: "Breaks apps everywhere at once with no rollback path." }
+      - { id: c, text: "Refuse; deep inspection is too risky", why_wrong: "It's valuable; the task is doing it safely." }
+      - { id: d, text: "Use certificate inspection only, without telling the CISO", why_wrong: "Silently changing the requirement breaks trust." }
+    explanation: "Phased, reversible, agreed: your real rollout experience distributing the CA through Group Policy."
+  - id: M11.01.q14
+    type: single
+    tier: 3
+    stem: Which handover item most reduces post-project support calls?
+    options:
+      - { id: a, text: "Hands-on knowledge transfer where the customer's team performs the key tasks", correct: true }
+      - { id: b, text: "A 200-page PDF", why_wrong: "Rarely read." }
+      - { id: c, text: "Your personal phone number", why_wrong: "Doesn't scale or build their capability." }
+      - { id: d, text: "A list of FortiOS documentation links", why_wrong: "Useful, but not self-sufficiency." }
+    explanation: Doing beats reading.
+
+labs:
+  - id: M11.01.lab1
+    title: Fill in a MOP skeleton
+    goal: Complete the missing sections of a MOP for adding a VIP for a new web server.
+    worked:
+      config: |
+        CHANGE CHG-1042 · Window Sat 22:00–00:00 · Go/no-go 23:30
+        Contacts: PS consultant (you), customer network lead, approver: IT manager
+        PRE-CHECKS
+          1. Backup config / FortiManager revision "pre-CHG-1042"
+          2. Baseline: get system status, get system performance status,
+             get router info routing-table all, get system session status
+          3. Console access confirmed
+        STEPS
+          1. Create VIP WEB-NEW (extip 203.0.113.20 → 10.0.20.20 tcp/443)
+          2. Create policy wan1 → dmz, dst WEB-NEW, service HTTPS, IPS default, log all
+          3. Install (FortiManager install preview reviewed first)
+        VALIDATION
+          1. External HTTPS to 203.0.113.20 loads the site (customer confirms)
+          2. Debug flow shows "Allowed by Policy-<id>"
+          3. Logs reach FortiAnalyzer
+        ROLLBACK (trigger: validation fails at 23:30)
+          1. Restore revision "pre-CHG-1042"; confirm baseline matches
+        COMMUNICATION
+          Start / go-no-go / close messages to IT manager
+      notes:
+        - "Every step has an expected result someone can check."
+        - "The rollback has a trigger time, not a feeling."
+    faded:
+      prompt: Fill in the section names.
+      template: |
+        {{PRE-CHECKS}}
+          Backup, baseline, console
+        {{STEPS}}
+          Numbered changes with expected results
+        {{VALIDATION}}
+          Tests from the ATP, run with the customer
+        {{ROLLBACK}}
+          Trigger time and exact steps back
+        {{COMMUNICATION}}
+          Start, go/no-go, close
+    solo:
+      prompt: "Write the five headings of a MOP and, under ROLLBACK, a trigger and one restore step for a FortiManager-managed FortiGate."
+      required: ["pre-checks", "steps", "validation", "rollback", "communication", "trigger", "revision"]
+      solution: |
+        PRE-CHECKS / STEPS / VALIDATION / ROLLBACK / COMMUNICATION
+        ROLLBACK (trigger: any validation step fails at the 23:30 go/no-go)
+          1. Revert the device to FortiManager revision "pre-CHG" and install
+          2. Confirm baseline outputs match the pre-check capture
+  - id: M11.01.lab2
+    title: Write the ATP for a branch cutover
+    goal: List acceptance tests for moving a branch to a new FortiGate with an IPsec tunnel to HQ and one published service.
+    worked:
+      config: |
+        ATP-BR07
+        T1 Outbound web from staff VLAN → pass (FortiView shows sessions)
+        T2 Guest VLAN can't reach staff VLAN → blocked (log shows deny)
+        T3 Branch → HQ file share, 2 GB copy completes (MTU/MSS check)
+        T4 HQ → branch printer reachable (both directions of the tunnel)
+        T5 Published camera portal reachable from internet; blocked countries denied
+        T6 Logs visible in FortiAnalyzer within 5 minutes
+        T7 Admin access only from management subnet
+        Sign-off: customer IT lead ____  date ____
+      notes:
+        - "Each test: action, expected result, evidence, signature."
+        - "T3 catches MTU problems that pings miss."
+    solo:
+      prompt: "Write three acceptance tests for an HA pair: one for failover, one for failback, one for sessions."
+      required: ["failover", "failback", "session"]
+      solution: |
+        T1 Failover: unplug the primary's monitored WAN → secondary becomes primary within the agreed time; users keep browsing
+        T2 Failback: restore the link → cluster returns to the expected primary (per override settings); no outage beyond the agreed time
+        T3 Sessions: long-running download / SSH survives failover (session pickup enabled)
+
+scenarios:
+  - id: M11.01.sc1
+    kind: situation
+    tier: 4
+    title: The half-finished partner deployment
+    situation: |
+      You're assigned to a customer where a partner started a FortiGate + FortiManager deployment, configured half the branches, and stopped answering. The customer's IT director is angry and their renewal with Fortinet is in three months.
+    stakeholders: ["IT director (angry)", "Partner (absent)", "Fortinet account team"]
+    ask: What are your first two weeks?
+    right_thinking:
+      - "Listen first: the director's impact and expectations, without blaming the partner"
+      - "Audit: what the SOW promised vs what exists (FortiManager ADOMs, policy packages, branch status)"
+      - "Plan in stages: quick wins in week 1, risky items scheduled with MOPs"
+      - "Weekly status with done/next/risks/decisions; one owner per action"
+      - "Bring the account team in on the renewal risk with facts"
+    what: Gap audit plus staged completion plan, with visible quick wins.
+    why: Trust returns when the customer sees progress and predictability; staged delivery limits risk.
+    how: ["Listening session", "Gap audit vs SOW", "Staged plan", "Weekly status", "Account team alignment"]
+    pitfalls: ["Criticising the partner to the customer", "Rebuilding everything from scratch", "Promising dates before the audit"]
+    model_answer: |
+      "I did almost exactly this at Netskope: I took over partner PS projects that were only partly delivered and finished them in stages. Week one I'd listen to the director, then audit what the SOW promised against what's really in FortiManager and on the branches. I'd come back with a staged plan: quick wins first so they see progress, riskier changes in proper windows with MOPs. From then on, a weekly status with done, next, risks and decisions, and I'd keep the account team informed because the renewal depends on it."
+    could_have_added: ["Name a measurable first-week win (e.g., three branches finished and validated)"]
+    best_way: "Listen, audit against the SOW, then finish it in stages the customer can see. I've done this before, at Netskope."
+    rubric: ["empathy and listening", "audit", "staged plan", "communication cadence", "commercial awareness"]
+  - id: M11.01.sc2
+    kind: raid
+    tier: 5
+    title: "Raid: 01:40, the cutover is failing"
+    situation: |
+      You're migrating a hospital's core firewall to a FortiGate HA pair. Window 00:00–03:00, go/no-go at 02:15. At 01:40 everything works except the radiology PACS system, which can't reach its cloud archive. The night IT supervisor is nervous; the morning shift starts at 06:00.
+    ask: What do you do between 01:40 and 02:15?
+    right_thinking:
+      - "Communicate: tell the supervisor what works, what doesn't, and that 02:15 is the decision point"
+      - "Evidence: sniffer and debug flow for the PACS flow (policy? NAT? route? MTU on large images?)"
+      - "One targeted change at a time, each tested by the PACS user"
+      - "At 02:15 if not fixed: roll back as per the MOP, or (only if agreed) go live with a documented, approved workaround"
+      - "Write up the open issue and next step before you leave"
+    what: Time-boxed evidence-based fix with a firm rollback decision at go/no-go.
+    why: In healthcare, predictable rollback beats heroic overtime; the go/no-go time protects patient services.
+    how: ["Status to supervisor", "Debug flow / sniffer", "One change at a time", "Decision at 02:15", "Written handover"]
+    pitfalls: ["Blowing through the go/no-go time", "Several simultaneous changes", "Leaving without a written status"]
+    model_answer: |
+      "First I tell the supervisor: everything's up except PACS, I have 35 minutes to fix it, and at 02:15 we decide go or roll back. Then evidence: a filtered sniffer and debug flow on the PACS flow, because large medical images can also hit MTU limits. I make one targeted change at a time and have the PACS user test each. If it's not fixed at 02:15, we follow the MOP and roll back, unless the customer explicitly approves going live with a documented workaround. Either way, I leave a written status before the morning shift."
+    best_way: "One flow broken, 35 minutes, one change at a time, and at 02:15 we follow the plan, not our hopes."
+    rubric: ["communication", "evidence", "change discipline", "decision at go/no-go", "handover"]
+  - id: M11.01.sc3
+    kind: situation
+    tier: 3
+    title: Scope creep from the sponsor
+    situation: |
+      Two weeks before go-live, the customer's sponsor asks you to "also add ZTNA for the remote workers, since you're already here". It's not in the SOW and would affect the timeline.
+    ask: How do you respond in the meeting?
+    right_thinking:
+      - "Acknowledge the value of the idea"
+      - "Explain the impact on timeline and testing honestly"
+      - "Offer the path: a change request or a phase 2, scoped with pre-sales"
+      - "Keep the current go-live safe"
+    what: A phase 2 / change request instead of silent scope creep.
+    why: Untracked work threatens the agreed go-live and the quality of both deliveries.
+    how: ["Acknowledge", "Impact", "Change request / phase 2", "Protect go-live"]
+    model_answer: |
+      "That's a great next step, and ZTNA fits well with what we're building. If we add it now, it puts the go-live and the testing at risk. Let me raise it as a change request, or a phase 2, with the account team this week, so it's scoped and tested properly, and we keep your go-live date safe."
+    best_way: "Great idea, wrong week. Let's make it phase 2 so both projects land well."
+    rubric: ["acknowledge", "honest impact", "proper path", "protect commitments"]
+
+interview:
+  - id: I2.s01
+    stage: hm
+    question: Walk me through how you'd run a Fortinet implementation from kickoff to handover.
+    testing: Whether you know the PS lifecycle and its documents
+    framework: "Phases with one key output each"
+    model_answer: |
+      "Before the kickoff I read the SOW and talk to pre-sales, so I know what was promised and why. At kickoff we agree on scope, roles, timeline and how we communicate. In discovery I collect the current configs and the requirements, then I write the HLD for the architecture and the LLD with every setting. We build and test, ideally staged in FortiManager or in a lab; at Fortinet I reproduced customer scenarios with Terraform templates before recommending changes. Production changes go in windows with a MOP: pre-checks, steps, validation, rollback with a trigger time. Then the acceptance test plan with the customer, the as-built, and hands-on knowledge transfer."
+    could_have_added: ["Weekly status: done, next, risks, decisions"]
+    best_way: "Know the promise, design it, prove it in a lab, change it safely, prove it again with the customer, and leave them self-sufficient."
+    target: "1:30"
+  - id: I2.s02
+    stage: hm
+    question: Tell me about a project someone else started that you had to finish.
+    testing: Ownership, partner handling, quality judgement
+    framework: "STAR"
+    model_answer: |
+      "At Netskope, some partner professional-services projects were left half delivered. The customer had paid, adoption was stuck, and a renewal was coming. I audited what had actually been deployed against what was planned, then completed it in stages, quick wins first, effectively acting as the QA layer on the partner's work. The customer got to a working deployment, and I kept the partner relationship intact by focusing on the gaps, not on blame."
+    could_have_added: ["A number if you have it: adoption before and after, or time to complete"]
+    best_way: "I audited what was really there, finished it in stages, and kept the partner on side. In practice I was the QA on their PS work."
+    follow_ups: ["What would you do differently?", "How did you handle the partner?"]
+    target: "1:30"
+  - id: I2.s03
+    stage: hm
+    question: Tell me about a time you turned a hostile customer situation around.
+    testing: Composure, technical credibility, commercial awareness
+    framework: "STAR + strategic link"
+    model_answer: |
+      "At Netskope a named enterprise account escalated in a churn-shaped way; the relationship was hostile. Instead of treating it as a relationship problem, I went after the underlying technical issue, diagnosed and resolved it, and used that restored credibility to restructure the agreement as a license exchange rather than a cancellation. That kept more than 900 thousand dollars in total contract value. What I learned for PS: fix the real problem first and the relationship follows."
+    best_way: "I fixed the technical problem first; the trust came back with it, and we kept over 900k in contract value."
+    target: "1:30"
+  - id: I2.s04
+    stage: hm
+    question: Describe a rollout you planned that had to avoid disrupting users.
+    testing: Change discipline
+    framework: "STAR"
+    model_answer: |
+      "At Netskope one account was using less than half of what they'd bought. I worked out what was blocking a secure rollout, planned a one-month rollout step by step, and brought in senior support and a dedicated manager. Utilisation went from below 50 % to 70 %. And at Fortinet I taught customers how to roll out SSL deep inspection estate-wide by distributing the CA certificate through Group Policy, so users didn't get certificate errors."
+    best_way: "Find the real blocker, plan it step by step with the right people, and measure it: below 50 % to 70 % utilisation."
+    target: "1:30"
+  - id: I2.s05
+    stage: hm
+    question: Have you led full Fortinet implementations end to end?
+    testing: Honesty and self-awareness about the main gap
+    framework: "Honest answer → evidence of pieces → plan"
+    model_answer: |
+      "Not as the named delivery owner of a PS project. What I have done: at Fortinet I was a P3 escalation engineer, and many of my cases were implementations in progress: routing, failover, third-party switch integration, SD-WAN designs from requirements, HA in AWS and Azure, and recovering split-brain clusters. At Netskope I finished partners' half-delivered PS projects in stages. So I know the technology and the delivery steps; in my first 90 days I'd shadow your delivery process, use your templates and take ownership of smaller projects first."
+    could_have_added: ["Mention you're re-studying 7.6/8.0 right now with the official guides"]
+    best_way: "Not as the named owner, but I've done every piece of it, and here's how I'd close the gap in 90 days."
+    target: "1:30"
+  - id: I2.s06
+    stage: hm
+    question: Tell me about a time you worked with development or engineering to fix a product issue.
+    testing: Escalation quality
+    framework: "STAR"
+    model_answer: |
+      "At Fortinet a customer had packet duplication over SD-WAN across three ISPs over VPN. I reproduced it, traced it to specific SLA settings, and escalated to development with clear reproduction steps, then followed it to the fix. As one of the main escalation points for North American and Brazilian enterprise customers, that was my pattern: real defects went to development with evidence, not opinions."
+    best_way: "I reproduced it, narrowed it to specific SLA settings, and handed development a clean repro."
+    target: "1:15"
+  - id: I2.s07
+    stage: hm
+    question: How do you handle a customer who keeps adding scope?
+    testing: Scope management without damaging the relationship
+    framework: "Principle → script → example"
+    model_answer: |
+      "I welcome the idea and make it visible: 'great idea, let's raise it as a change request so it's scoped and tested properly'. Then I bring in the account team so it can become a change order or a phase 2. That protects the go-live date and the quality, and the customer feels heard, not refused."
+    best_way: "Great idea, let's make it a change request so it gets done right."
+    target: "0:45"
+  - id: I2.s08
+    stage: hm
+    question: What does your weakness look like at work?
+    testing: Self-awareness with improvement
+    framework: "Real weakness → impact → what you changed → result"
+    model_answer: |
+      "Early in my customer-facing roles I let work fragment across email, chat and CRM, and it was hard to keep one source of truth per account. I fixed it by building my own tooling, Python scripts and AI workflows that consolidate account activity and turn notes into action items, so nothing slips. In PS I'd apply the same discipline from day one: one project tracker, weekly status, and a risk register."
+    could_have_added: ["Keep it short; end on the system you use now"]
+    best_way: "I used to let tasks scatter; now I build systems so nothing slips: one tracker, weekly status, a risk register."
+    target: "1:00"
+  - id: I2.s09
+    stage: hm
+    question: How do you mentor or bring others up to speed?
+    testing: Team contribution
+    framework: "Examples from two jobs"
+    model_answer: |
+      "At SYKES, on Cisco TAC, I mentored new engineers through structured training. At Netskope I led new Customer Success Manager hires through onboarding and ramp, without a formal reporting line. And I write things down: at Netskope I wrote customer-facing KB articles and how-to guides. In PS that becomes good as-builts and knowledge transfer sessions where the customer's team does the work themselves."
+    best_way: "I've onboarded engineers and CSMs, and I write the guides people actually use."
+    target: "1:00"
+  - id: I2.s10
+    stage: hm
+    question: A change you made caused an outage. What happened and what did you learn?
+    testing: Accountability; works best with a real, small story
+    framework: "STAR with the lesson"
+    model_answer: |
+      "Use a real, small story of your own here. If you don't have one from your own changes, use the closest true one: at Fortinet I recovered FortiGates that customers had cut off with bad routing changes, over console, sometimes with a TFTP restore or a live static-route fix. What it taught me, and what I put in every MOP now, is console access and a tested rollback before any routing change."
+    could_have_added: ["Own your part clearly if it was your change; interviewers respect it"]
+    best_way: "Routing changes can lock you out. That's why console access and a tested rollback are in every MOP I write."
+    target: "1:15"
+  - id: I2.s11
+    stage: hm
+    question: How would you handle a technical disagreement with the customer's architect?
+    testing: Influence without authority
+    framework: "Listen → evidence → options → decision record"
+    model_answer: |
+      "First I make sure I understand their reasoning; often they know a constraint I don't. Then I bring evidence: the documentation, a lab test, or numbers. I present options with trade-offs and let the customer decide, and I write the decision down in the design so it's clear later. If it's a security risk, I make the risk explicit and get sign-off on it rather than quietly going along."
+    best_way: "Understand, test, present options, and write the decision down. Risks get a signature, not silence."
+    target: "1:00"
+  - id: I2.s12
+    stage: hm
+    question: Why would you be good at professional services specifically?
+    testing: Motivation and fit
+    framework: "Company strength → your skills → contribution"
+    model_answer: |
+      "Because I've seen the product from both sides. At Fortinet TAC I learned how FortiOS behaves when it breaks: debug flow, NAT, SD-WAN, HA, VPN. At Netskope I learned to own customers: plans, QBRs with executives, and finishing partner PS work that stalled. PS needs both: the depth to design and change things safely, and the customer skills to keep everyone aligned. And I work in English, Spanish and Portuguese and can travel anywhere."
+    best_way: "I know how FortiOS breaks and how customers feel when it does. PS is where those two meet."
+    target: "1:15"
+
+field_reports:
+  - id: M11.01.fr1
+    title: Breaches take longer when nobody owns the plan
+    body: |
+      IBM 2026 found detection and escalation plus lost business make up **63 %** of breach costs. The same is true in projects: most of the cost of a bad night is in the escalation and the lost trust, not the fix. A MOP with a go/no-go time is how you keep that cost near zero.
+    source: IBM Cost of a Data Breach Report 2026, Key findings
+  - id: M11.01.fr2
+    title: Customers are buying speed now
+    body: |
+      **85 %** of breached organisations in IBM's 2026 study plan to increase security spending in response to frontier AI threats, and three quarters plan more AI agents in triage and vulnerability management. PS consultants who deliver quickly and safely are what turns that budget into protection.
+    source: IBM Cost of a Data Breach Report 2026, Key findings

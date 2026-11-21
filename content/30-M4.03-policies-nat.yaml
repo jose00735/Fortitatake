@@ -1,0 +1,716 @@
+id: M4.03
+title: FortiGate firewall policies, objects and NAT
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 40
+est_sessions: 1
+objectives:
+  - Explain how FortiGate matches a new session to a policy, and what happens when nothing matches
+  - Explain why VIP policies match differently, and when to use match-vip
+  - Configure SNAT with the outgoing interface or an IP pool, and choose the right IP pool type
+  - Configure DNAT with VIPs, including port forwarding and hairpin NAT
+  - Explain central NAT, when to use it, and the planning a switch to it needs
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Policies (pp. 2094–2120), NGFW policy (p. 2121+), match-vip (pp. 2107–2108)"
+  - "FortiOS 8.0.2 Admin Guide: Source NAT, IP pools (pp. 2166–2176), Central SNAT (p. 2177+)"
+  - "FortiOS 8.0.2 Admin Guide: Destination NAT and static VIPs (pp. 2192–2200), Central DNAT (p. 2215), Hairpin NAT (pp. 2229–2231)"
+
+units:
+  - id: M4.03.u1
+    title: How a FortiGate matches a policy
+    tier: 1
+    est_min: 11
+    body: |
+      Every session through a FortiGate is tied to a policy. When the first packet arrives, FortiOS records the **incoming interface**, works out the **outgoing interface** from routing, and compares source, destination, **service** and **schedule** (time of day) with the policy table (Admin Guide, p. 2094).
+
+      ## The rules of the match
+
+      - Policies are evaluated **in sequence, top to bottom**, and the **first match wins**. The GUI's *By Sequence* view shows the exact order they are checked.
+      - A policy matches only if **every** field matches: incoming and outgoing interface, source address (and user/group or device if set), destination address, service and schedule.
+      - **Accept** lets the session be created (with NAT, security profiles, logging and so on). **Deny** blocks it.
+      - If nothing matches, the **implicit deny** at the bottom drops the traffic. You add an explicit deny policy when you want to **log** those violations.
+
+      Because routing decides the outgoing interface **before** the policy lookup, a "policy problem" is often a routing problem: the packet is evaluated against the wrong interface pair.
+
+      ## Objects
+
+      Policies reference objects, not raw IPs: address objects and groups (subnet, range, FQDN, geography, dynamic/fabric objects), **ISDB** (Internet Service Database) entries for cloud services, service objects and groups, schedules, users and groups. Good object hygiene (clear names, groups, comments) is half of a maintainable firewall, and the first thing a PS consultant cleans up in a migration.
+
+      :::recall
+      Q: Traffic matches no policy. What happens, and how do you get it logged?
+      A: The implicit deny drops it. Add an explicit deny policy with logging enabled to record the violations.
+      :::
+
+      :::why
+      Q: Why can a perfectly written policy never be hit?
+      A: Because a broader policy above it matches first, or because routing sends the traffic to a different outgoing interface than the policy expects.
+      :::
+
+      :::tip
+      On a call, read the policy table in *By Sequence* view, top to bottom, with the 5-tuple of the failing flow in front of you. Then confirm with debug flow, which names the policy ID that matched or says "policy 0" (implicit deny).
+      :::
+  - id: M4.03.u2
+    title: VIPs, DNAT and the match-vip trap
+    tier: 2
+    est_min: 12
+    body: |
+      A **virtual IP (VIP)** is FortiOS's DNAT object: it maps an external IP (and optionally a port range) to an internal IP (Admin Guide, p. 2197).
+
+      - **Static NAT VIP:** the whole port range maps one-to-one.
+      - **Port forwarding VIP** (`set portforward enable`): only specific ports map, so one public IP can publish several servers on different ports.
+      - You use the VIP as the **destination** of an accept policy from the outside interface.
+
+      :::cli
+      config firewall vip
+          edit "WebServer_VIP_Services"
+              set service "TCP_8080-8082"
+              set extip 10.1.100.199
+              set extintf "any"
+              set portforward enable
+              set mappedip "172.16.200.55"
+              set mappedport 80
+          next
+      end
+      :::
+
+      ## Why deny policies "don't work" against a published server
+
+      FortiGate matches policies with VIPs **differently**: policies with a VIP applied have **priority over typical policies** (Admin Guide, p. 2108). So a deny policy placed above the VIP policy, with destination "all", can be skipped and the blocked sources still reach the server.
+
+      The fix is **`set match-vip enable`** on the deny policy, so it also matches traffic headed to VIPs. New deny policies have match-vip **enabled by default**, and it can't be enabled on accept policies. Another option is a separate VIP with `src-filter` used in a deny policy above the accept one.
+
+      :::recall
+      Q: What does `match-vip` do on a deny policy?
+      A: It makes the deny policy match traffic destined to VIPs too, so it can block sources from reaching a published server.
+      :::
+
+      :::why
+      Q: Why would a customer's geo-block deny policy fail to stop attacks against their web server?
+      A: If match-vip is disabled on that deny policy, VIP traffic skips it because VIP policies have priority. Enable match-vip.
+      :::
+
+      :::threat ref=dbir-2026-vuln-exploitation-31pct
+      Published servers are where vulnerability exploitation (31 % of known initial access vectors in the 2026 DBIR) lands. Every VIP policy deserves IPS, a source restriction where possible, and a named owner for patching.
+      :::
+  - id: M4.03.u3
+    title: SNAT and IP pools
+    tier: 2
+    est_min: 12
+    body: |
+      Outbound SNAT is enabled per policy (unless central NAT is on). The simplest form is **NAT with the outgoing interface address**. By default **source port translation** is *When port conflicts*: FortiGate keeps the original source port unless it collides (Admin Guide, p. 2167).
+
+      **IP pools** let sessions use addresses other than the interface IP. FortiOS has four IPv4 types (Admin Guide, pp. 2167–2170):
+
+      | Type | What it does | When to use |
+      |---|---|---|
+      | **Overload** | Many users share the pool IPs with PAT; about 60,416 ports per IP per destination service | Default choice for internet access |
+      | **One-to-one** | Each inside IP gets its own outside IP; no PAT | Few hosts that need a stable, unique public IP |
+      | **Fixed port range** | Defines internal *and* external ranges; each inside IP gets a predictable port range | When you must trace a public IP:port back to a user without per-session logs |
+      | **Port block allocation (PBA)** | Hands out blocks of ports per user (block size × blocks per user) | Carrier-grade and large guest networks; fewer NAT logs |
+
+      With an overload pool of several IPs, FortiOS picks the IP deterministically from the source IP (source IP as a number, modulo the pool size), so a given client keeps the same public IP.
+
+      :::cli
+      config firewall ippool
+          edit "Overload-ippool"
+              set type overload
+              set startip 172.16.200.1
+              set endip 172.16.200.2
+          next
+      end
+      :::
+
+      Then, in the policy: `set nat enable` and `set ippool enable` with `set poolname "Overload-ippool"`.
+
+      :::recall
+      Q: Which IP pool type lets you know which internal IP used a public IP and port, without logging every session?
+      A: Fixed port range (each inside IP has a fixed port range). Port block allocation also reduces logging by logging blocks.
+      :::
+
+      :::why
+      Q: Why does a one-to-one pool with two public IPs only serve two users at a time?
+      A: One-to-one has no port translation; each inside IP needs its own outside IP.
+      :::
+  - id: M4.03.u4
+    title: Central NAT, hairpin NAT and how to change NAT safely
+    tier: 3
+    est_min: 12
+    body: |
+      ## Central NAT
+
+      By default NAT lives inside each policy. **Central NAT** moves it into its own ordered tables (Admin Guide, p. 2177):
+
+      - Enable with `config system settings` → `set central-nat enable`. **It isn't enabled by default.**
+      - Once enabled, the NAT option in IPv4 policies is **skipped**. SNAT must be done in the **central SNAT** table (`central-snat-map`), read **top-down** until a rule matches, and applied after the security policy.
+      - DNAT moves to the **DNAT & Virtual IPs** page (Central DNAT).
+      - In **policy-based NGFW mode**, central SNAT is assumed to be enabled implicitly.
+
+      Why customers choose it: large rule bases and migrations from vendors that already separate NAT from security rules, because translation can be reviewed in one place. Why it needs planning: switching it on or off changes how every policy behaves, so it is a **maintenance-window change** with a tested rollback (configuration backup) and an acceptance test for every published service.
+
+      ## Hairpin NAT
+
+      Inside users reaching an inside server by its public name need hairpin NAT. FortiOS's example (Admin Guide, pp. 2229–2231) has four steps:
+
+      1. Create a VIP mapping the external IP to the internal server.
+      2. Create a DNAT policy using that VIP.
+      3. Create a SNAT policy so inside users reach the external address and the return traffic comes back through the FortiGate.
+      4. Verify from inside and outside.
+
+      Split DNS is the alternative when the customer controls internal DNS.
+
+      :::delta
+      FortiOS 7.6.5 and later: `allow-traffic-redirect` (global) is **disabled by default**, and it is disabled after upgrading even if it was enabled before. Traffic that must leave through the interface it arrived on then needs a matching IPv4 policy (Admin Guide, p. 2107). Check this on hairpin and one-arm designs after upgrades.
+      :::
+
+      :::ps
+      In a migration from another vendor, decide **policy NAT vs central NAT in discovery**, not during cutover. Write it in the low-level design, and list every VIP with its test case in the acceptance test plan.
+      :::
+
+      :::recall
+      Q: With central NAT enabled, where do you configure outbound SNAT?
+      A: In the central SNAT table (central-snat-map), not in the firewall policy.
+      :::
+
+cards:
+  - { id: M4.03.c01, unit: M4.03.u1, tier: 1, front: "In what order does FortiGate evaluate firewall policies?", back: "In sequence, top to bottom; the first full match wins." }
+  - { id: M4.03.c02, unit: M4.03.u1, tier: 1, front: "What happens to traffic that matches no policy?", back: "The implicit deny drops it." }
+  - { id: M4.03.c03, unit: M4.03.u1, tier: 2, front: "Why add an explicit deny policy at the bottom?", back: "To log the denied (violation) traffic; the implicit deny alone doesn't give you those logs.", source: "FortiOS 8.0.2 Admin Guide p. 2094" }
+  - { id: M4.03.c04, unit: M4.03.u1, tier: 1, front: "Fields a policy must match?", back: "Incoming and outgoing interface, source, destination, service, schedule (plus users/devices if set)." }
+  - { id: M4.03.c05, unit: M4.03.u1, tier: 2, front: "Which GUI view shows policies in the exact order they are checked?", back: "By Sequence." }
+  - { id: M4.03.c06, unit: M4.03.u1, tier: 2, front: "Why is a 'policy problem' often a routing problem?", back: "Routing picks the outgoing interface before the policy lookup, so the wrong route makes FortiGate check the wrong interface pair." }
+  - { id: M4.03.c07, unit: M4.03.u2, tier: 1, front: "Static NAT VIP vs port forwarding VIP?", back: "Static: whole port range maps 1:1. Port forwarding: only specified ports map (set portforward enable)." }
+  - { id: M4.03.c08, unit: M4.03.u2, tier: 2, front: "Do VIP policies match like normal policies?", back: "No: policies with a VIP applied have priority over typical policies.", source: "FortiOS 8.0.2 Admin Guide p. 2108" }
+  - { id: M4.03.c09, unit: M4.03.u2, tier: 2, front: "What does `set match-vip enable` do?", back: "Lets a deny policy also match traffic destined to VIPs." }
+  - { id: M4.03.c10, unit: M4.03.u2, tier: 2, front: "Default match-vip on new deny policies? Can accept policies use it?", back: "Enabled by default on deny; it can't be enabled on accept policies." }
+  - { id: M4.03.c11, unit: M4.03.u2, tier: 3, front: "Second way to block certain sources from a VIP?", back: "A VIP with `src-filter` used in a deny policy above the accept policy." }
+  - { id: M4.03.c12, unit: M4.03.u3, tier: 1, front: "Four FortiOS IPv4 IP pool types?", back: "Overload, one-to-one, fixed port range, port block allocation." }
+  - { id: M4.03.c13, unit: M4.03.u3, tier: 2, front: "Default source port translation for interface SNAT?", back: "When port conflicts: keep the original port unless it collides.", source: "FortiOS 8.0.2 Admin Guide p. 2167" }
+  - { id: M4.03.c14, unit: M4.03.u3, tier: 2, front: "Which IP pool type has no port translation?", back: "One-to-one." }
+  - { id: M4.03.c15, unit: M4.03.u3, tier: 3, front: "Which pool types define both internal and external ranges?", back: "Fixed port range (internal and external ranges); overload and one-to-one only need the external range." }
+  - { id: M4.03.c16, unit: M4.03.u3, tier: 3, front: "PBA parameters?", back: "Block size (ports per block) and blocks per user, plus the external IP range." }
+  - { id: M4.03.c17, unit: M4.03.u4, tier: 1, front: "CLI to enable central NAT?", back: "`config system settings` → `set central-nat enable`." }
+  - { id: M4.03.c18, unit: M4.03.u4, tier: 2, front: "With central NAT on, what happens to the NAT option in policies?", back: "It's skipped; SNAT must be done in central-snat-map." }
+  - { id: M4.03.c19, unit: M4.03.u4, tier: 2, front: "Where does DNAT live with central NAT enabled?", back: "Policy & Objects > DNAT & Virtual IPs (Central DNAT)." }
+  - { id: M4.03.c20, unit: M4.03.u4, tier: 3, front: "Which NGFW mode implies central SNAT?", back: "Policy-based NGFW mode." }
+  - { id: M4.03.c21, unit: M4.03.u4, tier: 3, front: "Four steps of FortiOS's hairpin NAT example?", back: "Create the VIP, a DNAT policy with it, a SNAT policy for inside users, then verify." }
+  - { id: M4.03.c22, unit: M4.03.u4, tier: 3, front: "allow-traffic-redirect default since FortiOS 7.6.5?", back: "Disabled, even after upgrade if previously enabled.", source: "FortiOS 8.0.2 Admin Guide p. 2107" }
+
+quiz:
+  - id: M4.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Policy 5 allows LAN → WAN HTTPS. Policy 2, above it, denies LAN → WAN for the same source. What happens to the HTTPS traffic?
+    options:
+      - { id: a, text: "It's denied, because policy 2 matches first", correct: true }
+      - { id: b, text: "It's allowed, because accept beats deny", why_wrong: "There's no precedence by action; order decides." }
+      - { id: c, text: "It's allowed, because the more specific service wins", why_wrong: "FortiGate doesn't pick the most specific policy; it takes the first match." }
+      - { id: d, text: "Both policies are logged and the session is reset", why_wrong: "Only the first matching policy applies." }
+    explanation: Top-down, first match.
+  - id: M4.03.q02
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which FortiOS object performs destination NAT?
+    options:
+      - { id: a, text: "Virtual IP (VIP)", correct: true }
+      - { id: b, text: "IP pool", why_wrong: "IP pools are for source NAT." }
+      - { id: c, text: "Address group", why_wrong: "Address groups only group addresses; they don't translate." }
+      - { id: d, text: "Zone", why_wrong: "Zones group interfaces." }
+    explanation: VIPs map external addresses to internal ones.
+  - id: M4.03.q03
+    type: single
+    tier: 2
+    pretest: true
+    stem: A deny policy for a list of bad IPs sits above the VIP policy for the web server, yet those IPs still reach the server. Most likely cause?
+    options:
+      - { id: a, text: "match-vip is disabled on the deny policy, and VIP policies have priority", correct: true }
+      - { id: b, text: "Deny policies can't be placed above accept policies", why_wrong: "They can, and order normally matters." }
+      - { id: c, text: "The VIP needs `set portforward enable`", why_wrong: "Port forwarding changes which ports map, not whether denies match." }
+      - { id: d, text: "The deny policy needs NAT enabled", why_wrong: "NAT is irrelevant for a deny policy." }
+    explanation: Enable match-vip on the deny policy (or use a src-filter VIP in a deny policy).
+    source: FortiOS 8.0.2 Admin Guide pp. 2107–2108
+  - id: M4.03.q04
+    type: single
+    tier: 2
+    pretest: true
+    stem: With central NAT enabled, where is outbound SNAT configured?
+    options:
+      - { id: a, text: "In the central SNAT table", correct: true }
+      - { id: b, text: "In each firewall policy's NAT setting", why_wrong: "That option is skipped when central NAT is on." }
+      - { id: c, text: "On the outgoing interface", why_wrong: "Interfaces don't hold SNAT rules." }
+      - { id: d, text: "In the VIP", why_wrong: "VIPs do DNAT." }
+    explanation: Central NAT separates translation into central-snat-map.
+    source: FortiOS 8.0.2 Admin Guide p. 2177
+  - id: M4.03.q05
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which IP pool type should a branch normally use for internet access?
+    options:
+      - { id: a, text: "Overload", correct: true }
+      - { id: b, text: "One-to-one", why_wrong: "Needs one public IP per user." }
+      - { id: c, text: "Fixed port range", why_wrong: "Used when you need deterministic IP:port tracing, not by default." }
+      - { id: d, text: "Port block allocation", why_wrong: "Mostly carrier-grade or very large guest networks." }
+    explanation: Overload is the general PAT case.
+  - id: M4.03.q06
+    type: multi
+    tier: 1
+    stem: Which fields must all match for a FortiGate firewall policy to match a new session? Select all that apply.
+    options:
+      - { id: a, text: "Incoming interface", correct: true }
+      - { id: b, text: "Outgoing interface", correct: true }
+      - { id: c, text: "Service", correct: true }
+      - { id: d, text: "Schedule", correct: true }
+      - { id: e, text: "Source MAC vendor", why_wrong: "Not a standard policy match field." }
+    explanation: Interfaces, addresses, service and schedule (plus users/devices when set).
+    source: FortiOS 8.0.2 Admin Guide p. 2094
+  - id: M4.03.q07
+    type: single
+    tier: 2
+    stem: What is the default source port translation when you enable NAT with the outgoing interface address?
+    options:
+      - { id: a, text: "When port conflicts", correct: true }
+      - { id: b, text: "Always", why_wrong: "Always is an option, not the default." }
+      - { id: c, text: "Never", why_wrong: "Never is an option, not the default." }
+      - { id: d, text: "Random per packet", why_wrong: "Ports are chosen per session, not per packet." }
+    explanation: FortiGate keeps the original source port unless it collides.
+    source: FortiOS 8.0.2 Admin Guide p. 2167
+  - id: M4.03.q08
+    type: single
+    tier: 2
+    stem: "One public IP must publish HTTPS for server A and SSH for server B. Which VIP setting makes this possible?"
+    options:
+      - { id: a, text: "Port forwarding (`set portforward enable`) with per-port mappings", correct: true }
+      - { id: b, text: "Two static NAT VIPs on the same external IP", why_wrong: "Static NAT maps the whole port range; two would overlap." }
+      - { id: c, text: "An overload IP pool", why_wrong: "IP pools are SNAT." }
+      - { id: d, text: "Central SNAT", why_wrong: "SNAT doesn't publish servers." }
+    explanation: Port-forwarding VIPs map specific ports, so one IP can front several servers.
+  - id: M4.03.q09
+    type: single
+    tier: 2
+    stem: Can you enable match-vip on an accept policy?
+    options:
+      - { id: a, text: "No, it's only for deny policies", correct: true }
+      - { id: b, text: "Yes, and it's enabled by default", why_wrong: "The guide states it can't be enabled when the action is accept." }
+      - { id: c, text: "Yes, but only with central NAT", why_wrong: "Central NAT doesn't change this." }
+      - { id: d, text: "Only in policy-based NGFW mode", why_wrong: "Not a mode-dependent option." }
+    explanation: match-vip is a deny-policy option; it's enabled by default on new deny policies.
+    source: FortiOS 8.0.2 Admin Guide p. 2108
+  - id: M4.03.q10
+    type: single
+    tier: 3
+    stem: A customer needs to identify which internal user was behind public IP 203.0.113.5 port 40112 last Tuesday, but they don't keep per-session NAT logs. Which IP pool type should they have used?
+    options:
+      - { id: a, text: "Fixed port range", correct: true }
+      - { id: b, text: "Overload", why_wrong: "Port use is dynamic; without logs you can't map it back." }
+      - { id: c, text: "One-to-one", why_wrong: "Works for tracing but needs one public IP per user." }
+      - { id: d, text: "No NAT", why_wrong: "Private addresses can't go to the internet." }
+    explanation: Fixed port range maps each internal IP to a known port range, so IP:port can be traced deterministically.
+  - id: M4.03.q11
+    type: order
+    tier: 3
+    stem: Order the FortiOS hairpin NAT configuration steps from the guide.
+    items: ["Create a VIP mapping the external IP to the internal server", "Create a DNAT firewall policy with the VIP", "Create a SNAT policy for internal users", "Verify access from inside and outside"]
+    explanation: VIP, DNAT policy, SNAT policy, verify.
+    source: FortiOS 8.0.2 Admin Guide p. 2231
+  - id: M4.03.q12
+    type: single
+    tier: 3
+    stem: Which statement about central NAT is correct?
+    options:
+      - { id: a, text: "It's disabled by default and, once enabled, NAT settings in IPv4 policies are skipped", correct: true }
+      - { id: b, text: "It's enabled by default on all models", why_wrong: "The guide states it isn't enabled by default." }
+      - { id: c, text: "It only affects DNAT", why_wrong: "It moves SNAT to central-snat-map and DNAT to the DNAT & Virtual IPs page." }
+      - { id: d, text: "Central SNAT rules are applied before the security policy", why_wrong: "They are applied after the security policy." }
+    explanation: Disabled by default; SNAT moves to the central table, read top-down, applied after the security policy.
+    source: FortiOS 8.0.2 Admin Guide p. 2177
+  - id: M4.03.q13
+    type: numeric
+    tier: 3
+    stem: "A port block allocation pool uses block size 128. How many blocks fit in one external IP's 60,416 ports? (whole number)"
+    answer: 472
+    explanation: 60,416 / 128 = 472 (the guide's own example).
+    source: FortiOS 8.0.2 Admin Guide p. 2170
+  - id: M4.03.q14
+    type: numeric
+    tier: 3
+    stem: Same pool, 8 blocks per user. What's the maximum number of ports one internal IP can use?
+    answer: 1024
+    explanation: 128 × 8 = 1,024.
+    source: FortiOS 8.0.2 Admin Guide p. 2170
+  - id: M4.03.q15
+    type: single
+    tier: 4
+    stem: "After upgrading to FortiOS 7.6.5, a one-arm design where traffic leaves the interface it arrived on starts dropping. What changed?"
+    options:
+      - { id: a, text: "allow-traffic-redirect is now disabled by default, so the traffic needs a matching IPv4 policy", correct: true }
+      - { id: b, text: "Central NAT was enabled by the upgrade", why_wrong: "Upgrades don't enable central NAT." }
+      - { id: c, text: "match-vip was disabled on all policies", why_wrong: "Not a documented upgrade change." }
+      - { id: d, text: "The routing table was flushed", why_wrong: "Routes persist across upgrades." }
+    explanation: The guide notes the default change and that it applies after upgrade even if previously enabled. Add a policy (and disable anti-replay for such TCP traffic if needed).
+    source: FortiOS 8.0.2 Admin Guide p. 2107
+  - id: M4.03.q16
+    type: single
+    tier: 4
+    stem: "Debug flow for a blocked flow says `Denied by forward policy check (policy 0)`. What does that mean?"
+    options:
+      - { id: a, text: "No configured policy matched; the implicit deny dropped it", correct: true }
+      - { id: b, text: "Policy 0 is the first policy in the table", why_wrong: "Policy IDs start at 1; 0 is the implicit deny." }
+      - { id: c, text: "An IPS signature blocked it", why_wrong: "IPS blocks show differently in logs and debug." }
+      - { id: d, text: "The route lookup failed", why_wrong: "A route failure gives a different message." }
+    explanation: Policy 0 is the implicit deny. Check interfaces (routing), addresses, service and schedule of the policy you expected.
+  - id: M4.03.q17
+    type: single
+    tier: 4
+    stem: "A new LAN → WAN policy never gets hits. Debug flow shows the traffic arriving on `lan` and the route lookup choosing `vpn-hq`. What's wrong?"
+    options:
+      - { id: a, text: "Routing sends the traffic to vpn-hq, so FortiGate looks for a lan → vpn-hq policy, not lan → wan", correct: true }
+      - { id: b, text: "The policy must be moved to the top", why_wrong: "Order doesn't help when the interface pair doesn't match." }
+      - { id: c, text: "NAT must be disabled", why_wrong: "NAT doesn't decide the outgoing interface." }
+      - { id: d, text: "The schedule is wrong", why_wrong: "The evidence points to the outgoing interface." }
+    explanation: The outgoing interface comes from routing before the policy lookup. Fix the route (or add the right policy if the routing is intended).
+  - id: M4.03.q18
+    type: single
+    tier: 5
+    stem: A customer migrating 900 Check Point rules wants to keep NAT reviewable separately from security rules. They plan to "just flip central NAT on" during cutover night. Your advice?
+    options:
+      - { id: a, text: "Decide central NAT in design, build and test the central SNAT/DNAT tables before cutover, and keep a config backup as rollback", correct: true }
+      - { id: b, text: "Flip it during cutover; it's one command", why_wrong: "It changes how every policy behaves; doing it untested on cutover night is high risk." }
+      - { id: c, text: "Avoid central NAT; it isn't supported in production", why_wrong: "It's a supported, documented feature." }
+      - { id: d, text: "Use policy NAT now and switch later without testing", why_wrong: "Switching later still changes behaviour for every policy." }
+    explanation: Central NAT is a design decision with a test plan, not a cutover toggle.
+  - id: M4.03.q19
+    type: single
+    tier: 2
+    stem: With an overload IP pool of several IPs, how does FortiOS choose which public IP a client gets?
+    options:
+      - { id: a, text: "Deterministically from the source IP (source IP as a number, modulo the pool size)", correct: true }
+      - { id: b, text: "Randomly per session", why_wrong: "The guide shows a deterministic calculation." }
+      - { id: c, text: "Round robin per packet", why_wrong: "Per-packet changes would break sessions." }
+      - { id: d, text: "Always the first IP until it is full", why_wrong: "That's not how overload pools assign IPs." }
+    explanation: The guide's formula is Y = P1 + X mod R1, so a client keeps the same public IP.
+    source: FortiOS 8.0.2 Admin Guide pp. 2167–2168
+  - id: M4.03.q20
+    type: single
+    tier: 3
+    stem: What does the guide say policy-based NGFW mode implies about NAT?
+    options:
+      - { id: a, text: "Central SNAT is assumed to be enabled implicitly", correct: true }
+      - { id: b, text: "NAT isn't supported", why_wrong: "NAT works; it's done centrally." }
+      - { id: c, text: "Only one-to-one IP pools are allowed", why_wrong: "No such restriction." }
+      - { id: d, text: "VIPs are disabled", why_wrong: "DNAT is still available." }
+    explanation: In policy-based NGFW mode, central SNAT is implicit.
+    source: FortiOS 8.0.2 Admin Guide p. 2177
+  - id: M4.03.q21
+    type: single
+    tier: 4
+    stem: Inside users can't reach the intranet portal by its public name; outside users can. There's a VIP policy WAN → DMZ only. Which addition from the FortiOS hairpin example fixes it?
+    options:
+      - { id: a, text: "A policy from the internal interface using the VIP, plus SNAT so replies return through the FortiGate", correct: true }
+      - { id: b, text: "A second VIP with a different external IP", why_wrong: "The issue is the inside policy and return path, not the IP." }
+      - { id: c, text: "Disable match-vip", why_wrong: "Unrelated to inside users reaching a VIP." }
+      - { id: d, text: "A static route to the public IP", why_wrong: "The public IP is the FortiGate's own." }
+    explanation: Hairpin needs the inside → VIP path allowed and SNAT so the server answers through the FortiGate. Split DNS is the alternative.
+
+labs:
+  - id: M4.03.lab1
+    title: Publish a web server with a port-forwarding VIP
+    goal: Publish 172.16.200.55:80 as 10.1.100.199 on TCP 8080–8082 (FortiOS guide example) and allow it from wan1.
+    worked:
+      config: |
+        config firewall vip
+            edit "WebServer_VIP_Services"
+                set service "TCP_8080-8082"
+                set extip 10.1.100.199
+                set extintf "any"
+                set portforward enable
+                set mappedip "172.16.200.55"
+                set mappedport 80
+            next
+        end
+        config firewall policy
+            edit 30
+                set name "Publish-Web"
+                set srcintf "wan1"
+                set dstintf "dmz"
+                set srcaddr "all"
+                set dstaddr "WebServer_VIP_Services"
+                set action accept
+                set schedule "always"
+                set service "ALL"
+                set utm-status enable
+                set ips-sensor "default"
+                set logtraffic all
+            next
+        end
+      notes:
+        - "The VIP is the destination address of the policy."
+        - "Add IPS on every published service; restrict srcaddr when the customer knows who connects."
+        - "Test from outside, and from inside only if hairpin NAT is configured."
+    faded:
+      template: |
+        config firewall {{vip}}
+            edit "WebServer_VIP_Services"
+                set extip 10.1.100.199
+                set {{portforward}} enable
+                set {{mappedip}} "172.16.200.55"
+                set mappedport {{80}}
+            next
+        end
+    solo:
+      prompt: "Publish SSH on external IP 203.0.113.10 port 2222 to internal 10.0.10.30 port 22 (VIP name SSH-JUMP, external interface wan1)."
+      required: ["config firewall vip", "edit ssh-jump", "set extip 203.0.113.10", "set extintf wan1", "set portforward enable", "set mappedip 10.0.10.30", "set extport 2222", "set mappedport 22"]
+      solution: |
+        config firewall vip
+            edit "SSH-JUMP"
+                set extip 203.0.113.10
+                set extintf "wan1"
+                set portforward enable
+                set mappedip "10.0.10.30"
+                set extport 2222
+                set mappedport 22
+            next
+        end
+      notes: "Then reference SSH-JUMP as the destination of a wan1 → lan accept policy, ideally limited to known source IPs."
+  - id: M4.03.lab2
+    title: Outbound SNAT with an overload IP pool
+    goal: Make LAN users leave wan1 from pool 172.16.200.1–172.16.200.2 instead of the interface IP.
+    worked:
+      config: |
+        config firewall ippool
+            edit "Overload-ippool"
+                set type overload
+                set startip 172.16.200.1
+                set endip 172.16.200.2
+            next
+        end
+        config firewall policy
+            edit 10
+                set srcintf "lan"
+                set dstintf "wan1"
+                set srcaddr "LAN-NET"
+                set dstaddr "all"
+                set action accept
+                set schedule "always"
+                set service "ALL"
+                set nat enable
+                set ippool enable
+                set poolname "Overload-ippool"
+            next
+        end
+      notes:
+        - "Overload = PAT across the pool's IPs."
+        - "The ISP must route the pool IPs to the FortiGate (or they must be in the WAN subnet)."
+        - "Each client keeps the same pool IP (source IP mod pool size)."
+    faded:
+      template: |
+        config firewall ippool
+            edit "Overload-ippool"
+                set type {{overload}}
+                set {{startip}} 172.16.200.1
+                set endip 172.16.200.2
+            next
+        end
+        config firewall policy
+            edit 10
+                set nat {{enable}}
+                set {{ippool}} enable
+                set poolname "Overload-ippool"
+            next
+        end
+    solo:
+      prompt: "Create a one-to-one IP pool ONE2ONE for 198.51.100.10–198.51.100.11 and apply it to policy 12."
+      required: ["config firewall ippool", "edit one2one", "set type one-to-one", "set startip 198.51.100.10", "set endip 198.51.100.11", "edit 12", "set nat enable", "set ippool enable", "set poolname one2one"]
+      solution: |
+        config firewall ippool
+            edit "ONE2ONE"
+                set type one-to-one
+                set startip 198.51.100.10
+                set endip 198.51.100.11
+            next
+        end
+        config firewall policy
+            edit 12
+                set nat enable
+                set ippool enable
+                set poolname "ONE2ONE"
+            next
+        end
+  - id: M4.03.lab3
+    title: Block bad sources in front of a published server
+    goal: Deny the address group BLOCKLIST from reaching the VIP policy on wan1, using match-vip.
+    worked:
+      config: |
+        config firewall policy
+            edit 1
+                set name "deny-policy-1"
+                set srcintf "wan1"
+                set dstintf "lan1"
+                set srcaddr "BLOCKLIST"
+                set dstaddr "all"
+                set action deny
+                set schedule "always"
+                set service "ALL"
+                set match-vip enable
+            next
+        end
+      notes:
+        - "Place it above the VIP accept policy."
+        - "match-vip is on by default for new deny policies; check it wasn't turned off."
+        - "Log the deny policy to show the customer what it blocks."
+    solo:
+      prompt: "Write deny policy 3 from wan1 to dmz for source GEO-BLOCK, any destination, all services, that also matches VIP traffic and logs it."
+      required: ["config firewall policy", "edit 3", "set srcintf wan1", "set dstintf dmz", "set srcaddr geo-block", "set action deny", "set match-vip enable", "set logtraffic all"]
+      solution: |
+        config firewall policy
+            edit 3
+                set srcintf "wan1"
+                set dstintf "dmz"
+                set srcaddr "GEO-BLOCK"
+                set dstaddr "all"
+                set action deny
+                set schedule "always"
+                set service "ALL"
+                set match-vip enable
+                set logtraffic all
+            next
+        end
+
+scenarios:
+  - id: M4.03.sc1
+    kind: situation
+    tier: 4
+    title: The geo-block that didn't block
+    situation: |
+      A healthcare customer's CISO asked to block all traffic from three countries. Their admin added a deny policy with GEO addresses at the top. A week later their published patient portal still shows logins from those countries.
+    stakeholders: ["CISO", "Firewall admin", "Compliance officer"]
+    ask: Explain what happened in plain words and fix it.
+    right_thinking:
+      - "Check the deny policy's match-vip setting and its position relative to the VIP policy"
+      - "Explain: VIP policies have priority, so without match-vip the deny never sees portal traffic"
+      - "Fix: enable match-vip (or a src-filter VIP in a deny policy); log the deny"
+      - "Validate with logs: deny hits from those countries, no more portal sessions"
+      - "Report to CISO: impact window, fix, evidence, and an audit of other deny policies"
+    what: Enable match-vip on the geo deny policy and prove it with logs.
+    why: Policies with VIPs have priority over typical policies; match-vip lets a deny policy cover VIP traffic.
+    how: ["show the deny policy config", "set match-vip enable", "log it", "check FortiView / logs", "audit other deny policies"]
+    pitfalls: ["Moving the deny policy around without checking match-vip", "Not telling compliance there was an exposure window"]
+    model_answer: |
+      "The deny policy was in the right place, but FortiGate treats policies with virtual IPs differently: they get priority, so traffic to the portal never hit the geo-block. The fix is one setting, match-vip, on the deny policy. I'll enable it, log it, and show you the denies in the logs today. I'll also review your other deny policies for the same gap, and give compliance the exposure window so they can decide if anything needs reporting."
+    could_have_added: ["Suggest IPS and rate limiting on the portal VIP policy", "Propose reviewing the portal's authentication logs for that week"]
+    best_way: "Your block was in the right place but couldn't see traffic to the portal. One setting fixes it, and I'll show you the proof in the logs."
+    rubric: ["diagnosis", "plain-language explanation", "fix", "evidence", "governance and follow-up"]
+  - id: M4.03.sc2
+    kind: situation
+    tier: 5
+    title: Central NAT in a 900-rule migration
+    situation: |
+      You're leading the migration of a bank's Check Point cluster (900 rules, 60 NAT rules) to a FortiGate HA pair managed by FortiManager. Their security team wants NAT kept separate from security rules for audits. Cutover is in four weeks.
+    constraints: ["Two 4-hour maintenance windows", "Auditors need a NAT report after go-live"]
+    stakeholders: ["Security architect", "Network ops", "Auditors"]
+    ask: How do you handle NAT in the design and migration plan?
+    right_thinking:
+      - "Decide central NAT vs policy NAT in the design workshop, with the reasons written down"
+      - "Map every source NAT rule to central SNAT and every static/destination NAT to VIPs (central DNAT)"
+      - "Build in FortiManager, review with the security team, lab-test the rule base"
+      - "Acceptance test plan: one test per VIP and per SNAT path"
+      - "Rollback: config backup / FMG revision, documented in the MOP"
+    what: Central NAT, designed and tested before cutover, with a per-rule test plan.
+    why: Central NAT keeps translations reviewable in one ordered table; enabling it changes how every policy behaves, so it must be designed and tested, not toggled.
+    how: ["Design decision record", "NAT mapping sheet", "FMG build and review", "Lab test", "ATP per VIP and SNAT", "MOP with rollback"]
+    pitfalls: ["Leaving NAT design to cutover night", "Not testing return traffic", "Forgetting hairpin cases for internal users"]
+    model_answer: |
+      "I'd make NAT a design decision in week one: central NAT fits their audit need, because all translations sit in one ordered table. Every Check Point NAT rule gets mapped to a central SNAT rule or a VIP in a mapping sheet the security team signs off. We build it in FortiManager, test it in the lab, and the acceptance plan has one test per VIP and per SNAT path. The MOP has a FortiManager revision and a config backup as rollback, and after go-live the auditors get the central NAT table as their report."
+    best_way: "NAT is a design decision, not a cutover switch. One mapping sheet, signed off, tested rule by rule."
+    rubric: ["design decision", "mapping", "build and review", "testing", "rollback and audit"]
+  - id: M4.03.sc3
+    kind: raid
+    tier: 4
+    title: "Raid: after the upgrade, the branch portal dies"
+    situation: |
+      07:40, Monday. You upgraded 30 branch FortiGates to 7.6.5 over the weekend. Three branches with a one-arm design (traffic re-routed out the same interface) report their local app is unreachable. Everything else is fine.
+    ask: What do you check and what do you change?
+    right_thinking:
+      - "Pattern: only one-arm branches, only after the upgrade"
+      - "Recall the upgrade note: allow-traffic-redirect is disabled by default from 7.6.5, even if enabled before"
+      - "Debug flow on one branch to confirm the drop"
+      - "Fix: add the IPv4 policy the traffic now needs (and disable anti-replay for that TCP traffic if required), or re-enable the setting if the design depends on it, as a documented decision"
+      - "Apply to the other two branches, update the upgrade runbook"
+    what: Restore the redirected traffic path with an explicit policy and update the runbook.
+    why: From 7.6.5, allow-traffic-redirect is disabled by default and after upgrade; same-interface traffic then needs a matching IPv4 policy.
+    how: ["debug flow", "add policy / adjust setting", "test", "runbook update"]
+    pitfalls: ["Rolling back 30 branches for a 3-branch problem", "Not reading release notes before upgrades"]
+    model_answer: |
+      "Only the one-arm branches broke, right after 7.6.5. That matches a documented change: allow-traffic-redirect is disabled by default from 7.6.5, even if it was on before. I'd confirm with debug flow on one branch, then add the IPv4 policy that traffic now needs, test, and apply it to the other two. Then I'd add this check to our upgrade runbook so the next wave doesn't hit it."
+    best_way: "Three branches, same design, same upgrade: that's a documented default change. Confirm on one, fix all three, update the runbook."
+    rubric: ["pattern recognition", "confirm with evidence", "targeted fix", "scale the fix", "prevent recurrence"]
+
+interview:
+  - id: M4.03.i1
+    stage: technical
+    question: Walk me through how FortiGate decides whether to allow a new connection.
+    testing: Order of operations, clarity
+    framework: "Route lookup → policy lookup (first match) → NAT → session → profiles"
+    model_answer: |
+      "When the first packet arrives, FortiGate does a route lookup to find the outgoing interface. Then it checks the policy table top-down for the first policy where the interfaces, source, destination, service and schedule all match. If none match, the implicit deny drops it. If an accept policy matches, it creates a session with any NAT from the policy or central NAT, and applies the policy's security profiles. Every later packet rides that session. One catch: policies with VIPs have priority, so deny policies need match-vip to stop VIP traffic."
+    could_have_added: ["Mention debug flow names the policy ID, and 'policy 0' is the implicit deny"]
+    best_way: "Route first, then first-match policy, then NAT and profiles on the session. VIP policies are the exception."
+    target: "1:15"
+  - id: M4.03.i2
+    stage: technical
+    question: When would you recommend central NAT to a customer?
+    testing: Design judgement, migration experience
+    framework: "What it is → when it fits → risk → how you'd roll it out"
+    model_answer: |
+      "Central NAT moves translation out of each policy into ordered SNAT and DNAT tables. I'd recommend it for large rule bases, customers migrating from vendors that already separate NAT, or teams that must audit NAT on its own. It's off by default and enabling it changes how every policy behaves, so I'd decide it in the design phase, build and test the tables before cutover, and keep a config backup or FortiManager revision as rollback."
+    best_way: "Central NAT is great for big rule bases and audits, but it's a design decision with a test plan, never a cutover toggle."
+    target: "1:00"
+  - id: M4.03.i3
+    stage: technical
+    question: A customer's deny policy doesn't stop traffic to their published server. Why?
+    testing: A FortiGate-specific gotcha
+    framework: "Mechanism → fix → validation"
+    model_answer: |
+      "Because policies with a virtual IP have priority over normal policies, a deny with destination 'all' can be skipped for VIP traffic. The fix is match-vip on the deny policy; it's enabled by default on new deny policies but often turned off, and it can't be used on accept policies. Or you use a VIP with a source filter in a deny policy. Then I'd prove it with logs."
+    best_way: "VIP policies jump the queue. match-vip puts the deny back in front."
+    target: "0:45"
+  - id: M4.03.i4
+    stage: technical
+    question: Explain the FortiGate IP pool types and when you'd use each.
+    testing: Breadth plus a use case per type
+    framework: "Type → behaviour → use case"
+    model_answer: |
+      "There are four. Overload is PAT across one or more IPs, about 60,416 ports per IP per destination service: normal internet access. One-to-one gives each inside host its own outside IP with no port translation: a few hosts that need a stable identity. Fixed port range gives each inside IP a known port range, so you can trace IP and port back to a user without session logs. Port block allocation hands out blocks of ports per user, which cuts logging in large guest or carrier networks."
+    best_way: "Overload for everyone, one-to-one for the few, fixed port range for traceability, PBA for scale."
+    target: "1:00"
+  - id: M4.03.i5
+    stage: technical
+    question: How would you publish an internal server so both internet and office users can use the same URL?
+    testing: VIP plus hairpin understanding
+    framework: "VIP → policies → hairpin or split DNS → test"
+    model_answer: |
+      "A VIP maps the public IP and port to the server, used in an accept policy from the WAN with IPS on it. For office users using the same public name, I'd either set up hairpin NAT, which in FortiOS means a DNAT policy with the VIP from the inside plus SNAT so replies come back through the FortiGate, or split DNS so they resolve the private IP. I prefer split DNS when they control DNS, because it's simpler and avoids hairpinning, and I'd test both paths in acceptance."
+    best_way: "VIP for the world, hairpin or split DNS for the office, a test case for each."
+    target: "1:00"
+  - id: M4.03.i6
+    stage: technical
+    question: How do you troubleshoot 'the new firewall rule doesn't work'?
+    testing: Method
+    framework: "Facts → debug flow → compare → fix → verify"
+    model_answer: |
+      "I get the exact flow first: source, destination, port and time. Then I run debug flow filtered on that address. It tells me the route it chose, which policy matched, or 'policy 0', the implicit deny. Most of the time the outgoing interface isn't what the rule expects because of routing, or a broader rule above it matches first, or for published servers it's VIP priority and match-vip. I fix the specific cause, retest with debug flow, and show the customer the hit in the logs."
+    best_way: "Get the 5-tuple, run debug flow, and let FortiGate tell you which rule it picked and why."
+    target: "1:00"
+
+field_reports:
+  - id: M4.03.fr1
+    title: Identity is the cheapest control you're not using
+    body: |
+      IBM's 2026 report found **92 %** of organisations with an AI-related breach lacked proper AI access controls, even though identity and access management is one of the most effective cost reducers overall. Policies that use users and groups, not only IP addresses, are how a FortiGate turns that into practice.
+    source: IBM Cost of a Data Breach Report 2026, Key findings
+  - id: M4.03.fr2
+    title: Patching is slow, so the firewall buys time
+    body: |
+      Only **26 %** of CISA KEV vulnerabilities were fully remediated in 2025, with a median of **43 days** to fix (DBIR 2026). For every VIP, IPS and virtual patching on the policy cover that gap until the server owner patches.
+    source: Verizon 2026 DBIR, Key topics and findings

@@ -1,0 +1,597 @@
+id: M1.04
+title: Routing fundamentals and the FortiGate route lookup
+stage: S1
+stage_title: "S1 · Network foundations"
+order: 30
+est_sessions: 1
+objectives:
+  - Subnet quickly and pick the route a packet takes with longest-prefix match
+  - Explain how FortiOS chooses between routes - prefix, distance, priority, ECMP - and where policy routes and SD-WAN rules fit
+  - Explain the routing database vs the routing table, and floating routes
+  - Explain RPF (feasible vs strict) and why asymmetric routing breaks a stateful firewall
+  - Read `get router info routing-table` output and configure static and policy routes
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Static routing (pp. 644–674): routing table, distance, priority, RPF, asymmetric routing, policy routes, ECMP"
+  - "General knowledge: IPv4 subnetting, longest-prefix match"
+
+units:
+  - id: M1.04.u1
+    title: Subnetting at interview speed
+    tier: 1
+    est_min: 12
+    body: |
+      Every design and every troubleshooting call starts with "which network is this address in?". You need to answer in seconds, without a calculator.
+
+      ## The fast method
+
+      A prefix `/n` means the first *n* bits are the network. The **block size** in the "interesting" octet is `256 − mask value` in that octet.
+
+      | Prefix | Mask | Block size | Usable hosts |
+      |---|---|---|---|
+      | /24 | 255.255.255.0 | 256 | 254 |
+      | /25 | 255.255.255.128 | 128 | 126 |
+      | /26 | 255.255.255.192 | 64 | 62 |
+      | /27 | 255.255.255.224 | 32 | 30 |
+      | /28 | 255.255.255.240 | 16 | 14 |
+      | /29 | 255.255.255.248 | 8 | 6 |
+      | /30 | 255.255.255.252 | 4 | 2 |
+      | /22 | 255.255.252.0 | 4 in the 3rd octet | 1,022 |
+
+      **Example:** `10.20.37.140/27`. Block size 32 in the last octet: networks start at 0, 32, 64, 96, 128, 160. 140 is in the **128** block, so the network is `10.20.37.128`, the broadcast is `.159`, and usable hosts are `.129–.158`.
+
+      Usable hosts = 2^(32 − n) − 2. A /31 is the exception used on point-to-point links (2 addresses, no broadcast).
+
+      :::recall
+      Q: Network and broadcast for 172.16.5.77/28?
+      A: Block 16: networks …64, 80. 77 is in 64. Network 172.16.5.64, broadcast 172.16.5.79.
+      :::
+
+      :::why
+      Q: Why does a customer who summarises 10.10.0.0/22 cover 10.10.0.0 to 10.10.3.255?
+      A: /22 leaves 2 bits of the third octet for hosts, so the block in the third octet is 4: 0, 1, 2, 3.
+      :::
+  - id: M1.04.u2
+    title: How FortiOS picks a route
+    tier: 2
+    est_min: 12
+    body: |
+      Routers keep candidate routes from every source (connected, static, OSPF, BGP) in a **routing database**. Only the best become the **routing table** (the RIB), which is what forwarding uses. FortiOS follows this order (FortiOS 8.0.2 Admin Guide, p. 647):
+
+      1. **Most specific prefix wins.** A /28 beats a /24 beats the default route, whatever the source.
+      2. Same prefix: **lower administrative distance** wins and is injected into the table. FortiOS shows it as `[distance/metric]`, for example `[20/0]` for an eBGP route.
+      3. Same distance: all are injected, and **priority** decides (lower is preferred; static routes default to priority 1).
+      4. Still equal: **ECMP** shares traffic across them.
+
+      Typical FortiOS distances: connected 0, **static 10**, eBGP 20, OSPF 110, iBGP 200. A default route learned by **DHCP gets distance 5**, which beats a static default of 10. That catches people who leave "Retrieve default gateway from server" enabled on a second WAN.
+
+      ## Floating routes
+
+      A backup static route with a **higher distance** stays in the routing database, not the table. It only becomes active when the better route disappears (interface down, or a **link monitor** declares the gateway dead). That is a "floating" route, and it is how simple dual-WAN failover works without SD-WAN.
+
+      ## Reading the table
+
+      :::cli
+      # get router info routing-table all
+      S*      0.0.0.0/0 [10/0] via 203.0.113.1, wan1
+      C       10.0.10.0/24 is directly connected, lan
+      B       192.168.0.0/24 [20/0] via 172.31.0.1, MPLS, 00:31:43
+      O       10.50.0.0/16 [110/20] via 10.0.0.2, port3, 01:12:09
+      :::
+
+      `get router info routing-table database` shows **all** candidates, including inactive floating routes.
+
+      :::recall
+      Q: Two static routes to 0.0.0.0/0 have distance 10. One has priority 5, the other priority 1. Which is used?
+      A: Both are in the table (same distance). The one with priority 1 is preferred.
+      :::
+
+      :::pitfall
+      Enabling DHCP on a backup WAN with "Retrieve default gateway from server" adds a default route with distance 5. It silently beats your static default (10) and can send all traffic out the backup link.
+      :::
+  - id: M1.04.u3
+    title: Policy routes, SD-WAN rules and ECMP
+    tier: 3
+    est_min: 10
+    body: |
+      Sometimes the destination alone isn't enough: "FTP from this VLAN must leave through the MPLS link". **Policy routes** (PBR) match on incoming interface, source, destination, protocol, ports or ToS, and send matches to a gateway and/or interface.
+
+      How FortiOS evaluates them (Admin Guide, pp. 659–664):
+
+      - Policy routes are checked **top-down, before the routing table**.
+      - A policy route only matches if FortiOS can resolve it: with only an interface it looks up the gateway in the routing table; with only a gateway it looks up the interface; with both, it still needs a route that makes the gateway reachable on that interface.
+      - No match: it falls through to the routing table.
+      - Precedence among the policy-route family: **policy-based routes > ISDB routes > SD-WAN routes**.
+      - **ECMP is considered after policy routing.** ECMP needs the same destination and the same costs (for static routes: distance and priority) from the same protocol.
+      - The ECMP algorithm is `set v4-ecmp-mode` under `config system settings` (default **source-ip-based**; also weight-based, usage-based, source-dest-ip-based). When SD-WAN is enabled, use `load-balance-mode` under `config system sdwan` instead.
+
+      :::cli
+      config router policy
+          edit 1
+              set input-device "port1"
+              set src "0.0.0.0/0.0.0.0"
+              set dst "0.0.0.0/0.0.0.0"
+              set protocol 6
+              set start-port 21
+              set end-port 21
+              set gateway 172.20.120.23
+              set output-device "port4"
+          next
+      end
+      :::
+
+      :::recall
+      Q: A packet matches a policy route and an SD-WAN rule. Which wins?
+      A: The policy route: policy-based routes > ISDB routes > SD-WAN routes.
+      :::
+
+      :::why
+      Q: Why might a policy route "do nothing" even though its match fields are right?
+      A: FortiOS also needs a route that makes the gateway reachable through the chosen interface. If it can't resolve that, the policy route doesn't match and the packet falls through to the routing table.
+      :::
+
+      :::ps
+      SD-WAN designs fail in production when someone has an old policy route nobody remembers. In a migration discovery, export `config router policy` and ask about every entry.
+      :::
+  - id: M1.04.u4
+    title: RPF, asymmetric routing and the session table
+    tier: 4
+    est_min: 12
+    body: |
+      ## Reverse path forwarding (anti-spoofing)
+
+      When a packet arrives, FortiGate asks: "could I reach this **source** back through the interface it came in on?" If not, it drops the packet. It's a cheap defence against spoofed sources (Admin Guide, p. 653).
+
+      - **Feasible** (default): there is at least one active route back to the source through the incoming interface.
+      - **Strict** (`set strict-src-check enable` under `config system settings`): the **best** route back to the source must use the incoming interface.
+      - `set src-check disable` on an interface removes RPF checks there. Fortinet documents it as less secure and meant for troubleshooting.
+
+      In debug flow, an RPF drop shows up as a reverse-path check failure. The usual cause is a **missing route** for a remote subnet, typically a new VPN or a second WAN.
+
+      ## Asymmetric routing
+
+      If the request crosses the FortiGate but the reply takes another path, the session never sees a full TCP handshake (Admin Guide, pp. 653–654):
+
+      - PC1 starts TCP to PC2: the SYN passes, the SYN/ACK bypasses the FortiGate, and the **ACK is blocked** because it matches no established session.
+      - PC2 pings PC1 when only the reply crosses the FortiGate: no session matches, and the reply is **dropped as invalid**.
+
+      `set asymroute enable` makes FortiGate permit it, but then it **can't inspect all traffic**, and Fortinet says to use it only when the routing itself can't be fixed. The real fix is routing: make both directions cross the same firewall (or the same HA cluster / FGSP peers).
+
+      :::recall
+      Q: Default RPF mode on FortiGate, and what it checks?
+      A: Feasible path: at least one active route back to the source through the incoming interface.
+      :::
+
+      :::why
+      Q: Why is "turn on asymroute" a bad permanent fix?
+      A: The firewall stops seeing whole conversations, so it can't enforce state or inspect all traffic. You trade a routing bug for a security hole.
+      :::
+
+      :::threat ref=dbir-2026-third-party-48pct
+      In the 2026 DBIR, breaches involving a third party reached 48 %, up 60 % from the year before. Partner and vendor links are where "temporary" routing hacks like disabled RPF checks tend to survive for years. Make every exception an expiring, documented change.
+      :::
+
+cards:
+  - { id: M1.04.c01, unit: M1.04.u1, tier: 1, front: "Block size and usable hosts of a /27?", back: "Block 32; 30 usable hosts." }
+  - { id: M1.04.c02, unit: M1.04.u1, tier: 1, front: "Usable hosts of a /29?", back: "6 (8 addresses minus network and broadcast)." }
+  - { id: M1.04.c03, unit: M1.04.u1, tier: 1, front: "Mask for a /26?", back: "255.255.255.192." }
+  - { id: M1.04.c04, unit: M1.04.u1, tier: 2, front: "Network address of 10.20.37.140/27?", back: "10.20.37.128 (broadcast .159)." }
+  - { id: M1.04.c05, unit: M1.04.u1, tier: 2, front: "Range covered by 10.10.0.0/22?", back: "10.10.0.0 to 10.10.3.255." }
+  - { id: M1.04.c06, unit: M1.04.u2, tier: 1, front: "First rule of route selection?", back: "Longest prefix (most specific) wins, regardless of route source." }
+  - { id: M1.04.c07, unit: M1.04.u2, tier: 1, front: "Default distance of a FortiOS static route?", back: "10." }
+  - { id: M1.04.c08, unit: M1.04.u2, tier: 2, front: "Distance FortiOS gives a default route learned via DHCP?", back: "5, which beats a static default route (10).", source: "FortiOS 8.0.2 Admin Guide p. 645" }
+  - { id: M1.04.c09, unit: M1.04.u2, tier: 2, front: "Two routes, same prefix and same distance. What decides?", back: "Priority (lower preferred); both are in the table. If priority is also equal, ECMP." }
+  - { id: M1.04.c10, unit: M1.04.u2, tier: 2, front: "Routing database vs routing table?", back: "Database: every learned candidate. Table: only the best routes, used for forwarding." }
+  - { id: M1.04.c11, unit: M1.04.u2, tier: 2, front: "What is a floating static route?", back: "A backup route with a higher distance; it stays in the database and only becomes active when the better route is lost." }
+  - { id: M1.04.c12, unit: M1.04.u2, tier: 1, front: "In `[20/0]` what are 20 and 0?", back: "20 = administrative distance, 0 = metric." }
+  - { id: M1.04.c13, unit: M1.04.u3, tier: 2, front: "Are policy routes checked before or after the routing table?", back: "Before; no match falls through to the routing table." }
+  - { id: M1.04.c14, unit: M1.04.u3, tier: 2, front: "Precedence among policy-based, ISDB and SD-WAN routes?", back: "Policy-based routes > ISDB routes > SD-WAN routes.", source: "FortiOS 8.0.2 Admin Guide p. 664" }
+  - { id: M1.04.c15, unit: M1.04.u3, tier: 2, front: "Default ECMP mode on FortiOS?", back: "source-ip-based (`set v4-ecmp-mode` under config system settings)." }
+  - { id: M1.04.c16, unit: M1.04.u3, tier: 3, front: "With SD-WAN enabled, where do you set the load-balancing algorithm?", back: "`set load-balance-mode` under `config system sdwan`." }
+  - { id: M1.04.c17, unit: M1.04.u4, tier: 2, front: "Feasible vs strict RPF?", back: "Feasible: any active route back via the incoming interface. Strict: the best route back must use the incoming interface." }
+  - { id: M1.04.c18, unit: M1.04.u4, tier: 2, front: "CLI to enable strict RPF?", back: "`config system settings` → `set strict-src-check enable`." }
+  - { id: M1.04.c19, unit: M1.04.u4, tier: 3, front: "TCP through FortiGate, reply bypasses it. Which packet gets blocked?", back: "The client's ACK (third packet), because no established session matches." }
+  - { id: M1.04.c20, unit: M1.04.u4, tier: 3, front: "Risk of `set asymroute enable`?", back: "FortiGate can't inspect all traffic; malicious traffic may pass. Fix the routing instead." }
+
+quiz:
+  - id: M1.04.q01
+    type: text
+    tier: 1
+    pretest: true
+    stem: "What is the network address of 192.168.10.200/26?"
+    accept: ["192.168.10.192"]
+    explanation: "Block 64: 0, 64, 128, 192. 200 falls in 192."
+  - id: M1.04.q02
+    type: numeric
+    tier: 1
+    pretest: true
+    stem: How many usable host addresses does a /28 have?
+    answer: 14
+    explanation: 2^4 − 2 = 14.
+  - id: M1.04.q03
+    type: single
+    tier: 1
+    pretest: true
+    stem: Routes to 10.1.0.0/16 (OSPF) and 10.1.5.0/24 (static) exist. Where does traffic to 10.1.5.9 go?
+    options:
+      - { id: a, text: "Via the static /24, because it is more specific", correct: true }
+      - { id: b, text: "Via OSPF, because dynamic routes are preferred", why_wrong: "Prefix length is checked before route source or distance." }
+      - { id: c, text: "Load-balanced across both", why_wrong: "ECMP needs the same prefix." }
+      - { id: d, text: "Via the static route only if its distance is lower", why_wrong: "Distance only matters between routes with the same prefix." }
+    explanation: Longest-prefix match comes first.
+  - id: M1.04.q04
+    type: single
+    tier: 2
+    pretest: true
+    stem: A branch FortiGate has a static default via WAN1 (distance 10). Someone enables DHCP on WAN2 with 'Retrieve default gateway from server'. What happens?
+    options:
+      - { id: a, text: "The DHCP default route (distance 5) becomes the active default, sending traffic out WAN2", correct: true }
+      - { id: b, text: "Nothing; static routes always win", why_wrong: "Lower distance wins and DHCP routes get distance 5 by default." }
+      - { id: c, text: "Both are used with ECMP", why_wrong: "Different distances: only the lower one goes into the table." }
+      - { id: d, text: "The FortiGate rejects the DHCP route", why_wrong: "It installs it unless you disable the option or change its distance." }
+    explanation: The guide warns about exactly this. Disable gateway retrieval or set the DHCP distance higher.
+    source: FortiOS 8.0.2 Admin Guide p. 645
+  - id: M1.04.q05
+    type: single
+    tier: 2
+    pretest: true
+    stem: Which is checked first for a new session on FortiGate?
+    options:
+      - { id: a, text: "Policy routes", correct: true }
+      - { id: b, text: "The routing table", why_wrong: "The routing table is used when no policy route matches." }
+      - { id: c, text: "ECMP", why_wrong: "ECMP is considered after policy routing." }
+      - { id: d, text: "The BGP database", why_wrong: "Forwarding uses the routing table, not the protocol database." }
+    explanation: Policy routes are evaluated top-down before the routing table.
+  - id: M1.04.q06
+    type: single
+    tier: 2
+    pretest: true
+    stem: What does FortiGate's default reverse path check verify?
+    options:
+      - { id: a, text: "That at least one active route back to the source uses the incoming interface", correct: true }
+      - { id: b, text: "That the best route back to the source uses the incoming interface", why_wrong: "That is strict mode, not the default." }
+      - { id: c, text: "That the destination is reachable", why_wrong: "RPF checks the source, not the destination." }
+      - { id: d, text: "That the source MAC is in the ARP table", why_wrong: "RPF is a layer 3 check." }
+    explanation: The default is feasible-path RPF.
+  - id: M1.04.q07
+    type: text
+    tier: 2
+    stem: "Broadcast address of 10.0.4.0/23?"
+    accept: ["10.0.5.255"]
+    explanation: "/23 spans two /24s in the third octet: 10.0.4.0–10.0.5.255."
+  - id: M1.04.q08
+    type: numeric
+    tier: 2
+    stem: How many /27 subnets fit in one /24?
+    answer: 8
+    explanation: 256 / 32 = 8.
+  - id: M1.04.q09
+    type: order
+    tier: 2
+    stem: Order FortiOS route selection between candidate routes.
+    items: ["Most specific prefix", "Lowest administrative distance", "Lowest priority", "ECMP between the remaining equal routes"]
+    explanation: Prefix, then distance, then priority, then ECMP.
+    source: FortiOS 8.0.2 Admin Guide p. 647
+  - id: M1.04.q10
+    type: single
+    tier: 2
+    stem: Where would you see a floating backup route that isn't active?
+    options:
+      - { id: a, text: "`get router info routing-table database`", correct: true }
+      - { id: b, text: "`get router info routing-table all`", why_wrong: "That shows only the active routing table." }
+      - { id: c, text: "`diagnose sys session list`", why_wrong: "That lists sessions, not routes." }
+      - { id: d, text: "`get system status`", why_wrong: "System info, not routing." }
+    explanation: The database holds all candidates, including inactive ones.
+  - id: M1.04.q11
+    type: single
+    tier: 3
+    stem: "Policy route: input port1, protocol 6, ports 21–21, output port4, gateway 172.20.120.23. FTP still leaves via wan1. Most likely reason?"
+    options:
+      - { id: a, text: "FortiOS can't find a route making 172.20.120.23 reachable via port4, so the policy route doesn't match", correct: true }
+      - { id: b, text: "Policy routes only work for UDP", why_wrong: "They work for any protocol you specify." }
+      - { id: c, text: "SD-WAN rules always override policy routes", why_wrong: "It's the opposite: policy-based routes > SD-WAN routes." }
+      - { id: d, text: "The firewall policy is missing", why_wrong: "A missing firewall policy would drop traffic, not send it out wan1." }
+    explanation: With both gateway and interface set, FortiOS still needs a route that makes the gateway reachable on that interface; otherwise it falls through to the routing table.
+    source: FortiOS 8.0.2 Admin Guide p. 660
+  - id: M1.04.q12
+    type: single
+    tier: 3
+    stem: Which command sets FortiGate's ECMP algorithm when SD-WAN is NOT enabled?
+    options:
+      - { id: a, text: "`config system settings` → `set v4-ecmp-mode`", correct: true }
+      - { id: b, text: "`config system sdwan` → `set load-balance-mode`", why_wrong: "That's the setting when SD-WAN is enabled." }
+      - { id: c, text: "`config router static` → `set ecmp enable`", why_wrong: "There's no such static route option." }
+      - { id: d, text: "`config system global` → `set ecmp-mode`", why_wrong: "Not the documented location." }
+    explanation: v4-ecmp-mode lives in system settings at VDOM level.
+    source: FortiOS 8.0.2 Admin Guide p. 666
+  - id: M1.04.q13
+    type: single
+    tier: 3
+    stem: Which configuration gives simple dual-WAN failover without SD-WAN?
+    options:
+      - { id: a, text: "Primary default route distance 10, backup default route distance 20, plus a link monitor on the primary", correct: true }
+      - { id: b, text: "Two default routes, both distance 10, priority 1", why_wrong: "That's ECMP: both are used at once." }
+      - { id: c, text: "One default route with two gateways", why_wrong: "A static route has one gateway." }
+      - { id: d, text: "A policy route to each WAN", why_wrong: "Policy routes don't fail over on their own." }
+    explanation: The higher-distance route floats in the database and takes over when the primary is withdrawn; a link monitor withdraws it when the gateway is dead but the interface stays up.
+  - id: M1.04.q14
+    type: single
+    tier: 4
+    stem: "A new site-to-site VPN comes up. Pings from HQ to the branch fail and debug flow on the HQ FortiGate shows the branch's replies dropped by the reverse path check. Best fix?"
+    options:
+      - { id: a, text: "Add a route for the branch subnet via the VPN interface", correct: true }
+      - { id: b, text: "Disable src-check on the WAN interface", why_wrong: "Fortinet describes it as less secure, for troubleshooting; the root cause is a missing route." }
+      - { id: c, text: "Enable asymroute", why_wrong: "Hides the problem and disables full inspection." }
+      - { id: d, text: "Enable strict RPF", why_wrong: "Stricter checking would drop even more." }
+    explanation: RPF drops mean FortiGate has no route back to the source through the incoming interface. Add the route.
+  - id: M1.04.q15
+    type: single
+    tier: 4
+    stem: "TCP from PC1 → PC2 crosses the FortiGate; the reply returns through another router. What does the user see and why?"
+    options:
+      - { id: a, text: "The connection fails: the client's ACK is blocked because the FortiGate never saw a SYN/ACK", correct: true }
+      - { id: b, text: "It works but slowly", why_wrong: "FortiGate blocks the ACK; it doesn't just slow it down." }
+      - { id: c, text: "It works fine because sessions are stateless", why_wrong: "FortiGate is stateful; that is the problem." }
+      - { id: d, text: "Only UDP fails", why_wrong: "TCP is the one that breaks clearly in this scenario." }
+    explanation: Asymmetric routing breaks stateful TCP tracking at the third packet.
+    source: FortiOS 8.0.2 Admin Guide pp. 653–654
+  - id: M1.04.q16
+    type: multi
+    tier: 3
+    stem: Which conditions must hold for FortiOS to ECMP between two static routes? Select all that apply.
+    options:
+      - { id: a, text: "Same destination", correct: true }
+      - { id: b, text: "Same distance and priority", correct: true }
+      - { id: c, text: "Same routing protocol", correct: true }
+      - { id: d, text: "Same outgoing interface", why_wrong: "ECMP is about different next hops, usually on different interfaces." }
+    explanation: Same destination and costs (distance and priority for static), from the same protocol.
+    source: FortiOS 8.0.2 Admin Guide p. 665
+  - id: M1.04.q17
+    type: single
+    tier: 2
+    stem: Which route does FortiOS prefer between eBGP (distance 20) and OSPF (distance 110) for the same /24?
+    options:
+      - { id: a, text: "eBGP, because its distance is lower", correct: true }
+      - { id: b, text: "OSPF, because link-state is more accurate", why_wrong: "Route source quality isn't considered; distance is." }
+      - { id: c, text: "Both with ECMP", why_wrong: "ECMP needs the same protocol and costs." }
+      - { id: d, text: "Whichever was learned first", why_wrong: "Age isn't a tiebreaker here." }
+    explanation: Same prefix, so lower distance wins.
+  - id: M1.04.q18
+    type: single
+    tier: 5
+    stem: A customer wants all traffic from the guest VLAN to always use the cheap broadband link, while corporate traffic follows normal routing with failover. Which design is simplest and most robust?
+    options:
+      - { id: a, text: "A policy route (or SD-WAN rule) for the guest VLAN source to the broadband link, with normal routes plus failover for the rest", correct: true }
+      - { id: b, text: "Make broadband the default route for everyone", why_wrong: "Changes corporate traffic too." }
+      - { id: c, text: "Use asymroute so guest replies can return any way", why_wrong: "Doesn't steer traffic and weakens security." }
+      - { id: d, text: "Put the guest VLAN in its own /16", why_wrong: "Address size doesn't choose an exit link." }
+    explanation: Steer by source with a policy route or SD-WAN rule; keep the default routing for everything else. Document that policy routes beat SD-WAN rules.
+  - id: M1.04.q19
+    type: single
+    tier: 4
+    stem: "A customer disabled RPF checks on an interface 'temporarily' two years ago for a partner link. What's your PS recommendation?"
+    options:
+      - { id: a, text: "Find the missing or asymmetric route that caused it, fix it in a change window, re-enable the check, and document the exception if one must stay", correct: true }
+      - { id: b, text: "Leave it; it's been fine for two years", why_wrong: "It removes an anti-spoofing control on a third-party path." }
+      - { id: c, text: "Disable RPF on all interfaces for consistency", why_wrong: "Spreads the weakness." }
+      - { id: d, text: "Replace it with asymroute", why_wrong: "Worse: no full inspection." }
+    explanation: Fix the routing, restore the control, and keep exceptions documented with an expiry.
+
+labs:
+  - id: M1.04.lab1
+    title: Dual-WAN failover with a floating default route
+    goal: WAN1 (gateway 203.0.113.1) is primary; WAN2 (gateway 198.51.100.1) takes over only if WAN1 fails.
+    worked:
+      config: |
+        config router static
+            edit 1
+                set gateway 203.0.113.1
+                set device "wan1"
+                set distance 10
+            next
+            edit 2
+                set gateway 198.51.100.1
+                set device "wan2"
+                set distance 20
+            next
+        end
+      notes:
+        - "No dst means 0.0.0.0/0, the default route."
+        - "Route 2 stays in the routing database until route 1 is withdrawn."
+        - "If WAN1's interface stays up while the ISP is dead, add a link monitor to withdraw route 1."
+        - "Verify with `get router info routing-table all` and `... database`."
+    faded:
+      template: |
+        config router {{static}}
+            edit 2
+                set gateway 198.51.100.1
+                set {{device}} "wan2"
+                set {{distance}} 20
+            next
+        end
+    solo:
+      prompt: "Add a floating default route via 192.0.2.254 on interface \"lte\" with distance 30."
+      required: ["config router static", "set gateway 192.0.2.254", "set device lte", "set distance 30", "end"]
+      solution: |
+        config router static
+            edit 0
+                set gateway 192.0.2.254
+                set device "lte"
+                set distance 30
+            next
+        end
+      notes: "`edit 0` picks the next free sequence number."
+  - id: M1.04.lab2
+    title: Policy route for FTP
+    goal: Send FTP (TCP 21) arriving on port1 out port4 to next hop 172.20.120.23 (the FortiOS guide example).
+    worked:
+      config: |
+        config router policy
+            edit 1
+                set input-device "port1"
+                set src "0.0.0.0/0.0.0.0"
+                set dst "0.0.0.0/0.0.0.0"
+                set protocol 6
+                set start-port 21
+                set end-port 21
+                set gateway 172.20.120.23
+                set output-device "port4"
+            next
+        end
+      notes:
+        - "protocol 6 = TCP; start/end port = destination port range."
+        - "FortiOS needs a route that makes 172.20.120.23 reachable via port4, or the policy route won't match."
+        - "Policy routes beat ISDB and SD-WAN routes."
+    faded:
+      template: |
+        config router {{policy}}
+            edit 1
+                set {{input-device}} "port1"
+                set protocol {{6}}
+                set start-port 21
+                set end-port 21
+                set gateway 172.20.120.23
+                set {{output-device}} "port4"
+            next
+        end
+    solo:
+      prompt: "Write a policy route: traffic from source 10.30.0.0/24 arriving on \"vlan30\" goes out \"wan2\" via 198.51.100.1 (any protocol)."
+      required: ["config router policy", "set input-device vlan30", "set src 10.30.0.0", "set gateway 198.51.100.1", "set output-device wan2"]
+      solution: |
+        config router policy
+            edit 2
+                set input-device "vlan30"
+                set src "10.30.0.0/255.255.255.0"
+                set dst "0.0.0.0/0.0.0.0"
+                set gateway 198.51.100.1
+                set output-device "wan2"
+            next
+        end
+
+scenarios:
+  - id: M1.04.sc1
+    kind: situation
+    tier: 4
+    title: "'The internet goes out the backup link'"
+    situation: |
+      A customer with two ISPs (fibre primary, broadband backup) says their monthly broadband bill tripled and speed tests show broadband speeds. Nobody changed "anything important". Last month their IT intern set up the backup WAN.
+    stakeholders: ["IT manager", "Finance"]
+    ask: How do you find and fix it, and how do you prevent it?
+    right_thinking:
+      - "Clarify: when did it start, what exactly changed on the backup WAN"
+      - "Check the routing table: which default route is active and its [distance/metric]"
+      - "Suspect the DHCP-learned default (distance 5) beating the static (10)"
+      - "Fix: disable 'Retrieve default gateway from server' or raise the DHCP distance; keep the backup as a floating route with a link monitor"
+      - "Validate failover in a window: pull the primary, check traffic moves, restore"
+      - "Prevent: config review checklist and change control for edge devices"
+    what: Restore the intended route preference and make failover deliberate.
+    why: FortiOS gives DHCP default routes distance 5, which beats a static default of 10.
+    how: ["get router info routing-table all", "Fix the DHCP setting or distance", "Floating backup with link monitor", "Failover test in a window"]
+    pitfalls: ["Deleting the backup route entirely", "Testing failover in business hours without warning users"]
+    model_answer: |
+      "I'd start with the routing table: if the active default shows distance 5 via the broadband interface, it was learned by DHCP. That beats the static default of 10, so everything leaves through the backup. I'll turn off gateway retrieval on that interface, or raise its distance, keep broadband as a floating route with a link monitor, and test failover with them in a maintenance window. Then I'd suggest a simple change process for the edge."
+    could_have_added: ["Show Finance the date the route changed from the logs to close the billing question"]
+    best_way: "Your backup link learned a default route that outranks the primary. One setting fixes it, and we'll prove failover still works."
+    rubric: ["clarify", "evidence from the routing table", "fix and failover design", "validation", "prevention"]
+  - id: M1.04.sc2
+    kind: raid
+    tier: 4
+    title: "Raid: the new VPN pings one way"
+    situation: |
+      Friday 17:30. You just brought up a site-to-site IPsec tunnel between HQ and a new plant. Phase 1 and 2 are up. Plant can ping HQ servers; HQ can't ping the plant. The plant manager wants it working before the night shift at 22:00.
+    ask: Walk through your diagnosis and fix.
+    right_thinking:
+      - "Tunnel up means crypto is fine; think routing and policy"
+      - "Run debug flow on the HQ FortiGate for a ping to the plant subnet"
+      - "Look for: no route (traffic leaves the wrong way), policy deny (policy 0), or reverse path check failure on replies"
+      - "Most likely: HQ lacks a route for the plant subnet via the tunnel, or there is no HQ→plant policy"
+      - "Add the route/policy, retest both directions, save the debug output for the handover"
+    what: Complete the routing and policy for the HQ → plant direction.
+    why: Phase 2 up only proves the tunnel; each side still needs routes and a policy for traffic it initiates.
+    how: ["diagnose debug flow filter + trace", "get router info routing-table all", "Add static route via the tunnel interface", "Add the HQ→plant policy", "Retest and document"]
+    pitfalls: ["Disabling RPF to 'make it work'", "Changing the plant side when the evidence points to HQ"]
+    model_answer: |
+      "The tunnel is up, so crypto isn't the issue. I'd run a debug flow on HQ for a ping to the plant: it will tell me in one line whether it's a missing route, a policy deny or a reverse-path drop. My bet is HQ has no route to the plant subnet through the tunnel, or no policy for that direction. I'll add what's missing, test both directions, and leave the debug output in the handover notes."
+    best_way: "Tunnel up, one direction broken: that's routing or policy, not crypto. Debug flow tells me which in one line."
+    rubric: ["frame the problem", "use debug flow", "targeted fix", "validate both directions", "handover"]
+  - id: M1.04.sc3
+    kind: situation
+    tier: 5
+    title: Asymmetric routing in the data centre
+    situation: |
+      In discovery for a firewall migration, you find the customer's core switch has two default paths: one through the old firewall, one through a WAN optimiser that bypasses it. Their admin says "it's fine, we enabled asymmetric routing on the old firewall years ago".
+    stakeholders: ["Network lead", "CISO"]
+    ask: What do you tell them, and what goes into the design for the new FortiGate?
+    right_thinking:
+      - "Name the risk plainly: with asymroute the firewall can't inspect whole sessions"
+      - "Map flows: which traffic actually needs the optimiser path"
+      - "Design: make both directions cross the FortiGate (or place the optimiser behind it); use FGSP if two firewalls must share sessions"
+      - "Plan the migration step and a validation test for return paths"
+      - "Get the CISO to sign off on any exception, with an expiry"
+    what: A design where every flow's two directions cross the same inspection point.
+    why: Stateful inspection needs both directions; Fortinet states asymroute should be used only when routing can't be fixed because traffic can't be fully inspected.
+    how: ["Flow mapping", "Routing redesign", "FGSP if needed", "Return-path tests in acceptance"]
+    model_answer: |
+      "I'd be direct: with asymmetric routing allowed, the firewall can't see whole conversations, so some traffic is effectively uninspected. In the new design both directions must cross the FortiGate, so I'd move the optimiser behind it or adjust the core routing, and if we truly need two firewalls sharing sessions we'd use FGSP. I'll add return-path tests to acceptance, and any exception gets the CISO's sign-off with an end date."
+    best_way: "Allowing asymmetry means accepting blind spots. Let's design them out instead of carrying them into the new firewall."
+    rubric: ["explain the risk", "flow mapping", "design option", "validation plan", "governance"]
+
+interview:
+  - id: M1.04.i1
+    stage: technical
+    question: How does FortiGate decide which route to use when several match?
+    testing: Core routing logic
+    framework: "Order of decisions with one example"
+    model_answer: |
+      "First the most specific prefix wins, regardless of source. For the same prefix, the lowest administrative distance goes into the routing table; on FortiOS static is 10, eBGP 20, OSPF 110. If distance ties, the route with the lower priority is preferred, and if that ties too, ECMP spreads traffic using the configured mode, source-IP-based by default. On top of that, policy routes, ISDB routes and SD-WAN rules are checked before the routing table, in that order."
+    could_have_added: ["The DHCP default route gets distance 5, a classic surprise"]
+    best_way: "Longest prefix, then distance, then priority, then ECMP. And policy routes go before all of it."
+    target: "1:00"
+  - id: M1.04.i2
+    stage: technical
+    question: What is reverse path forwarding and when have you seen it cause problems?
+    testing: Real experience
+    framework: "Definition → mechanism → example → fix"
+    model_answer: |
+      "RPF is an anti-spoofing check: when a packet arrives, the FortiGate checks it could route back to the source through that same interface. By default that's feasible mode, any active route back that way; strict mode requires the best route. The classic problem is a new VPN or second WAN where nobody added the route for the remote subnet, so replies get dropped. Debug flow shows the reverse-path drop, and the fix is adding the route, not disabling the check."
+    best_way: "RPF asks 'could I reach you back this way?'. When it says no, add the route; don't turn off the check."
+    target: "1:00"
+  - id: M1.04.i3
+    stage: technical
+    question: Why is asymmetric routing a problem for a firewall, and how do you fix it?
+    testing: Stateful thinking and design maturity
+    framework: "Mechanism → symptom → wrong fix → right fix"
+    model_answer: |
+      "A stateful firewall needs to see both directions. If the SYN goes through the FortiGate and the SYN/ACK goes around it, the ACK arrives with no established session and is dropped. You can enable asymroute, but then the FortiGate can't inspect all traffic, so it's a last resort. The right fix is routing: make both directions cross the same firewall, or use FGSP when two firewalls must share sessions."
+    best_way: "The firewall only sees half the conversation. Fix the path, not the firewall."
+    target: "1:00"
+  - id: M1.04.i4
+    stage: technical
+    question: Subnet 10.20.37.140/27 for me, out loud.
+    testing: Speed and composure
+    framework: "Block size → network → broadcast → hosts"
+    model_answer: |
+      "A /27 is a block of 32 in the last octet: 0, 32, 64, 96, 128, 160. 140 sits in the 128 block, so the network is 10.20.37.128, the broadcast is .159, and usable hosts are .129 to .158, 30 hosts."
+    best_way: "Block of 32, so .128 to .159: thirty usable hosts."
+    target: "0:30"
+  - id: M1.04.i5
+    stage: technical
+    question: How would you give a branch dual-WAN failover without SD-WAN?
+    testing: Practical design
+    framework: "Design → mechanism → validation"
+    model_answer: |
+      "Two default routes with different distances: the primary at 10 and the backup at, say, 20. The backup floats in the routing database and becomes active when the primary is withdrawn. Because an ISP can die while the interface stays up, I'd add a link monitor on the primary to withdraw its route when the gateway stops answering. Then I'd test failover and failback in a maintenance window."
+    could_have_added: ["Mention that SD-WAN gives SLA-based steering and is the better long-term answer"]
+    best_way: "A floating backup route plus a link monitor. Then prove it by pulling the cable in a window."
+    target: "1:00"
+
+field_reports:
+  - id: M1.04.fr1
+    title: Partners are half the breaches
+    body: |
+      The 2026 DBIR found third-party involvement in **48 %** of breaches, up **60 %** in a year. Routing exceptions for partner links (disabled RPF checks, broad static routes, "temporary" policy routes) are exactly what an attacker coming through a partner rides on. In discovery, list every exception and give each an owner and an end date.
+    source: Verizon 2026 DBIR, Key topics and findings
+  - id: M1.04.fr2
+    title: Every hour of a breach costs money
+    body: |
+      IBM's 2026 Cost of a Data Breach puts the global average at **USD 4.99 million** (+12 %), about USD 1,100 per hour, and **USD 11.5 million** in the US. Fast, correct routing changes during an incident aren't a nicety: they are cost control.
+    source: IBM Cost of a Data Breach Report 2026, Key findings

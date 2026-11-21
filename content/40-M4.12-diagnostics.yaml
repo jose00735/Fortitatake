@@ -1,0 +1,647 @@
+id: M4.12
+title: "FortiGate diagnostics: debug flow, sniffer and sessions"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 50
+est_sessions: 1
+objectives:
+  - Follow a troubleshooting method you can explain to a customer, starting from a baseline
+  - Run the sniffer with the right filter, verbosity and count, and read what it proves
+  - Run debug flow safely and read every key line - session, route, NAT, policy, drop reason
+  - Filter, read and clear sessions without hurting production
+  - Spot the NPU offload and conserve-mode traps that make diagnostics lie or fail
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Troubleshooting methodologies (pp. 5544–5546), sniffer (pp. 5575–5576), debug flow (pp. 5577–5581), sessions (session list/filter/clear)"
+  - "FortiOS 8.0.2 Admin Guide: Diagnostics GUI tools (pp. 1143–1154), Conserve mode (p. 4516)"
+
+units:
+  - id: M4.12.u1
+    title: A method before commands
+    tier: 1
+    est_min: 10
+    body: |
+      Fortinet's own troubleshooting chapter starts with method, not commands (Admin Guide, pp. 5544–5546): verify your permissions and that the unit is configured (time, DNS, interfaces, up-to-date FortiGuard engines), **establish a baseline**, **define the problem**, and **create a plan**.
+
+      ## Baseline commands
+
+      Know what "normal" looks like before an incident. The guide lists these:
+
+      | Command | What it tells you |
+      |---|---|
+      | `get system status` | Firmware, FortiGuard engine versions, system info |
+      | `get system performance status` | CPU, memory, sessions and setup rate, IPS and AV counters, uptime |
+      | `get hardware memory` | Memory details |
+      | `get system session status` | Total number of sessions |
+      | `get router info routing-table all` | The active routes |
+      | `get ips session` | Memory used by IPS |
+      | `get webfilter ftgd-statistics` | FortiGuard web filter counters |
+      | `diagnose sys session list` | Detailed sessions |
+      | `show sys dns` | Configured DNS servers |
+
+      ## The bottom-up flow you'll say out loud
+
+      1. **Physical / link:** interface up, errors, speed/duplex.
+      2. **Layer 2 / 3:** ARP, addressing, routing (`get router info routing-table all`).
+      3. **Does the packet arrive and leave?** Sniffer.
+      4. **What does FortiOS decide?** Debug flow: route, policy, NAT, drop reason.
+      5. **Is there a session, and what does it say?** Session list.
+      6. **Security profiles and upper layers:** logs, FortiView, IPS/AV/web filter events.
+      7. **Escalate** with evidence and a timeline when it's a defect.
+
+      :::recall
+      Q: What four steps does the FortiOS troubleshooting methodology start with?
+      A: Verify permissions and basic configuration, establish a baseline, define the problem, create a plan.
+      :::
+
+      :::why
+      Q: Why save baseline outputs (`get system performance status`, session counts) on a healthy day?
+      A: So during an incident you can see what changed instead of guessing what "normal" was.
+      :::
+
+      :::ps
+      As a consultant, run the baseline commands at the start and end of every change window and attach them to the change record. They protect you and the customer.
+      :::
+  - id: M4.12.u2
+    title: The sniffer
+    tier: 2
+    est_min: 11
+    body: |
+      The sniffer answers one question: **does the packet arrive, and does it leave?** (Admin Guide, pp. 5575–5576)
+
+      :::cli
+      # diagnose sniffer packet <interface> '<filter>' <verbose> <count> <tsformat>
+      :::
+
+      - **interface:** `port1`, `internal`, or `any` to see a packet enter one interface and leave another.
+      - **filter:** a BPF-style expression in **single quotes**, for example `'host 10.0.10.20 and tcp port 443'`, or `none`.
+      - **verbose:** 1 header · 2 header + IP data · 3 header + Ethernet data · **4 header with interface name** · 5 IP data with interface name · 6 Ethernet data with interface name.
+      - **count:** stop after N packets (otherwise it runs until Ctrl+C).
+      - **tsformat:** `a` absolute UTC, `l` absolute local time, otherwise relative.
+
+      Level **4** is the workhorse: you see `lan in` and `wan1 out` for each packet, which proves forwarding. Levels 3 and 6 produce output you can convert into a pcap for Wireshark.
+
+      :::cli
+      # diagnose sniffer packet any 'host 10.0.10.20 and tcp port 443' 4 20 l
+      :::
+
+      **Reading it:**
+
+      - SYN in on `lan`, nothing out: FortiGate dropped it → debug flow.
+      - SYN in and out, no SYN/ACK back: the problem is beyond the FortiGate (server, next hop, return route).
+      - SYN/ACK arrives on another interface than expected: asymmetric routing.
+
+      The GUI has a packet capture tool under Network > Diagnostics that shows headers and payloads and can filter after capture (Admin Guide, p. 1143).
+
+      :::recall
+      Q: Which sniffer verbosity prints headers with the interface name?
+      A: 4.
+      :::
+
+      :::pitfall
+      Forgetting the quotes around the filter, or running without a count on a busy interface, floods your SSH session. Always filter tightly and set a count.
+      :::
+  - id: M4.12.u3
+    title: Debug flow, line by line
+    tier: 3
+    est_min: 14
+    body: |
+      Debug flow shows what FortiOS **decides** about a packet: which session, which route, which NAT, which policy, and why it dropped it (Admin Guide, pp. 5577–5581).
+
+      :::cli
+      # diagnose debug flow filter clear
+      # diagnose debug flow filter addr 203.160.224.97
+      # diagnose debug flow show function-name enable
+      # diagnose debug enable
+      # diagnose debug flow trace start 100
+      ...reproduce the traffic...
+      # diagnose debug flow trace stop
+      # diagnose debug disable
+      :::
+
+      Filter options: `addr`, `saddr`, `daddr`, `port`, `sport`, `dport`, `proto`, `vd` (VDOM index, -1 for all), `negate`, `clear`. Use `filter6` for IPv6.
+
+      ## The lines that matter (from the guide's HTTP example)
+
+      | Line | Meaning |
+      |---|---|
+      | `vd-root received a packet(proto=6, 192.168.3.221:1487->203.160.224.97:80) from port5.` | What arrived and where |
+      | `allocate a new session-00000e90` | First packet: a new session |
+      | `find a route: gw-192.168.11.254 via port6` | Route lookup result |
+      | `find SNAT: IP-192.168.11.59, port-31925` | Source NAT chosen |
+      | `Allowed by Policy-3: SNAT` | Which policy matched |
+      | `Find an existing session, id-00000e90, reply direction` | A reply matched the session |
+      | `DNAT 192.168.11.59:31925->192.168.3.221:1487` | Reverse NAT applied to the reply |
+
+      Common drop lines you'll meet in the field:
+
+      - `Denied by forward policy check (policy 0)`: no policy matched; implicit deny.
+      - `reverse path check fail, drop`: RPF; usually a missing route back to the source.
+      - `iprope_in_check() check failed on policy 0, drop`: traffic **to** the FortiGate itself (local-in), for example admin access not allowed on that interface.
+
+      ## Safety rules
+
+      - Filter first. On a busy unit an unfiltered trace is noise and load.
+      - Use a packet count (`trace start 100`), and stop and disable when done.
+      - If FortiGate sends logs to FortiAnalyzer or FortiCloud, the debug flow output is also recorded as event logs. Don't leave it running.
+
+      :::recall
+      Q: What does `Find an existing session, id-..., reply direction` tell you?
+      A: The packet is a reply that matched an existing session, so no new policy lookup was needed.
+      :::
+
+      :::why
+      Q: Why is debug flow often the fastest way to settle a "firewall or not?" argument?
+      A: It shows FortiOS's own decision for that packet: the route, the policy ID and the drop reason, or that it was allowed. That's evidence, not opinion.
+      :::
+  - id: M4.12.u4
+    title: Sessions, offload and conserve mode
+    tier: 4
+    est_min: 12
+    body: |
+      ## Sessions
+
+      :::cli
+      # diagnose sys session filter clear
+      # diagnose sys session filter dst 172.20.120.222
+      # diagnose sys session filter dport 443
+      # diagnose sys session list
+      :::
+
+      Filters include `src`, `dst`, `sport`, `dport`, `proto`, and negations like `nsrc` and `nport`. `diagnose sys session clear` **clears every session that matches the current filter**. With no filter that's every session on the box, so always set and double-check the filter first.
+
+      ## Offload: when debug flow goes silent
+
+      Sessions offloaded to **NP6/NP7** processors bypass the CPU, so **flow monitoring doesn't see them** (Admin Guide, p. 5578). Options:
+
+      - Test with **ICMP**, which isn't offloaded.
+      - NP6: temporarily `diagnose npu np6 fastpath disable` (re-enable afterwards).
+      - NP7: disable offload in the **policy** that accepts the traffic you're tracing, or use the NP7 packet sniffer.
+
+      Seeing only the first packets of a session in debug flow and then nothing is often offload, not a problem.
+
+      ## Conserve mode
+
+      When memory runs low, FortiOS enters **conserve mode** and changes how functions like antivirus scanning work (Admin Guide, p. 4516). Thresholds in percent of total RAM (configurable, 70–97):
+
+      - **red** (enter conserve mode): default **88**
+      - **green** (leave conserve mode): default **82**
+      - **extreme** (new sessions dropped): default **95**
+
+      Symptoms: AV-scanned traffic blocked or bypassed (by the AV fail-open setting), new sessions failing at extreme. Check `get system performance status` and the event log. Fixes are capacity and design: flow-based inspection where proxy mode isn't needed, fewer sessions, right-sizing.
+
+      :::recall
+      Q: Default memory threshold for entering conserve mode?
+      A: Red: 88 % of total RAM (green 82 % to leave, extreme 95 % to drop new sessions).
+      :::
+
+      :::pitfall
+      `diagnose sys session clear` with a forgotten or wrong filter drops every matching session, possibly the whole firewall's. In a customer environment, say the filter out loud and run `list` first.
+      :::
+
+      :::threat ref=ibm-2026-ai-automation-saves
+      IBM's 2026 report found extensive security AI and automation shortened breaches by **65 days** and saved **USD 1.93 million**. Fast, evidence-based diagnostics are the human side of the same idea: the shorter the time to root cause, the cheaper the incident.
+      :::
+
+cards:
+  - { id: M4.12.c01, unit: M4.12.u1, tier: 1, front: "First steps of the FortiOS troubleshooting method?", back: "Verify permissions/config, establish a baseline, define the problem, create a plan." }
+  - { id: M4.12.c02, unit: M4.12.u1, tier: 1, front: "Command for CPU, memory, sessions and uptime at a glance?", back: "`get system performance status`." }
+  - { id: M4.12.c03, unit: M4.12.u1, tier: 1, front: "Command for total session count?", back: "`get system session status`." }
+  - { id: M4.12.c04, unit: M4.12.u1, tier: 2, front: "Command for firmware and FortiGuard engine versions?", back: "`get system status`." }
+  - { id: M4.12.c05, unit: M4.12.u2, tier: 1, front: "Sniffer syntax?", back: "`diagnose sniffer packet <interface> '<filter>' <verbose> <count> <tsformat>`." }
+  - { id: M4.12.c06, unit: M4.12.u2, tier: 1, front: "Sniffer verbose level for headers with interface name?", back: "4." }
+  - { id: M4.12.c07, unit: M4.12.u2, tier: 2, front: "Sniffer tsformat `a` vs `l`?", back: "`a` = absolute UTC; `l` = absolute local time." }
+  - { id: M4.12.c08, unit: M4.12.u2, tier: 2, front: "Why sniff on interface `any`?", back: "To see the same packet arrive on one interface and leave on another, proving forwarding." }
+  - { id: M4.12.c09, unit: M4.12.u2, tier: 2, front: "SYN in on lan, nothing out on wan. Next tool?", back: "Debug flow: FortiGate dropped it and will say why." }
+  - { id: M4.12.c10, unit: M4.12.u3, tier: 1, front: "Start a debug flow for 100 packets?", back: "`diagnose debug enable` then `diagnose debug flow trace start 100` (after setting a filter)." }
+  - { id: M4.12.c11, unit: M4.12.u3, tier: 2, front: "Debug flow filter options?", back: "addr, saddr, daddr, port, sport, dport, proto, vd, negate, clear (filter6 for IPv6)." }
+  - { id: M4.12.c12, unit: M4.12.u3, tier: 2, front: "Meaning: `allocate a new session-00000e90`?", back: "First packet of a flow: FortiOS created a new session." }
+  - { id: M4.12.c13, unit: M4.12.u3, tier: 2, front: "Meaning: `Allowed by Policy-3: SNAT`?", back: "Policy ID 3 matched and source NAT is applied." }
+  - { id: M4.12.c14, unit: M4.12.u3, tier: 2, front: "Meaning: `Denied by forward policy check (policy 0)`?", back: "No configured policy matched; the implicit deny dropped it." }
+  - { id: M4.12.c15, unit: M4.12.u3, tier: 3, front: "Meaning: `iprope_in_check() check failed on policy 0, drop`?", back: "Traffic to the FortiGate itself (local-in) wasn't allowed, e.g. admin access not enabled on that interface." }
+  - { id: M4.12.c16, unit: M4.12.u3, tier: 2, front: "Why keep debug flow short when FortiAnalyzer is attached?", back: "Its output is also recorded as event logs and sent to FortiAnalyzer/FortiCloud." }
+  - { id: M4.12.c17, unit: M4.12.u4, tier: 2, front: "What does `diagnose sys session clear` remove?", back: "Every session matching the current session filter; all sessions if no filter." }
+  - { id: M4.12.c18, unit: M4.12.u4, tier: 3, front: "Why might debug flow show nothing after the first packets?", back: "The session was offloaded to NP6/NP7, which flow monitoring can't see." }
+  - { id: M4.12.c19, unit: M4.12.u4, tier: 3, front: "Two ways to trace NP7-offloaded traffic?", back: "Disable NP7 offload in the policy being traced, or use the NP7 packet sniffer (or test with ICMP)." }
+  - { id: M4.12.c20, unit: M4.12.u4, tier: 2, front: "Conserve mode thresholds (defaults)?", back: "Red 88 % (enter), green 82 % (leave), extreme 95 % (drop new sessions).", source: "FortiOS 8.0.2 Admin Guide p. 4516" }
+
+quiz:
+  - id: M4.12.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which tool proves whether a packet arrives on one interface and leaves on another?
+    options:
+      - { id: a, text: "diagnose sniffer packet any '<filter>' 4", correct: true }
+      - { id: b, text: "get system status", why_wrong: "System info, no packets." }
+      - { id: c, text: "get router info routing-table all", why_wrong: "Shows routes, not packets." }
+      - { id: d, text: "execute ping", why_wrong: "Tests reachability from the FortiGate itself, not transit traffic." }
+    explanation: Sniff on `any` with verbosity 4 to see the interface for each packet.
+  - id: M4.12.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: Debug flow prints `Denied by forward policy check (policy 0)`. What does it mean?
+    options:
+      - { id: a, text: "No policy matched; the implicit deny dropped the packet", correct: true }
+      - { id: b, text: "Policy ID 0 is your first policy", why_wrong: "Policy 0 is the implicit deny." }
+      - { id: c, text: "The route lookup failed", why_wrong: "Routing failures produce different messages." }
+      - { id: d, text: "The packet was offloaded", why_wrong: "Offload doesn't produce a deny." }
+    explanation: Check interfaces (routing), addresses, services and schedule against the policy you expected.
+  - id: M4.12.q03
+    type: single
+    tier: 1
+    pretest: true
+    stem: What must you do before `diagnose debug flow trace start` to see output?
+    options:
+      - { id: a, text: "Set a filter and run `diagnose debug enable`", correct: true }
+      - { id: b, text: "Reboot the FortiGate", why_wrong: "Never needed for debug flow." }
+      - { id: c, text: "Disable all security profiles", why_wrong: "Not required." }
+      - { id: d, text: "Enable central NAT", why_wrong: "Unrelated." }
+    explanation: Filter, enable debug output, then start the trace with a packet count.
+  - id: M4.12.q04
+    type: single
+    tier: 2
+    pretest: true
+    stem: Debug flow shows the first SYN of an HTTPS session and then nothing, but the user's connection works. Most likely explanation?
+    options:
+      - { id: a, text: "The session was offloaded to the NP processor, so the CPU no longer sees it", correct: true }
+      - { id: b, text: "The FortiGate is dropping the rest", why_wrong: "The connection works, so packets are passing." }
+      - { id: c, text: "The debug flow filter was cleared", why_wrong: "Then you'd see more output, not less." }
+      - { id: d, text: "The session TTL expired", why_wrong: "The connection is still working." }
+    explanation: Flow monitoring doesn't see NP6/NP7-offloaded traffic.
+    source: FortiOS 8.0.2 Admin Guide p. 5578
+  - id: M4.12.q05
+    type: single
+    tier: 2
+    pretest: true
+    stem: You run `diagnose sys session clear` without setting a filter first. What happens?
+    options:
+      - { id: a, text: "Every session on the FortiGate (or VDOM) is cleared", correct: true }
+      - { id: b, text: "Nothing; a filter is mandatory", why_wrong: "It runs; the filter is what limits it." }
+      - { id: c, text: "Only expired sessions are cleared", why_wrong: "It clears all matching sessions, active ones included." }
+      - { id: d, text: "Only your own SSH session is cleared", why_wrong: "Your session is cleared along with all the others." }
+    explanation: Clear acts on whatever the current filter matches. Set it, list, then clear.
+  - id: M4.12.q06
+    type: order
+    tier: 2
+    stem: Put a safe debug flow run in order.
+    items: ["diagnose debug flow filter clear", "diagnose debug flow filter addr 10.0.10.20", "diagnose debug enable", "diagnose debug flow trace start 50", "Reproduce the traffic", "diagnose debug flow trace stop / diagnose debug disable"]
+    explanation: Clear old filters, set a tight filter, enable output, start with a count, reproduce, stop and disable.
+  - id: M4.12.q07
+    type: numeric
+    tier: 1
+    stem: Which sniffer verbosity level prints headers AND the interface name?
+    answer: 4
+    explanation: 4 = header of packets with interface name.
+    source: FortiOS 8.0.2 Admin Guide p. 5576
+  - id: M4.12.q08
+    type: single
+    tier: 2
+    stem: In the sniffer, the SYN arrives on `lan` and leaves on `wan1`, but no SYN/ACK ever comes back. Where is the problem?
+    options:
+      - { id: a, text: "Beyond the FortiGate: the server, the next hop or the return route", correct: true }
+      - { id: b, text: "The FortiGate policy", why_wrong: "The FortiGate forwarded the SYN, so the policy allowed it." }
+      - { id: c, text: "The FortiGate's NAT", why_wrong: "NAT happened (the packet left); nothing came back to translate." }
+      - { id: d, text: "The LAN switch", why_wrong: "The packet already crossed the LAN side." }
+    explanation: FortiGate did its job. Look downstream, and check the return path.
+  - id: M4.12.q09
+    type: output
+    tier: 3
+    output: |
+      id=20085 trace_id=209 func=resolve_ip_tuple_fast line=2700 msg="vd-root received a packet(proto=6, 192.168.3.221:1487->203.160.224.97:80) from port5."
+      id=20085 trace_id=209 func=resolve_ip_tuple line=2799 msg="allocate a new session-00000e90"
+      id=20085 trace_id=209 func=vf_ip4_route_input line=1543 msg="find a route: gw-192.168.11.254 via port6"
+      id=20085 trace_id=209 func=get_new_addr line=1219 msg="find SNAT: IP-192.168.11.59, port-31925"
+      id=20085 trace_id=209 func=fw_forward_handler line=317 msg="Allowed by Policy-3: SNAT"
+    stem: Which statement is true about this flow?
+    options:
+      - { id: a, text: "A new session from port5 was routed out port6, source-NATed to 192.168.11.59 and allowed by policy 3", correct: true }
+      - { id: b, text: "The packet was dropped by policy 3", why_wrong: "It says 'Allowed by Policy-3'." }
+      - { id: c, text: "It's a reply packet matching an existing session", why_wrong: "'allocate a new session' means it's the first packet." }
+      - { id: d, text: "Destination NAT was applied", why_wrong: "Only SNAT is shown." }
+    explanation: "Read top-down: arrival, new session, route, SNAT, policy."
+    source: FortiOS 8.0.2 Admin Guide p. 5579
+  - id: M4.12.q10
+    type: output
+    tier: 3
+    output: |
+      id=20085 trace_id=210 func=resolve_ip_tuple_fast line=2700 msg="vd-root received a packet(proto=6, 203.160.224.97:80->192.168.11.59:31925) from port6."
+      id=20085 trace_id=210 func=resolve_ip_tuple_fast line=2727 msg="Find an existing session, id-00000e90, reply direction"
+      id=20085 trace_id=210 func=__ip_session_run_tuple line=1516 msg="DNAT 192.168.11.59:31925->192.168.3.221:1487"
+      id=20085 trace_id=210 func=vf_ip4_route_input line=1543 msg="find a route: gw-192.168.3.221 via port5"
+    stem: What is happening here?
+    options:
+      - { id: a, text: "The server's reply matched the session, was translated back to the client's original IP and port, and routed out port5", correct: true }
+      - { id: b, text: "A VIP is publishing a server", why_wrong: "This DNAT reverses the earlier SNAT; it's not a VIP." }
+      - { id: c, text: "A new session was created for the reply", why_wrong: "It found an existing session in the reply direction." }
+      - { id: d, text: "The packet was dropped by RPF", why_wrong: "No drop message appears." }
+    explanation: Replies ride the session; the 'DNAT' undoes the SNAT for the return direction.
+    source: FortiOS 8.0.2 Admin Guide p. 5580
+  - id: M4.12.q11
+    type: output
+    tier: 4
+    output: |
+      id=20085 trace_id=31 func=print_pkt_detail line=5895 msg="vd-root:0 received a packet(proto=1, 10.20.0.5:1->10.10.0.10:2048) from to-HQ. type=8, code=0, id=1, seq=42."
+      id=20085 trace_id=31 func=init_ip_session_common line=6076 msg="allocate a new session-0012ab34"
+      id=20085 trace_id=31 func=vf_ip_route_input_common line=2605 msg="find a route: flag=00000000 gw-10.10.0.10 via lan"
+      id=20085 trace_id=31 func=fw_forward_handler line=980 msg="Denied by forward policy check (policy 0)"
+    stem: A branch (10.20.0.0/24) pings an HQ server through tunnel to-HQ and fails. What's the fix?
+    options:
+      - { id: a, text: "Add (or fix) a policy from to-HQ to lan allowing the branch subnet to the server", correct: true }
+      - { id: b, text: "Add a route to 10.10.0.10", why_wrong: "The route was found: via lan." }
+      - { id: c, text: "Disable RPF on to-HQ", why_wrong: "There's no RPF failure here." }
+      - { id: d, text: "Restart the tunnel", why_wrong: "The packet arrived through the tunnel fine." }
+    explanation: "Route found, then policy 0: no policy matched to-HQ → lan for this traffic."
+  - id: M4.12.q12
+    type: output
+    tier: 4
+    output: |
+      id=20085 trace_id=12 func=print_pkt_detail line=5895 msg="vd-root:0 received a packet(proto=6, 172.16.9.20:52314->10.10.0.25:443) from to-Plant. flag [S], seq 112233, ack 0, win 64240"
+      id=20085 trace_id=12 func=vf_ip_route_input_common line=2605 msg="reverse path check fail, drop"
+    stem: Traffic from a new plant VPN is dropped. Best fix?
+    options:
+      - { id: a, text: "Add a route to 172.16.9.0/24 via to-Plant so the reverse path check passes", correct: true }
+      - { id: b, text: "Add a policy from to-Plant to lan", why_wrong: "The packet never reached the policy check; RPF dropped it first." }
+      - { id: c, text: "Enable asymroute", why_wrong: "Hides a missing route and weakens inspection." }
+      - { id: d, text: "Clear all sessions", why_wrong: "There's no session; it was dropped before one was created." }
+    explanation: RPF needs a route back to the source through the incoming interface.
+  - id: M4.12.q13
+    type: single
+    tier: 3
+    stem: Admin access to the FortiGate's lan interface on HTTPS fails, and debug flow shows `iprope_in_check() check failed on policy 0, drop`. What's the likely cause?
+    options:
+      - { id: a, text: "HTTPS administrative access isn't allowed on that interface (or a local-in policy denies it)", correct: true }
+      - { id: b, text: "There's no firewall policy from lan to wan", why_wrong: "Admin access is local-in traffic, not forwarded traffic." }
+      - { id: c, text: "The certificate expired", why_wrong: "That gives a browser warning, not a local-in drop." }
+      - { id: d, text: "The route to the admin PC is missing", why_wrong: "That would show as a routing or RPF problem." }
+    explanation: iprope_in_check relates to traffic destined to the FortiGate itself.
+  - id: M4.12.q14
+    type: single
+    tier: 3
+    stem: Which is the safest way to trace NP7-offloaded traffic?
+    options:
+      - { id: a, text: "Disable NP7 offload only in the policy accepting the traffic you're tracing (or use the NP7 packet sniffer)", correct: true }
+      - { id: b, text: "Disable NP7 offload globally for all policies", why_wrong: "Unnecessary blast radius on a production box." }
+      - { id: c, text: "Reboot to clear offloaded sessions", why_wrong: "Outage, and the sessions get offloaded again." }
+      - { id: d, text: "Use `diagnose npu np6 fastpath disable`", why_wrong: "That command is for NP6, not NP7." }
+    explanation: The guide says NP7 offload is disabled in the firewall policy being traced, or you use the NP7 sniffer.
+    source: FortiOS 8.0.2 Admin Guide p. 5578
+  - id: M4.12.q15
+    type: single
+    tier: 3
+    stem: Memory usage is 90 % with default thresholds. What state is the FortiGate in?
+    options:
+      - { id: a, text: "Conserve mode (above red 88 %), not yet extreme (95 %)", correct: true }
+      - { id: b, text: "Normal operation", why_wrong: "90 % is above the default red threshold." }
+      - { id: c, text: "Dropping all new sessions", why_wrong: "That's extreme, default 95 %." }
+      - { id: d, text: "Leaving conserve mode", why_wrong: "It leaves at green, 82 %." }
+    explanation: Red 88 % enters conserve mode; green 82 % leaves; extreme 95 % drops new sessions.
+    source: FortiOS 8.0.2 Admin Guide p. 4516
+  - id: M4.12.q16
+    type: multi
+    tier: 2
+    stem: Which are valid `diagnose debug flow filter` options? Select all that apply.
+    options:
+      - { id: a, text: "addr", correct: true }
+      - { id: b, text: "dport", correct: true }
+      - { id: c, text: "proto", correct: true }
+      - { id: d, text: "policyid", why_wrong: "Not in the documented filter list." }
+    explanation: addr, saddr, daddr, port, sport, dport, proto, vd, negate, clear.
+    source: FortiOS 8.0.2 Admin Guide p. 5578
+  - id: M4.12.q17
+    type: single
+    tier: 4
+    stem: "A customer says 'the firewall blocks our ERP after lunch'. The sniffer shows the client's packet arriving after an hour idle, and debug flow shows no matching session and a new policy lookup that the ERP server then answers with RST. What's happening?"
+    options:
+      - { id: a, text: "The idle session expired (TTL) while the app kept its TCP connection open; the server rejects the unexpected packet", correct: true }
+      - { id: b, text: "IPS blocks the ERP after lunch", why_wrong: "No IPS event; the evidence is session expiry." }
+      - { id: c, text: "The routing table changes at noon", why_wrong: "Nothing points to routing." }
+      - { id: d, text: "Conserve mode", why_wrong: "Conserve mode affects profiles and new sessions broadly, not one idle app." }
+    explanation: Raise session-ttl on the ERP policy (or enable app keepalives), not globally.
+  - id: M4.12.q18
+    type: single
+    tier: 5
+    stem: You're asked to troubleshoot intermittent drops on a production HA cluster during business hours. What is the best plan?
+    options:
+      - { id: a, text: "Agree the change scope, capture a baseline, use tight sniffer and debug flow filters with counts, avoid clearing sessions, and share findings with a timeline", correct: true }
+      - { id: b, text: "Run an unfiltered debug flow for an hour", why_wrong: "Load, noise, and logs flooding FortiAnalyzer." }
+      - { id: c, text: "Clear all sessions to reset the state", why_wrong: "Drops every user's connections." }
+      - { id: d, text: "Fail over the cluster to see if it helps", why_wrong: "An unplanned failover in business hours is a change with impact." }
+    explanation: Evidence first, minimal impact, clear communication.
+  - id: M4.12.q19
+    type: single
+    tier: 2
+    stem: Where is the GUI debug flow tool?
+    options:
+      - { id: a, text: "Network > Diagnostics > Debug Flow", correct: true }
+      - { id: b, text: "System > Settings > Debug", why_wrong: "Not the documented location." }
+      - { id: c, text: "Log & Report > Debug", why_wrong: "Not the documented location." }
+      - { id: d, text: "Dashboard > Network", why_wrong: "Dashboards show monitors, not the debug tool." }
+    explanation: The guide documents Network > Diagnostics > Debug Flow, which can export to CSV.
+    source: FortiOS 8.0.2 Admin Guide p. 1150
+
+labs:
+  - id: M4.12.lab1
+    title: Run a clean debug flow
+    goal: Trace why HTTPS from 10.0.10.20 to 198.51.100.80 fails, with a safe, filtered debug flow.
+    worked:
+      config: |
+        # diagnose debug flow filter clear
+        # diagnose debug flow filter addr 198.51.100.80
+        # diagnose debug flow filter dport 443
+        # diagnose debug flow show function-name enable
+        # diagnose debug enable
+        # diagnose debug flow trace start 50
+        ...ask the user to retry...
+        # diagnose debug flow trace stop
+        # diagnose debug disable
+      notes:
+        - "Clear old filters first; set address and port so you only see this flow."
+        - "A count of 50 stops the trace by itself."
+        - "Save the output in the case or change record."
+    faded:
+      template: |
+        # diagnose debug flow filter {{clear}}
+        # diagnose debug flow filter {{addr}} 198.51.100.80
+        # diagnose debug {{enable}}
+        # diagnose debug flow trace {{start}} 50
+        # diagnose debug flow trace {{stop}}
+    solo:
+      prompt: "Write the commands to trace up to 30 packets of DNS (UDP 53) traffic from source 10.1.1.50, then stop and disable debugging."
+      required: ["diagnose debug flow filter clear", "diagnose debug flow filter saddr 10.1.1.50", "diagnose debug flow filter dport 53", "diagnose debug enable", "diagnose debug flow trace start 30", "diagnose debug flow trace stop", "diagnose debug disable"]
+      solution: |
+        # diagnose debug flow filter clear
+        # diagnose debug flow filter saddr 10.1.1.50
+        # diagnose debug flow filter dport 53
+        # diagnose debug enable
+        # diagnose debug flow trace start 30
+        # diagnose debug flow trace stop
+        # diagnose debug disable
+      notes: "Adding `filter proto 17` would also restrict it to UDP."
+  - id: M4.12.lab2
+    title: Find, read and clear one session safely
+    goal: A stuck session to 172.20.120.222:8888 must be cleared without touching anything else.
+    worked:
+      config: |
+        # diagnose sys session filter clear
+        # diagnose sys session filter dst 172.20.120.222
+        # diagnose sys session filter dport 8888
+        # diagnose sys session list
+        ...read the output, confirm it's only the expected session...
+        # diagnose sys session clear
+      notes:
+        - "`list` before `clear`, every time."
+        - "Clear only acts on what the filter matches."
+        - "Reset the filter with `filter clear` when you're done."
+    solo:
+      prompt: "List sessions from source 10.11.101.112, excluding destination port 8888."
+      required: ["diagnose sys session filter clear", "diagnose sys session filter src 10.11.101.112", "diagnose sys session filter nport 8888", "diagnose sys session list"]
+      solution: |
+        # diagnose sys session filter clear
+        # diagnose sys session filter src 10.11.101.112
+        # diagnose sys session filter nport 8888
+        # diagnose sys session list
+  - id: M4.12.lab3
+    title: Sniff with the right verbosity
+    goal: Capture 20 packets between 10.0.10.20 and anything on TCP 443, on all interfaces, with interface names and local timestamps.
+    worked:
+      config: |
+        # diagnose sniffer packet any 'host 10.0.10.20 and tcp port 443' 4 20 l
+      notes:
+        - "Quotes around the filter are required."
+        - "4 = headers with interface names; l = local absolute time."
+    faded:
+      template: |
+        # diagnose {{sniffer}} packet {{any}} '{{host}} 10.0.10.20 and tcp port 443' {{4}} 20 {{l}}
+    solo:
+      prompt: "Sniff ICMP to or from 8.8.8.8 on wan1, 10 packets, headers with interface names, UTC absolute timestamps."
+      required: ["diagnose sniffer packet wan1", "host 8.8.8.8 and icmp", "4 10 a"]
+      solution: |
+        # diagnose sniffer packet wan1 'host 8.8.8.8 and icmp' 4 10 a
+
+scenarios:
+  - id: M4.12.sc1
+    kind: raid
+    tier: 4
+    title: "Raid: 'Your firewall is blocking our app'"
+    situation: |
+      14:10. A customer's app vendor is on a call, certain the new FortiGate blocks their SaaS sync. The customer's IT manager is caught in the middle. Users say the sync fails "sometimes".
+    stakeholders: ["IT manager", "App vendor", "Your PS manager (watching)"]
+    ask: How do you run the next 30 minutes?
+    right_thinking:
+      - "Agree a test: one user, one sync, at a known time"
+      - "Collect facts: source IP, destination FQDN/IP, port"
+      - "Sniffer on any (does it leave and come back?) and a filtered debug flow (policy, NAT, drops)"
+      - "Show the evidence on screen: if allowed and forwarded, move the conversation to the vendor side with data"
+      - "If FortiGate drops it, name the exact reason and fix it in a controlled change"
+      - "Send a short written summary with outputs and next steps"
+    what: Replace opinions with a single, evidenced test.
+    why: Debug flow and the sniffer show FortiOS's own decisions; that ends blame loops quickly and respectfully.
+    how: ["One controlled test", "Sniffer + debug flow with filters", "Share evidence", "Fix or hand back with data", "Written summary"]
+    pitfalls: ["Arguing without data", "Running unfiltered debugs on production", "Making changes before you know the cause"]
+    model_answer: |
+      "I'd suggest one controlled test: one user, one sync, right now, while I watch with a filtered sniffer and debug flow. Either the FortiGate shows the policy and route allowing it and the replies coming back, in which case I share that screen with the vendor and we look at their side together, or it shows exactly why it drops it, and I fix that in a quick, controlled change. Either way, I send a written summary with the outputs within the hour."
+    could_have_added: ["Check whether 'sometimes' matches session TTL, DNS changes or SD-WAN path changes"]
+    best_way: "Let's stop guessing: one test, I'll show you what the firewall decides, and we fix whichever side the evidence points to."
+    rubric: ["control the call", "evidence plan", "tool use", "neutral communication", "follow-up"]
+  - id: M4.12.sc2
+    kind: situation
+    tier: 4
+    title: The silent debug flow
+    situation: |
+      On a FortiGate with NP7, you trace a slow file transfer. Debug flow shows the first two packets, then nothing, while the transfer keeps running slowly. The customer's engineer says "your debug is broken".
+    ask: Explain what you see and how you'll continue the investigation.
+    right_thinking:
+      - "Recognise offload: after setup the session is handled by NP7, invisible to flow monitoring"
+      - "Choose a safe method: disable NP7 offload on the specific policy temporarily, or use the NP7 sniffer"
+      - "Plan it as a small change with rollback; watch CPU"
+      - "Then look for the actual slowness cause: MSS/MTU, shaping, duplex errors, path"
+    what: A scoped offload change (or NP7 sniffer) to see the traffic, then root cause.
+    why: Flow monitoring doesn't see NP-offloaded sessions; Fortinet documents disabling offload in the traced policy or using the NP7 sniffer.
+    how: ["Explain offload", "Policy-scoped offload disable or NP7 sniffer", "Trace", "Re-enable", "Root cause"]
+    pitfalls: ["Disabling offload globally", "Forgetting to re-enable offload"]
+    model_answer: |
+      "The debug isn't broken: once the session is set up, the NP7 processor handles it in hardware, and debug flow only sees what the CPU sees. To look inside, I'll either use the NP7 sniffer or disable offload just on this policy for a few minutes, as a small change we roll back right after. Then we can see the transfer and look for the real cause of the slowness, like MSS, shaping or interface errors."
+    best_way: "That's hardware acceleration doing its job. I'll switch it off for this one policy for five minutes so we can see the traffic, then switch it back."
+    rubric: ["explain clearly", "safe method", "change discipline", "next diagnostic steps"]
+  - id: M4.12.sc3
+    kind: situation
+    tier: 3
+    title: Building the customer's baseline
+    situation: |
+      At the end of an implementation, the customer asks: "How will we know if something is wrong later?" They have no monitoring beyond the FortiGate GUI.
+    ask: What do you hand over?
+    right_thinking:
+      - "Baseline outputs from the guide's list, captured on a healthy day, stored with the as-built"
+      - "A one-page runbook: sniffer, debug flow, session list, with safe defaults"
+      - "Logging to FortiAnalyzer or syslog, and alerts on conserve mode / high CPU"
+      - "Knowledge transfer session where they run the commands themselves"
+    what: A baseline pack and a runbook, plus logging and alerting.
+    why: The guide's method starts from a baseline; without one every incident starts from zero.
+    how: ["Capture baseline", "Runbook", "Logging/alerting", "Hands-on KT"]
+    model_answer: |
+      "I'll leave you three things: a baseline pack with today's outputs of the key commands, so you know what normal looks like; a one-page runbook with the safe way to run the sniffer, debug flow and session checks; and logging to FortiAnalyzer or your syslog with alerts for things like conserve mode. Then we do a short hands-on session where your team runs them, so it sticks."
+    best_way: "A snapshot of 'normal', a one-page runbook, alerts, and one hour of your team doing it themselves."
+    rubric: ["baseline", "runbook", "monitoring", "knowledge transfer"]
+
+interview:
+  - id: M4.12.i1
+    stage: technical
+    question: How do you troubleshoot traffic that doesn't pass through a FortiGate?
+    testing: Structured method and real commands
+    framework: "Facts → sniffer → debug flow → session → fix → verify"
+    model_answer: |
+      "I start with the exact flow: source, destination, port and time, plus 'timed out or refused'. Then I sniff on 'any' with a tight filter and verbosity 4 to see whether the packet arrives and leaves. If it arrives and doesn't leave, I run a filtered debug flow: it tells me the route lookup, the policy that matched or 'policy 0', NAT, or a reverse-path drop. If it leaves and nothing comes back, the problem is downstream or on the return route. I fix the specific cause, retest the same way, and write it up. At Fortinet TAC this was most of my day."
+    could_have_added: ["Mention offload making debug flow go silent", "Mention baseline outputs"]
+    best_way: "Does it arrive, does it leave, and what did FortiOS decide? Sniffer, then debug flow, then fix and prove it."
+    target: "1:15"
+  - id: M4.12.i2
+    stage: technical
+    question: Read me this debug flow line - 'reverse path check fail, drop'. What do you do?
+    testing: Practical reading of debug output
+    framework: "Meaning → cause → fix"
+    model_answer: |
+      "That's the anti-spoofing check: FortiGate has no route back to the source through the interface the packet came in on. Usually it's a new VPN or a second WAN where nobody added the route for the remote subnet. I add the route through the right interface and retest. Disabling the check or enabling asymmetric routing would hide the problem and weaken security."
+    best_way: "No route back to the source that way. Add the route; don't switch off the check."
+    target: "0:45"
+  - id: M4.12.i3
+    stage: technical
+    question: Why might debug flow show nothing even though traffic is passing?
+    testing: Hardware knowledge
+    framework: "Mechanism → workaround"
+    model_answer: |
+      "Because of NP offload. After the first packets, the session is handled by the NP6 or NP7 processor, and debug flow only sees what goes through the CPU. To trace it I test with ICMP, which isn't offloaded, or disable offload temporarily: on NP6 with the fastpath command, on NP7 in the specific policy, or I use the NP7 packet sniffer. I treat that as a small change and switch it back."
+    best_way: "The hardware took over the session. Trace with ICMP or turn offload off for that one policy, briefly."
+    target: "0:45"
+  - id: M4.12.i4
+    stage: technical
+    question: What is conserve mode and what would you check?
+    testing: Platform health knowledge
+    framework: "Definition → thresholds → impact → actions"
+    model_answer: |
+      "It's FortiOS protecting itself when memory runs low. By default it enters at 88 % of RAM, the red threshold, leaves at 82 %, green, and at 95 %, extreme, it drops new sessions. In conserve mode, features like antivirus change behaviour. I'd check get system performance status and the event logs, then look at why: session count, proxy-based inspection where flow-based would do, logging load or a model that's undersized."
+    could_have_added: ["At Fortinet I moved policies from proxy to flow inspection to cut memory pressure where proxy mode wasn't needed"]
+    best_way: "Low-memory self-protection: in at 88, out at 82, drops at 95. Then find what's eating memory."
+    target: "1:00"
+  - id: M4.12.i5
+    stage: hm
+    question: Tell me about a time your troubleshooting ended a blame loop between vendors.
+    testing: Customer handling with technical evidence
+    framework: "STAR with the evidence as the turning point"
+    model_answer: |
+      "At Fortinet I was one of the escalation points for enterprise customers in North America and Brazil. A typical pattern was a customer and an app vendor each blaming the other. My approach was always the same: agree one controlled test, run a filtered sniffer and debug flow, and share the output live. Either the FortiGate showed it allowed and forwarded the traffic, which moved the conversation to the other side with data, or it showed the exact drop reason and I fixed it. In one case I traced an SD-WAN packet-duplication problem across three ISPs to specific SLA settings and worked with development on the fix."
+    could_have_added: ["A specific time saved or a CSAT outcome, if you remember it"]
+    best_way: "I stop the debate with one test and the firewall's own output. Evidence, not opinions."
+    target: "1:30"
+
+field_reports:
+  - id: M4.12.fr1
+    title: Machine speed is now the bar
+    body: |
+      IBM 2026: organisations using security AI and automation extensively cut breach lifecycles by **65 days** and costs by **USD 1.93 million**, yet only **36 %** used them extensively. Fast, evidence-based troubleshooting and automated alerting (FortiAnalyzer handlers, automation stitches) is the PS consultant's contribution to that number.
+    source: IBM Cost of a Data Breach Report 2026, Key findings
+  - id: M4.12.fr2
+    title: AI-driven attacks add a million
+    body: |
+      IBM 2026 found AI-driven attacks up **56 %**, adding about **USD 1 million** per breach. When attacks move at machine speed, the time from "something's wrong" to "here's the root cause" is a security control in itself.
+    source: IBM Cost of a Data Breach Report 2026, Executive summary
