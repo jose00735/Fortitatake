@@ -1,0 +1,344 @@
+id: M6.01
+title: "FortiAnalyzer foundations: modes, logs, storage, forwarding and HA"
+stage: S6
+stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
+order: 130
+est_sessions: 1
+objectives:
+  - Choose Analyzer or Collector mode and explain Analyzer–Collector designs
+  - Explain the life of a log (real-time, archive, analytics) and size storage with a data policy
+  - Register devices and get encrypted logs flowing from FortiGates
+  - Forward, aggregate and fetch logs for SIEMs, other FortiAnalyzers and forensics
+  - Design FortiAnalyzer HA and avoid the classic retention surprises
+sources:
+  - "FortiAnalyzer 8.0.2 Admin Guide: Key concepts: modes, ADOMs, logs, log storage (pp. 45–52)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Device Manager and ADOMs (pp. 95–99), log forwarding and fetching (pp. 573–586)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: High Availability (pp. 667–668), Collectors and Analyzers (pp. 678–680)"
+
+units:
+  - id: M6.01.u1
+    title: Modes, ADOMs and getting logs in
+    tier: 1
+    est_min: 12
+    body: |
+      ## Two operation modes (pp. 45–47)
+
+      - **Analyzer (default):** all features: FortiView, Log View, Incidents & Alerts, reports.
+      - **Collector:** receives logs, keeps them in **original binary format** and forwards them to an Analyzer; most features are off (Log View shows raw archive logs only), and the SQL database is disabled by default.
+
+      **Analyzer–Collector collaboration:** collectors at the edge take the log-receiving load (or buffer logs at remote sites); the Analyzer focuses on analysis and reports. For very large estates, a **FortiAnalyzer Fabric** has members syncing incidents, events and logs to a **supervisor**.
+
+      ## ADOMs (pp. 47, 97)
+
+      ADOMs restrict which devices' data an admin sees, down to VDOMs. Organise by firmware version, region, administrators, customer or Security Fabric. Each ADOM can have its **own data policy** (retention).
+
+      ## Getting logs in (p. 48)
+
+      - The sending device must be **registered and authorised**: add it by serial number, or point the FortiGate at FortiAnalyzer and authorise it from **Unauthorized Devices**.
+      - Logs from Fortinet devices travel over **OFTP** and **must be encrypted**. FortiAnalyzer's level must be **equal to or lower than** the device's:
+
+      :::cli
+      # FortiAnalyzer
+      config system global
+          set enc-algorithm {high | medium | low}
+      end
+      # FortiGate
+      config log fortianalyzer setting
+          set enc-algorithm {high-medium | high | low}
+      end
+      :::
+
+      :::recall
+      Q: Logs arrive at a FortiAnalyzer in Collector mode. Can you run a report on them there?
+      A: No. Collector mode disables reporting; forward them to an Analyzer.
+      :::
+  - id: M6.01.u2
+    title: The life of a log and storage sizing
+    tier: 2
+    est_min: 15
+    body: |
+      ## Three phases (pp. 48, 50–51)
+
+      1. **Real-time:** just arrived, stored uncompressed in Archive, not yet in the SQL database.
+      2. **Archive (offline):** the log file is **rolled and compressed**. You can't see it in FortiView, Log View (except Log Browse), Incidents or Reports. Archive logs can be uploaded to a server and are used to **rebuild the database**.
+      3. **Analytics (online, historical):** indexed into the **SQL database**; the only logs used for FortiView, Log View, Incidents & Events and Reports.
+
+      ## Data policy (p. 51)
+
+      Per ADOM: **how long to keep Analytics** (then purged from SQL, still in Archive) and **how long to keep Archive** (then deleted). Most administrators keep **30–60 days in Analytics**; compliance usually drives Archive retention (months or years).
+
+      ## Disk sizing (p. 52)
+
+      An average **Analytic log is ~600 bytes**, an **Archive log ~80 bytes**; after seven days analytic logs compress to ~150 bytes. Set the Analytics/Archive ratio with that in mind.
+
+      ## Rolling and deletion (p. 49)
+
+      - Log files roll at **200 MB by default** or on a schedule. **Roll daily** so a file never spans more than 24 hours.
+      - FortiAnalyzer deletes **files, not individual logs**: a file spanning months can't be deleted until all its logs are out of retention, which is why Archive can show "100/90 days".
+      - **RAID is not a backup.** Upload archives, or snapshot the VM data disk.
+
+      Need to analyse dates older than Analytics retention? **Rebuild the database** for that date range from Archive, then rebuild again for current logs (p. 51).
+
+      :::pitfall
+      Customers often size by "days of retention" and forget that indexed logs take about 7× the space of archived ones. Ask for the log rate first, then size.
+      :::
+  - id: M6.01.u3
+    title: Forwarding, fetching and HA
+    tier: 3
+    est_min: 12
+    body: |
+      ## Log forwarding (pp. 573–575)
+
+      - **Forwarding (default):** real-time or near real-time to another FortiAnalyzer, a **syslog** server or a **CEF** server, with device and log filters. The client keeps its own copy.
+      - **Aggregation:** stores logs and forwards them at a scheduled time, **only between two FortiAnalyzers**, configured in the CLI.
+      - The forwarding buffer cache is sized from the log rate: the guide's examples give about **2 GB for 100 logs/s, 20 GB for 1,000 logs/s, 200 GB for 10,000 logs/s** (`set log-forward-cache-size`, p. 585).
+      - A **SIEM Collector** option also exists for forwarding to SIEM platforms (pp. 534–542).
+
+      ## Log fetching (p. 585)
+
+      Pulls **archived logs** for a device and time range from one FortiAnalyzer to another, then indexes them for queries and reports: ideal for **forensics** on old data. Both units must run the **same firmware**; one fetch session at a time between two units.
+
+      ## FortiAnalyzer HA (pp. 667–668)
+
+      - Up to **four units**: one primary and up to three secondaries, **same series**, same operation mode, same platform for VMs.
+      - Logs and data are **synchronised**; secondaries can take load such as **running reports**.
+      - **Active-Passive** or **Active-Active** (A-A enables geo-redundant designs).
+      - Same **group name, group ID and password**; peers listed by IP and serial on every unit.
+      - Mixed licences: the cluster uses the one with the **smallest** number of managed devices.
+
+      :::tip
+      Compare with FortiManager HA (up to five units, TCP 5199, manual or VRRP failover). Panels like asking for the difference.
+      :::
+
+cards:
+  - { id: M6.01.c01, unit: M6.01.u1, tier: 1, front: "FortiAnalyzer default operation mode?", back: "Analyzer (all features). Collector forwards and archives." }
+  - { id: M6.01.c02, unit: M6.01.u1, tier: 2, front: "What does Collector mode keep logs as?", back: "Original binary format, for forwarding/archiving; SQL off by default." }
+  - { id: M6.01.c03, unit: M6.01.u1, tier: 2, front: "Log transport from Fortinet devices?", back: "OFTP, encrypted." }
+  - { id: M6.01.c04, unit: M6.01.u1, tier: 2, front: "Encryption level rule?", back: "FortiAnalyzer's level must be equal to or lower than the sending device's." }
+  - { id: M6.01.c05, unit: M6.01.u2, tier: 1, front: "Three log phases?", back: "Real-time, Archive (compressed, offline), Analytics (indexed in SQL, online)." }
+  - { id: M6.01.c06, unit: M6.01.u2, tier: 2, front: "Which logs feed FortiView, Log View, incidents and reports?", back: "Analytics (indexed) logs." }
+  - { id: M6.01.c07, unit: M6.01.u2, tier: 2, front: "What does a data policy set?", back: "How long to keep Analytics and how long to keep Archive (per ADOM)." }
+  - { id: M6.01.c08, unit: M6.01.u2, tier: 2, front: "Average analytic vs archive log size?", back: "~600 bytes vs ~80 bytes (analytic compress to ~150 after 7 days)." }
+  - { id: M6.01.c09, unit: M6.01.u2, tier: 2, front: "Default log file roll size and best practice?", back: "200 MB; roll daily so files don't span more than 24 h." }
+  - { id: M6.01.c10, unit: M6.01.u2, tier: 3, front: "Why can Archive show 100/90 days?", back: "FortiAnalyzer deletes whole files; a file spanning days can't be deleted while some logs are in retention." }
+  - { id: M6.01.c11, unit: M6.01.u3, tier: 2, front: "Forwarding vs aggregation?", back: "Forwarding: real-time to FAZ/syslog/CEF. Aggregation: scheduled, FAZ-to-FAZ only, CLI." }
+  - { id: M6.01.c12, unit: M6.01.u3, tier: 2, front: "What is log fetching for?", back: "Pulling archived logs from another FortiAnalyzer for forensics; same firmware required." }
+  - { id: M6.01.c13, unit: M6.01.u3, tier: 2, front: "FortiAnalyzer HA size?", back: "Up to four: one primary, three secondaries; same series and mode." }
+  - { id: M6.01.c14, unit: M6.01.u3, tier: 3, front: "FAZ HA with mixed licences?", back: "Uses the licence with the smallest number of managed devices." }
+
+quiz:
+  - id: M6.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which logs can you use in FortiAnalyzer reports?
+    options:
+      - { id: a, text: "Analytics logs indexed in the SQL database", correct: true }
+      - { id: b, text: "Archive logs", why_wrong: "Archive logs aren't available to reports until re-indexed." }
+      - { id: c, text: "Any log on disk", why_wrong: "Only indexed logs." }
+      - { id: d, text: "Real-time logs only", why_wrong: "Reports use indexed history." }
+    explanation: Reports, FortiView, Log View and incidents use Analytics.
+    source: FortiAnalyzer 8.0.2 Admin Guide pp. 50–51
+  - id: M6.01.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: A FortiGate is configured to send logs but nothing appears. The FortiAnalyzer shows it under Unauthorized Devices. Fix?
+    options:
+      - { id: a, text: "Authorise the device on FortiAnalyzer", correct: true }
+      - { id: b, text: "Change the FortiGate to syslog", why_wrong: "Unnecessary." }
+      - { id: c, text: "Reboot FortiAnalyzer", why_wrong: "Not needed." }
+      - { id: d, text: "Switch to Collector mode", why_wrong: "Unrelated." }
+    explanation: Devices must be registered and authorised.
+    source: FortiAnalyzer 8.0.2 Admin Guide pp. 48, 98
+  - id: M6.01.q03
+    type: single
+    tier: 2
+    stem: FortiGate enc-algorithm is 'low' and FortiAnalyzer is 'high'. What happens?
+    options:
+      - { id: a, text: "Logs are rejected: FortiAnalyzer's level must be equal or lower than the FortiGate's", correct: true }
+      - { id: b, text: "Logs are accepted at high", why_wrong: "The levels are incompatible." }
+      - { id: c, text: "Logs are sent unencrypted", why_wrong: "OFTP logs must be encrypted." }
+      - { id: d, text: "FortiGate upgrades automatically", why_wrong: "No." }
+    explanation: Match or lower on FortiAnalyzer.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 48
+  - id: M6.01.q04
+    type: single
+    tier: 2
+    stem: A customer wants a year of logs for compliance but only investigates the last month. Data policy?
+    options:
+      - { id: a, text: "About 30–60 days in Analytics and 365 days in Archive", correct: true }
+      - { id: b, text: "365 days in Analytics", why_wrong: "Wasteful: indexed logs take far more space." }
+      - { id: c, text: "30 days Archive only", why_wrong: "Fails compliance." }
+      - { id: d, text: "No data policy", why_wrong: "Defaults may not match the requirement." }
+    explanation: Analytics for investigation, Archive for retention.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 51
+  - id: M6.01.q05
+    type: numeric
+    tier: 2
+    stem: What is the default log file size (MB) at which FortiAnalyzer rolls a log file?
+    answer: 200
+    explanation: 200 MB, plus optional daily or weekly rolling.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 49
+  - id: M6.01.q06
+    type: single
+    tier: 3
+    stem: Auditors ask about an incident 8 months ago. Analytics keeps 60 days; Archive keeps 1 year. What do you do?
+    options:
+      - { id: a, text: "Rebuild the database for that date range from Archive (or fetch to another FAZ), analyse, then rebuild back", correct: true }
+      - { id: b, text: "It's impossible", why_wrong: "Archive logs can be re-indexed." }
+      - { id: c, text: "Read the binary files by hand", why_wrong: "Use the supported rebuild or fetch." }
+      - { id: d, text: "Ask the FortiGate", why_wrong: "FortiGates don't keep 8 months of logs." }
+    explanation: Archive enables later analysis.
+    source: FortiAnalyzer 8.0.2 Admin Guide pp. 51, 585
+  - id: M6.01.q07
+    type: single
+    tier: 2
+    stem: The SOC's SIEM needs FortiGate logs in CEF in near real time. What do you configure on FortiAnalyzer?
+    options:
+      - { id: a, text: "Log forwarding (forwarding mode) to a CEF server", correct: true }
+      - { id: b, text: "Aggregation mode to the SIEM", why_wrong: "Aggregation is FAZ-to-FAZ only." }
+      - { id: c, text: "Log fetching", why_wrong: "Fetching is FAZ-to-FAZ for archives." }
+      - { id: d, text: "Collector mode", why_wrong: "That forwards to an Analyzer." }
+    explanation: Forwarding supports syslog and CEF.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 573
+  - id: M6.01.q08
+    type: multi
+    tier: 2
+    stem: Which are true about FortiAnalyzer HA? Select all that apply.
+    options:
+      - { id: a, text: "Up to four units: one primary and up to three secondaries", correct: true }
+      - { id: b, text: "All units same series and same operation mode", correct: true }
+      - { id: c, text: "Active-Active can support geo-redundant designs", correct: true }
+      - { id: d, text: "Up to five units with VRRP failover", why_wrong: "That describes FortiManager HA." }
+    explanation: Don't mix up FAZ and FMG HA.
+    source: FortiAnalyzer 8.0.2 Admin Guide pp. 667–668
+  - id: M6.01.q09
+    type: single
+    tier: 3
+    stem: Why roll log files daily?
+    options:
+      - { id: a, text: "So no file spans more than 24 hours, keeping retention deletion accurate", correct: true }
+      - { id: b, text: "Required for encryption", why_wrong: "Unrelated." }
+      - { id: c, text: "To save CPU", why_wrong: "Not the reason given." }
+      - { id: d, text: "Reports only read daily files", why_wrong: "Reports read Analytics." }
+    explanation: FortiAnalyzer deletes whole files.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 49
+
+labs:
+  - id: M6.01.lab1
+    title: Send FortiGate logs to FortiAnalyzer, encrypted
+    goal: Point a FortiGate at FortiAnalyzer 10.0.0.20 with high encryption and confirm the link.
+    worked:
+      config: |
+        # FortiGate
+        config log fortianalyzer setting
+            set status enable
+            set server "10.0.0.20"
+            set enc-algorithm high
+            set upload-option realtime
+        end
+        execute log fortianalyzer test-connectivity
+        # FortiAnalyzer
+        config system global
+            set enc-algorithm high
+        end
+        # Then authorise the FortiGate under Device Manager > Unauthorized Devices
+      notes:
+        - "FortiAnalyzer's level must be equal or lower than the FortiGate's."
+        - "test-connectivity shows registration and log status."
+    faded:
+      template: |
+        config log fortianalyzer setting
+            set status {{enable}}
+            set {{server}} "10.0.0.20"
+            set {{enc-algorithm}} high
+        end
+        execute log fortianalyzer {{test-connectivity}}
+    solo:
+      prompt: "On the FortiAnalyzer, set the encryption level to medium."
+      required: ["config system global", "set enc-algorithm medium"]
+      solution: |
+        config system global
+            set enc-algorithm medium
+        end
+      notes: "FortiGates sending to it must use medium or higher (high-medium or high)."
+  - id: M6.01.lab2
+    title: Size storage from a log rate
+    goal: A customer sends 1,000 logs/s and needs 30 days in Analytics. Estimate the Analytics space with the guide's averages.
+    worked:
+      config: |
+        logs/day      = 1,000 × 86,400 = 86.4 million
+        analytics/day ≈ 86.4M × 600 B ≈ 51.8 GB (first 7 days)
+        after day 7   ≈ 86.4M × 150 B ≈ 13 GB/day (compressed)
+        30 days       ≈ 7 × 51.8 + 23 × 13 ≈ 363 + 299 ≈ 662 GB Analytics
+      notes:
+        - "Then add Archive at ~80 B/log for the retention period."
+        - "Validate with the FortiAnalyzer sizing tools and the customer's peak rate."
+    faded:
+      template: |
+        logs/day = 1,000 × {{86,400}}
+        analytics/day ≈ logs/day × {{600}} B
+        archive/day ≈ logs/day × {{80}} B
+    solo:
+      prompt: "Estimate Archive space per day for 1,000 logs/s at 80 bytes per log, in GB (one decimal). Write 'archive/day = <value> GB'."
+      required: ["archive/day", "6.9"]
+      solution: |
+        archive/day = 6.9 GB   (86.4M × 80 B ≈ 6.9 GB)
+      notes: "A year of Archive ≈ 2.5 TB at that rate."
+
+scenarios:
+  - id: M6.01.sc1
+    kind: situation
+    tier: 3
+    title: '"Our FortiAnalyzer only shows 3 weeks"'
+    situation: |
+      A customer bought a FortiAnalyzer for 90-day investigations. FortiView only goes back three weeks, and the disk is full.
+    ask: Explain and propose a fix.
+    right_thinking:
+      - "Analytics vs Archive: FortiView needs indexed logs"
+      - "Disk ratio and data policy likely not sized for the log rate"
+      - "Options: adjust ratio and policy, reduce noisy logs, add storage or a Collector/Analyzer design"
+    what: A sizing-based explanation and options.
+    why: Retention problems are usually sizing problems.
+    how: ["Check log rate and data policy", "Check Analytics/Archive ratio", "Reduce unneeded logs", "Resize or add capacity"]
+    model_answer: |
+      FortiView only uses Analytics logs, the indexed ones, which take about seven times the space of archived logs. With their log rate, the disk can't hold 90 days indexed, so old logs are purged from Analytics. I'd check the data policy and the Analytics/Archive ratio, then look at reducing noise, like traffic logs on low-value policies. If they truly need 90 days indexed, it's a capacity decision: more storage, or a Collector plus Analyzer design. Meanwhile, older data is still in Archive and can be rebuilt for a specific investigation.
+    best_way: "FortiView needs indexed logs, which are big; resize the data policy and ratio, cut noise, or add capacity."
+    rubric: ["correct concept", "sizing", "options", "interim workaround"]
+
+interview:
+  - id: M6.01.t01
+    stage: technical
+    question: Explain how FortiAnalyzer stores logs.
+    testing: Core concepts
+    framework: "Phases → policy → sizing"
+    model_answer: |
+      "Logs arrive as real-time, go into Archive, compressed files on disk, and are indexed into the SQL database as Analytics logs, which is what FortiView, Log View, incidents and reports use. A data policy per ADOM sets how long to keep each. Analytics logs are much bigger, about 600 bytes against 80 archived, so most customers keep 30 to 60 days indexed and longer in Archive for compliance."
+    best_way: "Archive for retention, Analytics for analysis; size from the log rate."
+    target: "0:45"
+  - id: M6.01.t02
+    stage: technical
+    question: When would you use Collector mode?
+    testing: Architecture
+    framework: "Use case"
+    model_answer: |
+      "When log volume or geography makes one box impractical: Collectors at regions or remote sites receive and archive logs in raw format and forward them to a central Analyzer, which does the analysis and reporting. It also buffers logs if the WAN to the Analyzer drops."
+    best_way: "Collectors receive and forward; the Analyzer analyses and reports."
+    target: "0:30"
+  - id: M6.01.t03
+    stage: technical
+    question: How would you get FortiGate logs into a customer's SIEM?
+    testing: Integration (bridge your SIEM work)
+    framework: "Options → choice"
+    model_answer: |
+      "Through FortiAnalyzer log forwarding in syslog or CEF format, with device and log filters so the SIEM only gets what it needs, which keeps SIEM licensing costs down. At Netskope I set up log streaming into customers' SIEMs, so I'd agree the format, fields and volume with the SOC first."
+    best_way: "FortiAnalyzer forwarding in syslog or CEF, filtered; agree format and volume with the SOC."
+    target: "0:35"
+
+field_reports:
+  - id: M6.01.fr1
+    title: Detection time is the expensive part
+    body: |
+      Detection and escalation plus lost business make up **63 %** of breach costs (IBM 2026). Logs that are kept, indexed and searchable for the right period are what make fast investigation possible.
+    source: IBM Cost of a Data Breach Report 2026

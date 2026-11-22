@@ -1,0 +1,292 @@
+id: M6.04
+title: "FortiAnalyzer incidents, alerts, automation and reports"
+stage: S6
+stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
+order: 134
+est_sessions: 1
+objectives:
+  - Explain basic and correlation alert handlers, data selectors and notification profiles
+  - Raise incidents manually and automatically, and map them to MITRE ATT&CK
+  - Describe playbooks and connectors for automated response
+  - Build a report from datasets, charts and macros, and fix "No Data" reports
+  - Speed up heavy reports with auto-cache and plan report schedules
+sources:
+  - "FortiAnalyzer 8.0.2 Admin Guide: Incidents (pp. 222–226), Alerts and alert handlers (pp. 235–256)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Automation, playbooks and connectors (pp. 399–402)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Reports, how reports are populated, datasets (pp. 465–470, 505–507)"
+
+units:
+  - id: M6.04.u1
+    title: Alert handlers and incidents
+    tier: 2
+    est_min: 14
+    body: |
+      ## Alert handlers (pp. 254–256)
+
+      Alert handlers decide which **alerts** are generated from logs:
+
+      - **Basic:** an alert fires when **any** of its rules is met (rules are ORed).
+      - **Correlation:** an alert fires when a **sequence** of rules is met, with operators such as AND, AND_NOT, OR and FOLLOWED_BY.
+      - **Predefined** handlers exist for FortiGate, FortiSandbox, FortiMail and FortiWeb (some disabled by default); the easy way to build your own is to **clone** a predefined one.
+      - **Data selectors** (which devices and logs) and **notification profiles** (who's told, how) are configured separately and reused across handlers.
+      - Handlers only use **Analytics logs**. In an Analyzer–Collector design, the **Analyzer** evaluates them. Each ADOM has its own handlers; you can export and import them.
+
+      ## Incidents (pp. 222–224)
+
+      Incidents track an investigation: category, **MITRE ATT&CK technique IDs**, severity, status, affected endpoint, assignee, attachments, audit history. You can raise one from an alert (only from alerts for **one endpoint**) or create it manually.
+
+      Automatic creation happens when:
+
+      - a handler has **Automatically Create Incident** enabled (it has the highest priority; later alerts with the same subject attach to the same incident until it's closed);
+      - **alert grouping** raises an incident for alerts at or above a severity with the same target: on by default at **critical** (`config system log alert` → `set min-severity-to-raise-incident-by-grouping {critical | high | none}`);
+      - the **Automated Correlation Threat Hunting** playbook runs after the Malicious IP Intrusion Detection handler fires.
+
+      :::recall
+      Q: Basic vs correlation alert handler?
+      A: Basic fires when any rule matches (OR). Correlation fires on a sequence or combination of rules (AND, AND_NOT, OR, FOLLOWED_BY).
+      :::
+  - id: M6.04.u2
+    title: Automation with playbooks and connectors
+    tier: 2
+    est_min: 10
+    body: |
+      **Incidents & Alerts > Automation** (pp. 399–401) holds **playbooks** (sequences of tasks) and **connectors** (what the tasks can act on). Full capacity needs a **Security Automation subscription**.
+
+      - Default connectors: **Local**, **FortiGuard** and **VirusTotal**, used by default playbooks.
+      - Fabric connectors: **FortiOS** (for example, quarantine or block on FortiGates), **FortiManager**, **EMS**.
+      - Others appear once created: **ServiceNow**, **Slack**, **MS Teams**.
+
+      ## A sensible first automation
+
+      1. Trigger: a critical alert from a compromised-host handler.
+      2. Enrich: look up the IP and hash with FortiGuard or VirusTotal.
+      3. Create or update the incident with the enrichment attached.
+      4. Notify the on-call channel (Teams or Slack).
+      5. Containment (quarantine via FortiOS or EMS) only after the customer approves automatic actions; start with a manual approval step.
+
+      The summary dashboard shows how many playbooks and tasks ran, useful evidence for the customer's management.
+
+      :::pitfall
+      Automatic quarantine on a noisy handler can take down production users. Tune the handler, run it in notify-only mode first, then automate containment.
+      :::
+  - id: M6.04.u3
+    title: Reports that answer real questions
+    tier: 3
+    est_min: 14
+    body: |
+      ## How a report is built (pp. 465–466)
+
+      - **Datasets:** SQL queries that pick the log type and data (for example, FortiGate botnet events).
+      - **Charts:** visualise a dataset (table, bar, pie, line…).
+      - **Macros:** put a single value from a dataset into text (a count, bandwidth, duration, percentage).
+      - **Reports / templates / layouts:** charts and macros plus cover page, text and images.
+
+      Reports use **Analytics logs**. Many predefined reports, templates, charts, datasets and macros exist; **clone and customise** them rather than starting from zero.
+
+      ## When a report shows "No Data"
+
+      - Use **Report Guidance** to check the required logs exist (p. 466).
+      - Wrong ADOM (each ADOM has its own reports and libraries); a FortiGate report only imports into a FortiGate or Fabric ADOM.
+      - The time range is beyond Analytics retention.
+      - The FortiGate isn't sending that log type (for example, a policy without logging or without the profile).
+      - The SQL database is rebuilding (reports wait until it's done).
+
+      ## Performance
+
+      Large reports can take a long time to assemble. **Auto-cache** builds an **hcache** in advance so scheduled reports run much faster (p. 466). Schedule heavy reports at night and send them through output profiles (email, file server).
+
+      ## Which reports to set up first
+
+      Executive security summary (weekly), threat and compromised-host report (daily for the SOC), bandwidth and application usage (monthly), and compliance-oriented reports matching the customer's frameworks. You've done this before: turning log data into SOC 2, ISO 27001 and PCI-DSS evidence a board could read.
+
+      :::why
+      Q: Why clone a predefined report instead of building from scratch?
+      A: The datasets and charts are already tested against the log schema; you change scope, layout and wording, not SQL.
+      :::
+
+cards:
+  - { id: M6.04.c01, unit: M6.04.u1, tier: 2, front: "Basic alert handler logic?", back: "Any rule matches → alert (rules ORed)." }
+  - { id: M6.04.c02, unit: M6.04.u1, tier: 2, front: "Correlation handler operators?", back: "AND, AND_NOT, OR, FOLLOWED_BY (sequences)." }
+  - { id: M6.04.c03, unit: M6.04.u1, tier: 2, front: "Data selectors and notification profiles?", back: "Configured separately and reused by handlers: which data, and who gets notified how." }
+  - { id: M6.04.c04, unit: M6.04.u1, tier: 2, front: "Which logs do alert handlers use?", back: "Analytics logs only. The Analyzer evaluates them in Analyzer–Collector designs." }
+  - { id: M6.04.c05, unit: M6.04.u1, tier: 3, front: "Default alert grouping severity for auto incidents?", back: "Critical (min-severity-to-raise-incident-by-grouping)." }
+  - { id: M6.04.c06, unit: M6.04.u1, tier: 2, front: "What can an incident record?", back: "Category, MITRE ATT&CK IDs, severity, status, endpoint, assignee, attachments, audit history." }
+  - { id: M6.04.c07, unit: M6.04.u2, tier: 2, front: "Default automation connectors?", back: "Local, FortiGuard, VirusTotal." }
+  - { id: M6.04.c08, unit: M6.04.u2, tier: 2, front: "Subscription for full automation?", back: "Security Automation subscription." }
+  - { id: M6.04.c09, unit: M6.04.u3, tier: 1, front: "Report building blocks?", back: "Datasets (SQL), charts, macros, then report layouts/templates." }
+  - { id: M6.04.c10, unit: M6.04.u3, tier: 2, front: "Tool for 'No Data' reports?", back: "Report Guidance." }
+  - { id: M6.04.c11, unit: M6.04.u3, tier: 2, front: "What speeds up heavy scheduled reports?", back: "Auto-cache (hcache) built in advance." }
+
+quiz:
+  - id: M6.04.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: You want an alert only when a host gets an IPS hit FOLLOWED_BY a connection to a known botnet IP. Which handler type?
+    options:
+      - { id: a, text: "Correlation alert handler", correct: true }
+      - { id: b, text: "Basic alert handler", why_wrong: "Basic rules are ORed; no sequence." }
+      - { id: c, text: "Notification profile", why_wrong: "That defines who's notified, not the logic." }
+      - { id: d, text: "Data selector", why_wrong: "That selects data, not sequences." }
+    explanation: Sequences need correlation.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 254
+  - id: M6.04.q02
+    type: single
+    tier: 1
+    pretest: true
+    stem: What's the quickest way to build a custom alert handler?
+    options:
+      - { id: a, text: "Clone a predefined handler and customise it", correct: true }
+      - { id: b, text: "Write SQL", why_wrong: "Handlers aren't written in SQL." }
+      - { id: c, text: "Edit a report", why_wrong: "Different module." }
+      - { id: d, text: "Import a FortiGate policy", why_wrong: "Unrelated." }
+    explanation: Clone and adjust.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 255
+  - id: M6.04.q03
+    type: single
+    tier: 2
+    stem: Alerts with the same target and critical severity are automatically grouped into incidents. Which setting changes the threshold to high?
+    options:
+      - { id: a, text: "set min-severity-to-raise-incident-by-grouping high (config system log alert)", correct: true }
+      - { id: b, text: "set enc-algorithm high", why_wrong: "Log encryption." }
+      - { id: c, text: "auto-cache enable", why_wrong: "Reports." }
+      - { id: d, text: "set workspace-mode workflow", why_wrong: "FortiManager." }
+    explanation: Grouping threshold setting.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 224
+  - id: M6.04.q04
+    type: multi
+    tier: 2
+    stem: A scheduled report shows No Data. Plausible causes? Select all that apply.
+    options:
+      - { id: a, text: "The time range is beyond Analytics retention", correct: true }
+      - { id: b, text: "You're in the wrong ADOM", correct: true }
+      - { id: c, text: "The FortiGate doesn't log that type (policy logging off)", correct: true }
+      - { id: d, text: "The report has too many charts", why_wrong: "That affects speed, not data." }
+    explanation: Use Report Guidance to check.
+    source: FortiAnalyzer 8.0.2 Admin Guide pp. 465–466
+  - id: M6.04.q05
+    type: order
+    tier: 2
+    stem: Put the report building blocks in order, from data to document.
+    items: ["Dataset (SQL query)", "Chart or macro", "Report layout or template", "Schedule and output profile"]
+    explanation: Data, visual, document, delivery.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 466
+  - id: M6.04.q06
+    type: single
+    tier: 3
+    stem: A customer wants automatic quarantine of any host flagged by an alert handler from day one. Best advice?
+    options:
+      - { id: a, text: "Tune the handler and run notify-only first, then add containment with an approval step", correct: true }
+      - { id: b, text: "Enable it immediately", why_wrong: "Noisy handlers can quarantine production users." }
+      - { id: c, text: "Never automate", why_wrong: "Automation saves time and money when tuned." }
+      - { id: d, text: "Use reports instead", why_wrong: "Reports don't respond." }
+    explanation: Earn trust in the handler first.
+  - id: M6.04.q07
+    type: single
+    tier: 2
+    stem: Which connectors are available by default for playbooks?
+    options:
+      - { id: a, text: "Local, FortiGuard and VirusTotal", correct: true }
+      - { id: b, text: "ServiceNow, Slack, Teams", why_wrong: "Those appear once created." }
+      - { id: c, text: "Only FortiOS", why_wrong: "More are available." }
+      - { id: d, text: "None without FortiSOAR", why_wrong: "FortiAnalyzer has its own playbooks." }
+    explanation: Defaults used by default playbooks.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 400
+
+labs:
+  - id: M6.04.lab1
+    title: Raise incidents earlier
+    goal: Make FortiAnalyzer group high and critical alerts with the same target into incidents.
+    worked:
+      config: |
+        config system log alert
+            set min-severity-to-raise-incident-by-grouping high
+        end
+      notes:
+        - "Default is critical; high creates more incidents, so check the SOC can handle the volume."
+        - "Handlers with 'Automatically Create Incident' still take priority."
+    faded:
+      template: |
+        config system log {{alert}}
+            set {{min-severity-to-raise-incident-by-grouping}} high
+        end
+    solo:
+      prompt: "Turn off automatic incident creation by grouping."
+      required: ["config system log alert", "set min-severity-to-raise-incident-by-grouping none"]
+      solution: |
+        config system log alert
+            set min-severity-to-raise-incident-by-grouping none
+        end
+      notes: "Handler-level auto-raise still works if enabled on a handler."
+  - id: M6.04.lab2
+    title: Plan a report pack for a new customer
+    goal: Write the four reports, their audience and schedule for a new mid-size customer.
+    worked:
+      config: |
+        1. Executive security summary   | CIO, CISO      | weekly, Monday 07:00 | email PDF
+        2. Threats and compromised hosts| SOC / IT team  | daily 06:00          | email + file server
+        3. Bandwidth and applications   | IT manager     | monthly              | email PDF
+        4. Compliance evidence (PCI-DSS)| Compliance lead| monthly              | file server
+        Auto-cache on for 1 and 2; heavy reports scheduled overnight
+      notes:
+        - "Clone predefined templates; adjust scope (devices, ADOM) and wording."
+        - "Run once manually and review with the customer before scheduling."
+    faded:
+      template: |
+        1. Executive security summary | {{CIO}} | {{weekly}}
+        2. Threats and compromised hosts | SOC | {{daily}}
+        Auto-{{cache}} on for heavy reports
+    solo:
+      prompt: "Name the FortiAnalyzer feature that helps you check whether the logs a report needs are available (two words)."
+      required: ["report guidance"]
+      solution: |
+        Report Guidance
+      notes: "Use it whenever a report says No Data."
+
+scenarios:
+  - id: M6.04.sc1
+    kind: situation
+    tier: 3
+    title: Alert fatigue
+    situation: |
+      The SOC gets 400 FortiAnalyzer email alerts a day and has started ignoring them. Last week a real compromised-host alert was missed.
+    ask: How do you fix it?
+    right_thinking:
+      - "Measure: which handlers produce most alerts and how many were real"
+      - "Tune or disable noisy handlers; raise thresholds; scope data selectors"
+      - "Route by severity: critical to on-call chat, others to a daily digest"
+      - "Group into incidents; automate enrichment"
+    what: A tuned alerting design with routing and incidents.
+    why: Too many alerts is as bad as none.
+    how: ["Top 10 handlers by volume", "Tune, scope or disable", "Notification profiles by severity", "Incident grouping and enrichment playbook"]
+    model_answer: |
+      First I'd measure: the top handlers by volume and how many alerts led to action. Usually a few handlers make most of the noise. I'd tune those: tighter data selectors, thresholds, or disable the ones that never matter. Then route by severity with notification profiles: critical goes to the on-call channel, the rest to a daily digest. Alert grouping turns related alerts into one incident per target, and a playbook can enrich incidents with FortiGuard lookups. In two weeks we review the numbers again with the SOC.
+    best_way: "Measure the noise, tune the top handlers, route by severity, group into incidents, enrich automatically, then review."
+    rubric: ["measures first", "tunes", "routes by severity", "incidents and automation", "review loop"]
+
+interview:
+  - id: M6.04.t01
+    stage: technical
+    question: How do alert handlers and incidents work in FortiAnalyzer?
+    testing: SOC features
+    framework: "Handlers → alerts → incidents"
+    model_answer: |
+      "Alert handlers turn Analytics logs into alerts: basic handlers fire on any matching rule, correlation handlers on a sequence like an IPS hit followed by a botnet connection. Data selectors and notification profiles are reusable. Incidents track the investigation with MITRE technique, severity, owner and attachments, and can be created automatically by a handler, by grouping critical alerts on the same target, or by a playbook."
+    best_way: "Handlers make alerts from logs; incidents track the investigation, raised manually or automatically."
+    target: "0:45"
+  - id: M6.04.t02
+    stage: technical
+    question: How would you build a custom report for a customer's board?
+    testing: Reporting and communication
+    framework: "Question → clone → datasets/charts → review → schedule"
+    model_answer: |
+      "Start from the board's questions: are we protected, what changed, are we compliant. Clone a predefined executive template, adjust the datasets, charts and macros to their scope, check the data with Report Guidance, review a first run with the CISO, then schedule it with auto-cache. I've turned log data into SOC 2, ISO 27001 and PCI-DSS evidence for boards before, so I keep it short and in business terms."
+    best_way: "Board's questions first, clone a template, validate the data, review, schedule."
+    target: "0:45"
+
+field_reports:
+  - id: M6.04.fr1
+    title: Automation pays
+    body: |
+      Organizations using security AI and automation extensively saved **USD 1.93 million** and **65 days** per breach (IBM 2026). Tuned alert handlers plus enrichment playbooks are the small, practical start of that.
+    source: IBM Cost of a Data Breach Report 2026

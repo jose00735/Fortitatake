@@ -1,0 +1,257 @@
+id: M6.03
+title: "FortiAnalyzer FortiView, Log View and Fabric View: investigating with logs"
+stage: S6
+stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
+order: 132
+est_sessions: 1
+objectives:
+  - Use FortiView to go from a dashboard to a single suspicious session
+  - Filter and read logs in Log View, and know when to use Log Browse
+  - Group devices with log groups and import old logs for analysis
+  - Use the Asset Identity Center to map users to endpoints during an incident
+  - Run a short, repeatable investigation a customer's SOC can follow
+sources:
+  - "FortiAnalyzer 8.0.2 Admin Guide: FortiView and Monitors (pp. 112–160)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Log View, log types, log groups, Log Browse, importing (pp. 158–180)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Fabric View and Asset Identity Center (pp. 191–193), Security Fabric correlation (pp. 214–217)"
+
+units:
+  - id: M6.03.u1
+    title: FortiView and Monitors
+    tier: 1
+    est_min: 12
+    body: |
+      **FortiView** combines real-time and historical data in one place: top threats, sources, destinations, applications, cloud apps and users, websites, VPN and more, each with **drill-down** to the detail (pp. 112–115). **Monitors** are dashboards designed for NOC and SOC screens.
+
+      Key facts:
+
+      - FortiView uses **Analytics logs only**, not Archive (p. 113). If it looks empty for older dates, check the data policy.
+      - With ADOMs enabled, each ADOM has its own FortiView; a **Fabric ADOM** shows all eligible devices in the Security Fabric.
+      - **Top Threats** includes things like malicious websites caught by web filtering, IPS attacks and malware; the **Threat Map** shows destinations by country with threat scores.
+      - In very high-capacity environments FortiView can be **disabled** to save CPU and memory (pp. 112, 157).
+
+      ## Drill-down method
+
+      Start broad, then narrow: time range → device → top threat or source → the user or IP → the sessions → the raw logs. Every click is a filter; keep the filter chips visible in your screenshots so the customer can repeat it.
+
+      :::recall
+      Q: FortiView shows nothing for last quarter. First thing to check?
+      A: Analytics retention in the data policy: FortiView only uses indexed (Analytics) logs.
+      :::
+  - id: M6.03.u2
+    title: Log View, log groups and old logs
+    tier: 2
+    est_min: 14
+    body: |
+      ## Log View (p. 158)
+
+      - **Logs > All / Fortinet Logs:** real-time or historical (Analytics) logs, with filters and columns.
+      - **Log Browse:** the actual log files, current and **compressed (archived)**; useful in Collector mode or for old data. Files are named `xlog.N.log` where x is the log type and N relates to the first log's time (p. 179).
+      - Log View isn't available while the **SQL database is rebuilding**.
+
+      ## What a FortiGate sends (p. 158)
+
+      **Traffic**, **Security** (antivirus, IPS, application control, web filter, file filter, DNS, DLP, email filter, WAF, vulnerability scan, VoIP, FortiClient) and **Event** logs (endpoint, HA, compliance, system, router, VPN, user, WAN opt, WiFi, FortiSASE). FortiAnalyzer also takes logs from FortiMail, FortiWeb, FortiSandbox, FortiEDR, FortiNAC, FortiClient and others, and from **syslog** sources.
+
+      ## Log groups (p. 179)
+
+      Virtual groups of up to **100 devices** for FortiView, logs, reports and alert handlers, with **no extra SQL database or disk**. Adding a device with VDOMs adds all its VDOMs.
+
+      ## Importing old logs (p. 180)
+
+      You can import log files (for example, old files from a device) to analyse them or report on them. Add the devices first, and set `config system sql` → `start-time` and `rebuild-event-start-time` earlier than the logs, with Analytics retention long enough, so they're inserted into SQL.
+
+      :::tip
+      Save useful filters as custom views. Your handover pack can include the three or four views the customer's team should check every morning.
+      :::
+  - id: M6.03.u3
+    title: Fabric View and the investigation routine
+    tier: 3
+    est_min: 12
+    body: |
+      ## Asset Identity Center (p. 191)
+
+      The central place to see **endpoints and users**: who used which device, interfaces and IPs, and OT/IoT vulnerabilities detected on assets. It helps with **incident response** (which assets are infected or vulnerable) and **compliance** (unknown or non-compliant users and endpoints). Mapping users to endpoints makes logs, events and reports far easier to read.
+
+      ## Security Fabric correlation (pp. 214–217)
+
+      Add the FortiGates of a Security Fabric as a **Security Fabric group** to see the topology and correlate **traffic logs with UTM logs** across the Fabric, so one session can be followed through several devices.
+
+      ## A 10-minute investigation routine
+
+      1. **Scope:** what triggered it (alert, user report), which device and time window.
+      2. **FortiView:** Top Threats or Compromised Hosts for that window; identify the host.
+      3. **Asset Identity Center:** who the user is, which endpoint, other IPs.
+      4. **Log View:** filter by that IP/user; read the traffic and security logs around the event.
+      5. **Correlate:** DNS, web filter, IPS and AV logs tell the story (lookup → connection → download → callback).
+      6. **Decide and document:** contain (quarantine, block), raise an incident, attach the logs.
+
+      :::ps
+      Customers buy FortiAnalyzer and then don't use it. Leaving them with a written routine and saved views is what turns it into a security tool.
+      :::
+
+cards:
+  - { id: M6.03.c01, unit: M6.03.u1, tier: 1, front: "Which logs does FortiView use?", back: "Analytics (indexed) logs only." }
+  - { id: M6.03.c02, unit: M6.03.u1, tier: 2, front: "What does a Fabric ADOM show in FortiView?", back: "Data from all eligible devices in the Security Fabric." }
+  - { id: M6.03.c03, unit: M6.03.u1, tier: 2, front: "Why disable FortiView?", back: "To save CPU and memory in high-capacity environments." }
+  - { id: M6.03.c04, unit: M6.03.u1, tier: 1, front: "Drill-down order?", back: "Time → device → top threat/source → user/IP → sessions → raw logs." }
+  - { id: M6.03.c05, unit: M6.03.u2, tier: 2, front: "Log Browse vs Logs view?", back: "Log Browse shows the log files (current and compressed); Logs shows real-time or Analytics logs." }
+  - { id: M6.03.c06, unit: M6.03.u2, tier: 2, front: "Three FortiGate log categories?", back: "Traffic, Security (AV, IPS, app control, web/DNS filter, DLP…), Event (system, VPN, HA, user…)." }
+  - { id: M6.03.c07, unit: M6.03.u2, tier: 2, front: "Log group limits?", back: "Up to 100 devices; virtual, no extra SQL or disk; VDOMs included automatically." }
+  - { id: M6.03.c08, unit: M6.03.u2, tier: 3, front: "Imported logs don't appear in reports. Check?", back: "config system sql start-time and rebuild-event-start-time older than the logs; Analytics retention long enough." }
+  - { id: M6.03.c09, unit: M6.03.u3, tier: 2, front: "Two uses of the Asset Identity Center?", back: "Incident response (infected/vulnerable assets) and compliance (unknown/non-compliant users and endpoints)." }
+  - { id: M6.03.c10, unit: M6.03.u3, tier: 2, front: "What does a Security Fabric group add?", back: "Topology and correlation of traffic logs with UTM logs across Fabric devices." }
+  - { id: M6.03.c11, unit: M6.03.u3, tier: 2, front: "Six-step investigation routine?", back: "Scope, FortiView, Asset Identity Center, Log View, correlate, decide and document." }
+
+quiz:
+  - id: M6.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: FortiView shows no data for dates older than 45 days, but Archive holds a year. Why?
+    options:
+      - { id: a, text: "FortiView only uses Analytics logs, and Analytics retention is shorter", correct: true }
+      - { id: b, text: "FortiView only shows 45 days by design", why_wrong: "It depends on the data policy." }
+      - { id: c, text: "The FortiGate deleted the logs", why_wrong: "FortiAnalyzer holds them." }
+      - { id: d, text: "Archive logs are encrypted", why_wrong: "Not the reason." }
+    explanation: Data policy decides what's indexed.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 113
+  - id: M6.03.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: Where do you look at compressed log files directly?
+    options:
+      - { id: a, text: "Log View > Log Browse", correct: true }
+      - { id: b, text: "FortiView", why_wrong: "Analytics only." }
+      - { id: c, text: "Reports", why_wrong: "Analytics only." }
+      - { id: d, text: "Fabric View", why_wrong: "Assets and topology." }
+    explanation: Log Browse reads files.
+    source: FortiAnalyzer 8.0.2 Admin Guide pp. 158, 179
+  - id: M6.03.q03
+    type: single
+    tier: 2
+    stem: You want one view and one report for 30 branch FortiGates without extra storage. Use…
+    options:
+      - { id: a, text: "A log group", correct: true }
+      - { id: b, text: "A new ADOM", why_wrong: "ADOMs separate administration and storage policies." }
+      - { id: c, text: "Collector mode", why_wrong: "Different purpose." }
+      - { id: d, text: "Log fetching", why_wrong: "For pulling archives from another FAZ." }
+    explanation: Virtual, up to 100 devices.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 179
+  - id: M6.03.q04
+    type: multi
+    tier: 2
+    stem: Which are FortiGate Security log types in FortiAnalyzer? Select all that apply.
+    options:
+      - { id: a, text: "Intrusion Prevention", correct: true }
+      - { id: b, text: "Web Filter", correct: true }
+      - { id: c, text: "DNS", correct: true }
+      - { id: d, text: "HA", why_wrong: "HA is an Event log." }
+    explanation: Security vs Event categories.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 158
+  - id: M6.03.q05
+    type: order
+    tier: 2
+    stem: Put the investigation routine in order.
+    items: ["Scope the trigger and time window", "FortiView: find the host", "Asset Identity Center: user and endpoint", "Log View: filtered logs", "Correlate DNS, web, IPS, AV", "Decide, contain and document"]
+    explanation: Broad to specific, then act.
+  - id: M6.03.q06
+    type: single
+    tier: 3
+    stem: Imported log files from an old FortiGate don't appear in Log View analytics. Most likely?
+    options:
+      - { id: a, text: "SQL start-time and rebuild-event-start-time are newer than the logs, or Analytics retention is too short", correct: true }
+      - { id: b, text: "Import isn't supported", why_wrong: "It is." }
+      - { id: c, text: "Log groups are needed", why_wrong: "Not for import." }
+      - { id: d, text: "FortiView must be disabled", why_wrong: "Unrelated." }
+    explanation: The SQL time window must include the imported dates.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 180
+  - id: M6.03.q07
+    type: single
+    tier: 2
+    stem: In an incident you need to know which user was on 10.1.20.55 and which other IPs their laptop used. Where?
+    options:
+      - { id: a, text: "Fabric View > Asset Identity Center", correct: true }
+      - { id: b, text: "Reports", why_wrong: "Too slow for live investigation." }
+      - { id: c, text: "Log Browse", why_wrong: "Raw files, no mapping." }
+      - { id: d, text: "System Settings", why_wrong: "No." }
+    explanation: User-endpoint mapping lives there.
+    source: FortiAnalyzer 8.0.2 Admin Guide p. 191
+
+labs:
+  - id: M6.03.lab1
+    title: Investigate a suspicious download
+    goal: A user reports a strange file download yesterday at about 15:00. Write the FortiAnalyzer steps you'd take.
+    worked:
+      config: |
+        1. FortiView > Threats > Top Threats, time: yesterday 14:00–16:00, device: HQ-FGT
+        2. Drill into the threat → source IP 10.1.20.55
+        3. Fabric View > Asset Identity Center → search 10.1.20.55 → user jdoe, laptop LT-0412
+        4. Log View > Security > Antivirus, filter srcip=10.1.20.55 → file name, virus, action
+        5. Log View > Security > DNS and Web Filter, same filter → domains looked up and visited before
+        6. Log View > Traffic, filter srcip=10.1.20.55 and dstip=<C2 candidate> → any later callbacks?
+        7. Incidents & Alerts → raise incident, attach logs, recommend containment
+      notes:
+        - "Keep the filters visible in screenshots."
+        - "DNS → web → AV → traffic tells the story in order."
+    faded:
+      template: |
+        1. FortiView > Threats > {{Top Threats}}
+        3. Fabric View > {{Asset Identity Center}}
+        4. Log View > Security > {{Antivirus}}, filter srcip=10.1.20.55
+        7. Incidents & Alerts → raise {{incident}}
+    solo:
+      prompt: "Write the Log View filter you'd use to find all traffic from 10.1.20.55 to 203.0.113.66 (use field names srcip and dstip, joined with 'and')."
+      required: ["srcip=10.1.20.55", "dstip=203.0.113.66"]
+      solution: |
+        srcip=10.1.20.55 and dstip=203.0.113.66
+      notes: "Narrow the time range first; broad queries over months are slow. The filter builder in Log View shows the exact operator syntax for your version."
+
+scenarios:
+  - id: M6.03.sc1
+    kind: situation
+    tier: 3
+    title: '"Show me it''s worth the money"'
+    situation: |
+      A CIO says the FortiAnalyzer "just sits there". The team never opens it.
+    ask: How do you turn it into something they use?
+    right_thinking:
+      - "Find what they need to know daily and weekly"
+      - "Saved views and monitors for the NOC; a morning routine"
+      - "Scheduled reports for management; alerts for critical events"
+      - "Short training with their own data"
+    what: A usage plan built on their questions.
+    why: Unused tools are cut at renewal; value comes from routine.
+    how: ["Ask the top 3 questions they need answered", "Build views/monitors", "Schedule 2 reports", "Enable key alert handlers", "30-min training"]
+    model_answer: |
+      I'd ask the team and the CIO what three questions they need answered, like "is anyone infected", "what's using our bandwidth", "are we compliant". Then I'd build saved views and a monitor for the NOC screen, a ten-minute morning routine, two scheduled reports for management, and alert handlers for critical events. A 30-minute session with their own data closes it. At Netskope I turned unused capabilities into routines with health checks and dashboards, and that's what moves an account from red to green.
+    best_way: "Start from their three questions; give them views, a routine, scheduled reports and alerts, with training on their own data."
+    rubric: ["customer questions first", "concrete artefacts", "training", "evidence of value"]
+
+interview:
+  - id: M6.03.t01
+    stage: technical
+    question: Walk me through investigating a malware alert in FortiAnalyzer.
+    testing: SOC workflow
+    framework: "Routine"
+    model_answer: |
+      "Scope the alert and time window. In FortiView, find the host in Top Threats or compromised hosts. Use the Asset Identity Center to get the user and endpoint. Then Log View filtered on that IP: DNS and web filter logs for what was looked up and visited, antivirus for the file, traffic logs for any callbacks. Raise an incident with the logs attached and recommend containment."
+    best_way: "Scope, FortiView, Asset Identity Center, filtered Log View, correlate, raise an incident."
+    target: "0:45"
+  - id: M6.03.t02
+    stage: technical
+    question: Why might FortiView look empty when logs are clearly arriving?
+    testing: Troubleshooting
+    framework: "Causes"
+    model_answer: |
+      "FortiView uses Analytics logs, so if the time range is older than Analytics retention it's empty. Other causes: the wrong ADOM, the SQL database rebuilding, FortiView disabled for performance, or the device not authorised so logs aren't inserted."
+    best_way: "Analytics retention, wrong ADOM, SQL rebuilding, FortiView disabled, or device not authorised."
+    target: "0:30"
+
+field_reports:
+  - id: M6.03.fr1
+    title: Ransomware leaves a trail first
+    body: |
+      Ransomware featured in **48 %** of breaches in the 2026 DBIR. The DNS lookups, web connections and callbacks that come before encryption are in the logs; a team that looks every morning can catch them early.
+    source: Verizon 2026 DBIR
