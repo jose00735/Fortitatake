@@ -1,0 +1,408 @@
+id: M11.02
+title: "Implementation craft and migrations: MOPs, cutovers and vendor conversions"
+stage: S11
+stage_title: "S11 · Professional Services mastery"
+order: 62
+est_sessions: 1
+objectives:
+  - Write a method of procedure (MOP) with pre-checks, steps, verification and rollback
+  - Run a maintenance window calmly, with go/no-go points and clear communication
+  - Plan a migration from Cisco ASA, Palo Alto or Check Point to FortiGate
+  - Translate NAT correctly between vendors, the step where migrations break
+  - Close with acceptance tests and a handover the customer can operate
+sources:
+  - "PS delivery practice (curriculum M11.2 Implementation craft and M11.3 Migrations, merged)"
+  - "FortiOS 8.0.2 Admin Guide: NAT and VIPs (see M4.03), configuration backup and revisions"
+  - "Your evidence: Terraform-based reproduction, console recoveries, guided HA upgrades (super-cv)"
+
+units:
+  - id: M11.02.u1
+    title: The MOP and the maintenance window
+    tier: 1
+    est_min: 14
+    body: |
+      A **method of procedure (MOP)** is the script for a change. A good one lets a colleague run it at 2 a.m. without you.
+
+      ## MOP sections
+
+      1. **Purpose and scope:** what changes, which devices, which SOW item.
+      2. **Risk and impact:** what users will notice, expected downtime, who approved.
+      3. **Prerequisites:** backups taken, console access tested, firmware and licences checked, people on the call.
+      4. **Pre-checks with expected output:** `get system status`, `get system ha status`, `get router info routing-table all`, `get vpn ipsec tunnel summary`, a session count, a few application tests. Save the outputs: they're your baseline.
+      5. **Steps,** numbered, with the exact commands or GUI actions.
+      6. **Verification** after each block, against the baseline.
+      7. **Go/no-go points** and a time limit: "If X isn't working by 01:30, roll back."
+      8. **Rollback** steps, tested.
+      9. **Communication:** who's told at start, at each go/no-go, and at the end.
+
+      ## In the window
+
+      - Start with a short call: scope, roles, go/no-go times.
+      - Take a fresh backup (`execute backup config` to a server, or a FortiManager revision).
+      - Change one block at a time; verify; tick the MOP.
+      - If something unexpected happens, **stop and assess** before trying fixes: a calm rollback beats a creative 3 a.m. fix.
+      - Close with a summary email: what was done, results, open items.
+
+      :::tip
+      Test the rollback, not just the change. At Fortinet you reproduced customer cases with shared Terraform templates before recommending a fix; a lab rehearsal of the MOP is the PS version of that habit.
+      :::
+
+      :::recall
+      Q: What turns pre-checks into evidence?
+      A: Saving their output as a baseline and comparing after the change.
+      :::
+  - id: M11.02.u2
+    title: Migrations from other vendors
+    tier: 2
+    est_min: 16
+    body: |
+      ## The phases
+
+      1. **Discover:** export the current configuration, hit counts and logs. Find what's actually used. Interview application owners.
+      2. **Convert:** Fortinet's **FortiConverter** (tool and service) translates configurations from vendors like Cisco, Palo Alto and Check Point; scripts help for special cases. Conversion is a draft, not a result.
+      3. **Clean up:** remove unused objects and zero-hit rules, merge duplicates, fix shadowed and overly broad rules (`any any`). Migration is the best chance the customer will get to tidy up.
+      4. **Rebuild what doesn't translate 1:1:** NAT, VPN parameters, routing, authentication, security profiles.
+      5. **Test** in a lab or with a parallel deployment; **cut over** in a window with a rollback (often: reconnect the old firewall).
+      6. **Hypercare:** a period of close monitoring and quick fixes after cutover.
+
+      ## NAT: where migrations break
+
+      - **Cisco ASA:** object NAT (`nat (inside,outside) static 203.0.113.10` under an object) becomes a **VIP** plus a policy using the VIP; dynamic PAT (`dynamic interface`) becomes **`set nat enable`** on the outbound policy, or an IP pool. ASA access rules on the outside interface target the real (mapped) IP since 8.3; on FortiGate the inbound policy references the **VIP**.
+      - **Palo Alto:** security rules for destination NAT use the **pre-NAT destination IP** with the **post-NAT zone**. On FortiGate you use the VIP object and the real destination interface. Translating PAN rules literally creates rules that never match.
+      - **Check Point:** watch implied rules from global properties and automatic NAT on objects: they're not visible in the rule base but must be rebuilt as explicit policies or VIPs.
+
+      FortiGate reminders from M4.03: DNAT happens before routing and policy; VIP policies take priority; hairpin needs care.
+
+      :::pitfall
+      A converted rule base that "looks the same" can behave differently: implicit rules, NAT order and zone semantics change. Test real flows, not just syntax.
+      :::
+  - id: M11.02.u3
+    title: Acceptance, handover and hypercare
+    tier: 3
+    est_min: 10
+    body: |
+      ## Acceptance test plan (ATP)
+
+      Agreed **before** the change, signed **after** it. Each test: what's tested, how, expected result, actual result, pass/fail, who witnessed. Typical tests: each critical application from each site, internet access with security profiles working, VPNs up, HA failover, FortiManager and FortiAnalyzer connectivity, logging and reports.
+
+      ## Handover pack
+
+      - As-built documentation: topology, addressing, policies, VPN and HA details.
+      - Admin access and credentials handled by the customer's process (never in email).
+      - Runbooks for common tasks and a short troubleshooting guide.
+      - Knowledge-transfer session, recorded if allowed.
+      - Open items with owners and dates.
+
+      ## Hypercare
+
+      An agreed period after go-live (often one to two weeks) with faster response. Track issues, separate defects in your work from new requests (change requests), and close with a sign-off.
+
+      ## Recoveries you can reference
+
+      At Fortinet you recovered FortiGates cut off by bad routing over the **console**, including TFTP restores and live static-route fixes, and guided HA firmware upgrades step by step, with a manual console upgrade when the online one failed. That's why your MOPs always list console access as a prerequisite.
+
+      :::ps
+      The customer remembers the handover more than the configuration. A clean ATP signature and a runbook they can use are what make them call you for the next project.
+      :::
+
+cards:
+  - { id: M11.02.c01, unit: M11.02.u1, tier: 1, front: "What is a MOP?", back: "Method of procedure: the step-by-step script for a change, with pre-checks, verification and rollback." }
+  - { id: M11.02.c02, unit: M11.02.u1, tier: 2, front: "Nine MOP sections?", back: "Purpose/scope, risk/impact, prerequisites, pre-checks, steps, verification, go/no-go, rollback, communication." }
+  - { id: M11.02.c03, unit: M11.02.u1, tier: 2, front: "Typical FortiGate pre-checks?", back: "get system status, get system ha status, routing table, get vpn ipsec tunnel summary, session count, app tests." }
+  - { id: M11.02.c04, unit: M11.02.u1, tier: 2, front: "Something unexpected in the window: first move?", back: "Stop and assess; follow go/no-go; prefer a calm rollback to improvised fixes." }
+  - { id: M11.02.c05, unit: M11.02.u2, tier: 1, front: "Six migration phases?", back: "Discover, convert, clean up, rebuild what doesn't translate, test and cut over, hypercare." }
+  - { id: M11.02.c06, unit: M11.02.u2, tier: 2, front: "Fortinet's conversion tool?", back: "FortiConverter (tool and service). Output is a draft to clean and test." }
+  - { id: M11.02.c07, unit: M11.02.u2, tier: 2, front: "ASA object static NAT becomes…?", back: "A VIP plus an inbound policy that uses the VIP." }
+  - { id: M11.02.c08, unit: M11.02.u2, tier: 2, front: "ASA dynamic PAT (interface) becomes…?", back: "set nat enable on the outbound policy (or an IP pool)." }
+  - { id: M11.02.c09, unit: M11.02.u2, tier: 3, front: "Palo Alto DNAT rule semantics?", back: "Pre-NAT destination IP with post-NAT zone. On FortiGate use the VIP and the real destination interface." }
+  - { id: M11.02.c10, unit: M11.02.u2, tier: 3, front: "Check Point migration trap?", back: "Implied rules and automatic NAT hidden from the rule base; rebuild them explicitly." }
+  - { id: M11.02.c11, unit: M11.02.u3, tier: 2, front: "Columns of an acceptance test?", back: "Test, method, expected, actual, pass/fail, witness." }
+  - { id: M11.02.c12, unit: M11.02.u3, tier: 2, front: "What goes in a handover pack?", back: "As-built docs, credentials via customer process, runbooks, knowledge transfer, open items with owners." }
+  - { id: M11.02.c13, unit: M11.02.u3, tier: 2, front: "What is hypercare?", back: "An agreed post-go-live period of close monitoring and fast fixes, ending in sign-off." }
+
+quiz:
+  - id: M11.02.q01
+    type: order
+    tier: 1
+    pretest: true
+    stem: Put the migration phases in order.
+    items: ["Discover what's used", "Convert (e.g. FortiConverter)", "Clean up rules and objects", "Lab test", "Cut over in a window with rollback", "Hypercare"]
+    explanation: Conversion is a draft; cleanup and testing make it a migration.
+  - id: M11.02.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: Why save pre-check outputs before a change?
+    options:
+      - { id: a, text: "They're the baseline to compare against after the change", correct: true }
+      - { id: b, text: "Fortinet requires it for support", why_wrong: "Not the reason." }
+      - { id: c, text: "To fill the MOP", why_wrong: "They're evidence, not decoration." }
+      - { id: d, text: "They replace the backup", why_wrong: "You still need a backup." }
+    explanation: Baseline evidence.
+  - id: M11.02.q03
+    type: single
+    tier: 2
+    stem: "An ASA has 'object network WEB / host 10.1.1.10 / nat (inside,outside) static 203.0.113.10'. FortiGate equivalent?"
+    options:
+      - { id: a, text: "A VIP 203.0.113.10 → 10.1.1.10 and an inbound policy using the VIP", correct: true }
+      - { id: b, text: "An IP pool", why_wrong: "IP pools are for source NAT." }
+      - { id: c, text: "set nat enable on the inbound policy", why_wrong: "That's source NAT." }
+      - { id: d, text: "A static route", why_wrong: "Routing isn't NAT." }
+    explanation: Static inbound NAT = VIP.
+  - id: M11.02.q04
+    type: single
+    tier: 3
+    stem: "Translating Palo Alto rules literally, inbound rules to published servers never match on FortiGate. Why?"
+    options:
+      - { id: a, text: "PAN uses pre-NAT destination IP with post-NAT zone; FortiGate policies need the VIP and the real destination interface", correct: true }
+      - { id: b, text: "FortiGate doesn't support inbound NAT", why_wrong: "It does, with VIPs." }
+      - { id: c, text: "Zones don't exist on FortiGate", why_wrong: "They do." }
+      - { id: d, text: "App-ID can't be translated", why_wrong: "Not the reason for no match." }
+    explanation: Different NAT/policy semantics.
+  - id: M11.02.q05
+    type: single
+    tier: 2
+    stem: At 01:15 the new firewall passes traffic but one critical app fails. The MOP's go/no-go is 01:30. Best action?
+    options:
+      - { id: a, text: "Assess quickly with evidence; if not fixed by 01:30, roll back as agreed", correct: true }
+      - { id: b, text: "Keep trying fixes until it works", why_wrong: "Ignores the agreed limit and risks the morning." }
+      - { id: c, text: "Roll back immediately without looking", why_wrong: "Take the available time to assess." }
+      - { id: d, text: "Leave it and email the customer tomorrow", why_wrong: "Unacceptable risk." }
+    explanation: Respect go/no-go.
+  - id: M11.02.q06
+    type: multi
+    tier: 2
+    stem: What belongs in a MOP's prerequisites? Select all that apply.
+    options:
+      - { id: a, text: "Fresh configuration backup", correct: true }
+      - { id: b, text: "Tested console access", correct: true }
+      - { id: c, text: "Licences and firmware path checked", correct: true }
+      - { id: d, text: "Admin passwords in the email", why_wrong: "Never send credentials by email." }
+    explanation: Be ready to recover.
+  - id: M11.02.q07
+    type: single
+    tier: 3
+    stem: During hypercare the customer asks for a new VPN to a partner. How do you treat it?
+    options:
+      - { id: a, text: "As a new request: change request or new scope, separate from hypercare defects", correct: true }
+      - { id: b, text: "Do it as part of hypercare", why_wrong: "Hypercare covers your delivered work, not new scope." }
+      - { id: c, text: "Refuse", why_wrong: "Offer the right path instead." }
+      - { id: d, text: "Ignore until hypercare ends", why_wrong: "Respond, but via the right process." }
+    explanation: Separate defects from new requests.
+  - id: M11.02.q08
+    type: single
+    tier: 2
+    stem: What makes an acceptance test plan useful?
+    options:
+      - { id: a, text: "Agreed before the change, with expected results, and signed after", correct: true }
+      - { id: b, text: "Written after go-live from what worked", why_wrong: "Then it proves nothing." }
+      - { id: c, text: "Only covering FortiGate CLI outputs", why_wrong: "Include business applications." }
+      - { id: d, text: "Kept internal", why_wrong: "The customer signs it." }
+    explanation: Agreed up front, signed at the end.
+  - id: M11.02.q09
+    type: single
+    tier: 3
+    stem: Why is a migration a good moment for rule cleanup?
+    options:
+      - { id: a, text: "You're already reviewing every rule; removing unused and broad rules reduces risk and complexity", correct: true }
+      - { id: b, text: "FortiGate can't import more than 100 rules", why_wrong: "No such limit." }
+      - { id: c, text: "Cleanup is required by FortiConverter", why_wrong: "It's good practice, not a tool requirement." }
+      - { id: d, text: "It avoids testing", why_wrong: "You still test." }
+    explanation: Cleanup is value you add.
+  - id: M11.02.q10
+    type: text
+    tier: 2
+    stem: "Fortinet's tool for converting other vendors' firewall configurations is called…"
+    accept: ["forticonverter", "forti converter"]
+    explanation: FortiConverter.
+
+labs:
+  - id: M11.02.lab1
+    title: Translate ASA NAT to FortiGate
+    goal: Rebuild an ASA static NAT for a web server and the outbound PAT on FortiGate (wan1 outside, dmz for the server, port2 inside).
+    worked:
+      config: |
+        # ASA (source)
+        # object network WEB
+        #  host 10.1.1.10
+        #  nat (dmz,outside) static 203.0.113.10
+        # object network INSIDE-NET
+        #  subnet 192.168.10.0 255.255.255.0
+        #  nat (inside,outside) dynamic interface
+        config firewall vip
+            edit "WEB-VIP"
+                set extintf "wan1"
+                set extip 203.0.113.10
+                set mappedip "10.1.1.10"
+            next
+        end
+        config firewall policy
+            edit 0
+                set name "Internet-to-WEB"
+                set srcintf "wan1"
+                set dstintf "dmz"
+                set srcaddr "all"
+                set dstaddr "WEB-VIP"
+                set action accept
+                set schedule "always"
+                set service "HTTPS"
+            next
+            edit 0
+                set name "Inside-to-Internet"
+                set srcintf "port2"
+                set dstintf "wan1"
+                set srcaddr "INSIDE-NET"
+                set dstaddr "all"
+                set action accept
+                set schedule "always"
+                set service "ALL"
+                set nat enable
+            next
+        end
+      notes:
+        - "Static object NAT → VIP; the inbound policy uses the VIP, not the private IP."
+        - "dynamic interface → set nat enable (egress interface IP)."
+        - "Restrict service to what the server really offers."
+    faded:
+      template: |
+        config firewall {{vip}}
+            edit "WEB-VIP"
+                set {{extintf}} "wan1"
+                set extip 203.0.113.10
+                set {{mappedip}} "10.1.1.10"
+            next
+        end
+        config firewall policy
+            edit 0
+                set dstaddr "{{WEB-VIP}}"
+            next
+        end
+    solo:
+      prompt: "An ASA publishes SSH on 203.0.113.20 port 2222 to 10.1.1.20 port 22. Write the FortiGate VIP with port forwarding (external interface wan1)."
+      required: ["config firewall vip", "set extintf \"wan1\"", "set extip 203.0.113.20", "set mappedip \"10.1.1.20\"", "set portforward enable", "set extport 2222", "set mappedport 22"]
+      solution: |
+        config firewall vip
+            edit "SSH-VIP"
+                set extintf "wan1"
+                set extip 203.0.113.20
+                set mappedip "10.1.1.20"
+                set portforward enable
+                set extport 2222
+                set mappedport 22
+            next
+        end
+      notes: "Then an inbound policy with dstaddr SSH-VIP and service SSH (the mapped port)."
+  - id: M11.02.lab2
+    title: Pre-checks and backup for a change window
+    goal: Capture a baseline and a backup before changing a production HA cluster.
+    worked:
+      config: |
+        # get system status
+        # get system ha status
+        # get router info routing-table all
+        # get vpn ipsec tunnel summary
+        # diagnose sys session full-stat
+        # execute backup config tftp pre-change-fw1.conf 10.0.0.50
+      notes:
+        - "Save every output in the change record; repeat after the change and compare."
+        - "Use SFTP/SCP targets where the customer allows; TFTP is shown here for brevity."
+    faded:
+      template: |
+        # get system {{status}}
+        # get system ha {{status}}
+        # get router info {{routing-table}} all
+        # get vpn ipsec tunnel {{summary}}
+        # execute {{backup}} config tftp pre-change-fw1.conf 10.0.0.50
+    solo:
+      prompt: "Write the four pre-check commands for: firmware/serial, HA state, routing table, VPN tunnel summary."
+      required: ["get system status", "get system ha status", "get router info routing-table all", "get vpn ipsec tunnel summary"]
+      solution: |
+        # get system status
+        # get system ha status
+        # get router info routing-table all
+        # get vpn ipsec tunnel summary
+      notes: "Add application tests that the customer cares about."
+
+scenarios:
+  - id: M11.02.sc1
+    kind: situation
+    tier: 3
+    title: The 2 a.m. surprise
+    situation: |
+      Mid-migration from an ASA, the new FortiGate is live. Email and web work, but the payroll app at a partner fails. Go/no-go is in 20 minutes. The customer's IT manager says, "Just make it work, we can't roll back, payroll runs tomorrow."
+    ask: What do you do?
+    right_thinking:
+      - "Stay calm and get evidence fast: sniffer and debug flow for the payroll flow"
+      - "Likely a VPN or NAT translation difference"
+      - "Be honest about the go/no-go; explain rollback is an option that protects payroll"
+      - "Decide with the customer, document"
+    what: A fast, evidence-based decision with the customer.
+    why: Pressure creates bad changes; the MOP exists for this moment.
+    how: ["Debug flow filtered on the partner IP", "Check VPN selectors/NAT against the ASA config", "Fix if clear and low-risk", "Otherwise roll back that part or all, per MOP"]
+    model_answer: |
+      I'd say: "Give me ten minutes of focused diagnosis." A filtered debug flow and the tunnel list for the partner usually show it fast: often the ASA did NAT inside the VPN, or the partner's selectors don't match ours. If the fix is clear and low-risk, I apply it and test payroll with them. If not, I'd remind the manager that rollback protects payroll tomorrow, and we can reconnect the old path for just that partner while we fix it properly. Either way the decision is theirs, made with facts, and I write it down.
+    best_way: "Ten minutes of focused evidence; fix if clear and safe, otherwise roll back that flow to protect payroll."
+    rubric: ["calm", "fast evidence", "honest options", "customer decides", "documented"]
+  - id: M11.02.sc2
+    kind: situation
+    tier: 2
+    title: '"Just copy the old rules"'
+    situation: |
+      A customer migrating from Check Point says: "Don't clean anything up. Copy the rules exactly. We don't have time."
+    ask: How do you handle it?
+    right_thinking:
+      - "Respect the time constraint"
+      - "Explain that a literal copy can still behave differently (implied rules, NAT)"
+      - "Offer a minimal cleanup: only zero-hit and obviously broad rules, or a phase 2 cleanup"
+    what: A pragmatic agreement.
+    why: You protect the customer from hidden behaviour changes without forcing a big project.
+    how: ["Agree on a like-for-like migration", "Flag implied rules and automatic NAT that must be explicit", "Propose phase-2 cleanup with hit counts"]
+    model_answer: |
+      Fine, we'll migrate like for like. One thing I can't skip: Check Point has implied rules and automatic NAT that aren't in the rule base, so I'll rebuild those explicitly, otherwise behaviour changes. After go-live, with a month of hit counts from FortiAnalyzer, I'd propose a short cleanup phase to remove unused rules. That keeps your timeline and gets you the cleanup later with data.
+    best_way: "Like for like now, but implied rules and NAT rebuilt explicitly; cleanup later with hit-count data."
+    rubric: ["respects constraint", "flags hidden behaviour", "phased proposal"]
+
+interview:
+  - id: M11.02.t01
+    stage: technical
+    question: What goes into your method of procedure for a firewall change?
+    testing: Delivery discipline
+    framework: "Sections"
+    model_answer: |
+      "Scope and approval, impact, prerequisites like a fresh backup and tested console access, pre-checks with saved outputs as a baseline, numbered steps, verification after each block, go/no-go times, a tested rollback, and who's informed when. A colleague should be able to run it without me."
+    best_way: "Prerequisites, baseline pre-checks, steps, verification, go/no-go, tested rollback, communication."
+    target: "0:40"
+  - id: M11.02.t02
+    stage: technical
+    question: Where do firewall migrations usually break?
+    testing: Migration experience
+    framework: "Top risks"
+    model_answer: |
+      "NAT semantics first: ASA object NAT, Palo Alto's pre-NAT IP with post-NAT zone, Check Point's automatic NAT and implied rules all translate differently into FortiGate VIPs and policies. Then VPN parameters with partners, and rules that were never used or are too broad. So I convert with FortiConverter, then review NAT line by line, clean up with hit counts and test real application flows."
+    best_way: "NAT semantics, partner VPNs and hidden rules. Convert, review NAT line by line, test real flows."
+    target: "0:45"
+  - id: M11.02.h01
+    stage: hm
+    question: Tell me about a change that went wrong and how you handled it.
+    testing: Ownership and composure
+    framework: "STAR-L (use a real case)"
+    model_answer: |
+      "[Use a real case, e.g. a FortiGate cut off by bad routing that you recovered over the console with a TFTP restore or a live static-route fix.] Focus on: staying calm, restoring service first, telling the customer clearly what happened, and what you changed in your process afterwards, such as always testing console access before a change."
+    best_way: "Restore first, communicate clearly, then fix the process."
+    target: "1:15"
+  - id: M11.02.h02
+    stage: hm
+    question: How do you hand over a project so the customer can run it?
+    testing: Customer outcome
+    framework: "Pack → session → hypercare → sign-off"
+    model_answer: |
+      "A handover pack with as-built documentation and runbooks, a knowledge-transfer session, an agreed hypercare period, and the signed acceptance test plan. I also wrote KB articles and how-to guides at Netskope so customers could adopt features on their own, and I'd bring the same habit: leave them able to operate it without calling me."
+    best_way: "As-built docs, runbooks, knowledge transfer, hypercare and signed acceptance."
+    target: "0:40"
+
+field_reports:
+  - id: M11.02.fr1
+    title: Change is a risk window
+    body: |
+      With **48 %** of breaches involving third parties and exploitation the top initial vector (2026 DBIR), every migration is also a security review: remove broad rules, close unused NAT, and log the new rule base from day one.
+    source: Verizon 2026 DBIR
