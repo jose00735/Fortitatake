@@ -183,6 +183,13 @@ func (h *Hub) Configure(enabled bool, port int, name string) error {
 	return nil
 }
 
+// Port is the configured sync port.
+func (h *Hub) Port() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cfg.Port
+}
+
 // Close stops the listener (used at exit and in tests).
 func (h *Hub) Close() {
 	h.mu.Lock()

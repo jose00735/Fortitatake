@@ -63,7 +63,7 @@ function hubPanel(box, st) {
   if (!st.enabled) {
     box.replaceChildren(h(`<div class="stack">
       <p class="small">Keep your progress identical on this PC and the FortiTatake app on your phone. Sync runs over your own Wi-Fi: no cloud, no account.</p>
-      <p class="tiny muted">The first time, Windows asks whether FortiTatake may use the network. Choose <b>Private networks</b> and Allow.</p>
+      <p class="tiny muted">After turning it on, if Windows Firewall is blocking phones, this page shows a button to allow them (Windows asks for permission once).</p>
       <div class="row"><button class="primary" data-on>Turn on sync</button></div>
       <p class="alert" data-err hidden></p></div>`));
     $("[data-on]", box).onclick = async () => {
@@ -80,11 +80,13 @@ function hubPanel(box, st) {
       <div class="row"><button class="primary" data-pair ${st.running ? "" : "disabled"}>Pair a phone</button><button class="ghost" data-off>Turn off</button></div></div>
     ${st.error ? `<p class="alert">${esc(st.error)}</p>` : ""}
     ${st.mdns_error ? `<p class="tiny muted">${esc(st.mdns_error)}</p>` : ""}
+    <div data-fw></div>
     <div data-pairbox></div>
     <div><div class="tiny muted" style="margin-bottom:6px">Paired phones</div>
       ${devs.length ? `<ul class="devlist">${devs.map((d) => `<li><div><b>${esc(d.name)}</b><div class="tiny muted">last synced ${esc(ago(Date.parse(d.last_seen)))}${d.last_addr ? " · " + esc(d.last_addr) : ""}</div></div><button class="ghost" data-revoke="${esc(d.id)}">Remove</button></li>`).join("")}</ul>`
       : `<p class="small muted">No phone yet. Install the Android app, then press <b>Pair a phone</b>.</p>`}</div>
     <p class="alert" data-err hidden></p></div>`));
+  if (st.running) firewallBox($("[data-fw]", box));
   $("[data-off]", box).onclick = async () => { await api("sync/hub", { method: "POST", body: { enabled: false, port: st.port, name: st.name } }); syncPanel(box); };
   $$("[data-revoke]", box).forEach((b) => (b.onclick = async () => { await api("sync/devices/revoke", { method: "POST", body: { id: b.dataset.revoke } }); syncPanel(box); }));
   $("[data-pair]", box).onclick = async () => {
@@ -113,6 +115,32 @@ function hubPanel(box, st) {
         if ((s2.devices || []).length > before || !s2.pairing) { clearInterval(pairTimer); syncPanel(box); }
       } catch (e) { /* keep waiting */ }
     }, 1500);
+  };
+}
+
+// Windows Firewall silently drops phones' connections unless FortiTatake is allowed.
+async function firewallBox(el) {
+  let fw;
+  try { fw = await api("sync/firewall"); } catch (e) { return; }
+  if (!fw.supported) return;
+  const pub = (fw.profiles || []).includes("Public");
+  if (fw.rule_ok) {
+    el.replaceChildren(h(`<p class="tiny muted">Windows Firewall: phones on your network are allowed.</p>`));
+    return;
+  }
+  el.replaceChildren(h(`<div class="alert stack" style="background:var(--surface-2);color:var(--ink)">
+    <div><b>Windows Firewall may be blocking your phone.</b> Phones can't connect until FortiTatake is allowed for devices on your local network${pub ? ". Your Wi-Fi is set to <b>Public</b> in Windows, so an earlier \"Private networks\" answer doesn't apply" : ""}.</div>
+    <div class="row"><button class="primary" data-fwfix>Allow phones on my network</button></div>
+    <div class="tiny muted">Windows will ask for permission. FortiTatake adds two inbound rules for this app only, limited to your local subnet: TCP ${fw.port || "sync port"} for sync and UDP 5353 for discovery.</div>
+  </div>`));
+  $("[data-fwfix]", el).onclick = async () => {
+    try { await api("sync/firewall/fix", { method: "POST" }); } catch (e) { el.append(h(`<p class="alert">${esc(e.message)}</p>`)); return; }
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const again = await api("sync/firewall").catch(() => null);
+      if (again && again.rule_ok) return firewallBox(el);
+    }
+    el.append(h(`<p class="tiny muted">Still not allowed. If you cancelled the Windows prompt, press the button again.</p>`));
   };
 }
 

@@ -521,7 +521,7 @@ func friendly(err error, host string, port int) error {
 	}
 	var ne net.Error
 	if errors.As(err, &ne) || strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route") {
-		return fmt.Errorf("can't reach the PC at %s:%d. Check that both are on the same Wi-Fi, FortiTatake is open on the PC and sync is on", host, port)
+		return fmt.Errorf("can't reach the PC at %s:%d. Check that both are on the same Wi-Fi, FortiTatake is open on the PC with sync on, and that the PC allows phones through Windows Firewall (Settings → Sync on the PC shows a button for it)", host, port)
 	}
 	return err
 }
