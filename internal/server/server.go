@@ -16,7 +16,6 @@ import (
 
 	"github.com/jose00735/fortitatake/internal/ftsp"
 	"github.com/jose00735/fortitatake/internal/store"
-	"github.com/jose00735/fortitatake/internal/winfw"
 )
 
 // Server is the local HTTP server.
@@ -191,14 +190,6 @@ func (s *Server) syncAPI(w http.ResponseWriter, r *http.Request, sub string) {
 			return
 		}
 		writeJSON(w, 200, s.Hub.Status())
-	case s.Hub != nil && sub == "firewall" && r.Method == http.MethodGet:
-		writeJSON(w, 200, winfw.Check(s.Hub.Port()))
-	case s.Hub != nil && sub == "firewall/fix" && post:
-		if err := winfw.Fix(s.Hub.Port()); err != nil {
-			bad(err)
-			return
-		}
-		writeJSON(w, 200, map[string]bool{"requested": true})
 	case s.Hub != nil && sub == "pair/open" && post:
 		info, err := s.Hub.OpenPairing()
 		if err != nil {
