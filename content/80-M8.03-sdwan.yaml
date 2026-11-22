@@ -1,0 +1,560 @@
+id: M8.03
+title: "SD-WAN: members, health checks, rules and troubleshooting"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 90
+est_sessions: 1
+objectives:
+  - Name the SD-WAN building blocks and how traffic flows through them
+  - Design performance SLAs with sensible servers, thresholds and timers
+  - Choose the right rule strategy for each application and explain the choice to a customer
+  - Explain why a rule doesn't match, using the FIB checks and the implicit rule
+  - Troubleshoot steering with the guide's command map, from health check to policy route to session
+sources:
+  - "FortiOS 8.0.2 Admin Guide: SD-WAN overview and components (pp. 1155–1158), quick start (pp. 1159–1169)"
+  - "FortiOS 8.0.2 Admin Guide: members and zones (pp. 1170–1177), performance SLA (pp. 1193–1199)"
+  - "FortiOS 8.0.2 Admin Guide: SD-WAN rules, strategies and implicit rule (pp. 1254–1274), troubleshooting (pp. 1776–1778)"
+
+units:
+  - id: M8.03.u1
+    title: The building blocks
+    tier: 1
+    est_min: 12
+    body: |
+      SD-WAN is built into FortiOS. Five pieces make it work (p. 1158):
+
+      1. **Members:** the interfaces that carry traffic: physical ports, VLANs, LAGs, IPsec tunnels and more (p. 1170). Each member can have a **cost** (lower is preferred, used by the Lowest Cost strategy) and a gateway.
+      2. **Zones:** groups of members. Members you don't place go into the default zone **virtual-wan-link**. A common design is an **Underlay** zone (ISP links) and an **Overlay** zone (IPsec to the hub) (pp. 1173–1174).
+      3. **Performance SLAs (health checks):** probes that measure each member's latency, jitter and packet loss, and detect dead links.
+      4. **SD-WAN rules (services):** which traffic goes where, with a **strategy**.
+      5. **The implicit rule:** what happens to traffic no rule matched.
+
+      ## Zones are what policies and routes see
+
+      Firewall policies use **zones** as source or destination, not individual members; the rules hold the intelligence about which member to use (pp. 1162, 1175). A static route can point to a zone with `set sdwan-zone`, and a route via an SD-WAN zone has **administrative distance 1** by default (pp. 1161, 1177).
+
+      ## The quick-start design
+
+      Fortinet's quick start goes **underlay → overlay → routing → security → SD-WAN** (pp. 1159–1162): get the ISP links up, build IPsec overlays, add routing (often BGP over the overlays), write the security policies, then add SD-WAN members, health checks and rules.
+
+      :::recall
+      Q: Where do you reference SD-WAN in a firewall policy: the member or the zone?
+      A: The zone. Rules then decide which member inside it is used.
+      :::
+  - id: M8.03.u2
+    title: Performance SLAs that tell the truth
+    tier: 2
+    est_min: 14
+    body: |
+      A health check is a **probe mode, protocol and server** (p. 1194).
+
+      - **Mode:** active probes, passive (measured from real sessions through the policies), or prefer-passive.
+      - **Protocols:** ping, TCP echo, UDP echo, HTTP, HTTPS, TWAMP, DNS (p. 1195). Predefined profiles exist for DNS, FortiGuard, Gmail, Google Search and Office 365.
+      - **Servers:** you can give two; **both must fail** for the check to fail, so one dead server doesn't take a link down. A server can be used in **only one** SLA (p. 1198). Probe a server on the path the application uses, not a random public site.
+
+      ## Targets and timers (p. 1198)
+
+      | Setting | Default |
+      |---|---|
+      | Latency threshold | 5 ms |
+      | Jitter threshold | 5 ms |
+      | Packet loss threshold | 0 % |
+      | Check interval | 500 ms |
+      | Failures before inactive (`failtime`) | 5 |
+      | Restore link after (`recoverytime`) | 5 |
+
+      Those defaults are strict. Set targets from the application's real needs, a little inside the limit: if voice needs under 150 ms, target around 135 ms. Too tight means traffic flaps between links; too loose and users suffer before SD-WAN reacts.
+
+      ## Two independent states (p. 1199)
+
+      - **Dead / Alive:** basic reachability. Dead members aren't used.
+      - **In-SLA / Out-of-SLA:** within the thresholds or not. A link can be Alive and Out-of-SLA.
+
+      **Lowest Cost (SLA)** prefers Alive + In-SLA members. **Manual** and **Best Quality** only look at Dead/Alive. With `update-static-route enable`, a dead member's static routes are withdrawn, so routing stops using it too (pp. 1169, 1199).
+
+      :::pitfall
+      Probing 8.8.8.8 to steer traffic to Azure tells you about Google, not Azure. Match the probe to the destination the rule serves.
+      :::
+  - id: M8.03.u3
+    title: Rules and strategies
+    tier: 2
+    est_min: 14
+    body: |
+      A rule matches traffic (source, destination, protocol, ports, users, **Internet Service Database** entries, applications, DSCP) and picks an outgoing member by **strategy** (pp. 1256–1262). Members listed first in a rule are preferred, unless the strategy reorders them (p. 1260).
+
+      | Strategy | CLI | Decides by | Use it for |
+      |---|---|---|---|
+      | Manual | manual | The order you set | Fixed preference, e.g. backup link only on failure |
+      | Best Quality | priority | The best value of one metric (link-cost-factor: latency, jitter, loss, bandwidth…) | Real-time apps that need the best link right now |
+      | Lowest Cost (SLA) | sla | Cheapest member that meets the SLA targets | Business apps: use the cheap link while it's good enough |
+      | Maximize Bandwidth (SLA) | load-balance | Spreads across all members meeting SLA | Bulk traffic, backups |
+
+      **Automatic** also exists, without SLA logic (p. 1261).
+
+      ## Why didn't my rule match?
+
+      By default an SD-WAN rule is only used when the **FIB best match for the destination is an SD-WAN member**, and a member is only selected if it **has a valid route** to the destination (p. 1262). So a more specific static route out a non-SD-WAN interface bypasses the rule entirely. Check routing before blaming the rule.
+
+      Rules are evaluated in order like policy routes. **Policy routes are checked before SD-WAN rules**, which is easy to forget during a migration.
+
+      ## The implicit rule (p. 1269)
+
+      No rule matched → the **implicit rule**: the default route via the SD-WAN zone has every active member as an **ECMP** path, balanced by `load-balance-mode`: **source-ip-based (default)**, weight-based, source-dest-ip-based, measured-volume-based.
+
+      :::recall
+      Q: A customer wants voice on the best link at every moment, and SaaS on the cheap broadband unless it's bad. Which strategies?
+      A: Best Quality for voice; Lowest Cost (SLA) for SaaS.
+      :::
+
+      :::delta
+      Application-based rules need *Application Detection Based SD-WAN* enabled in Feature Visibility (p. 1259). ISDB entries are usually the safer match for SaaS, because the destination is known from the first packet.
+      :::
+  - id: M8.03.u4
+    title: Troubleshooting with the guide's command map
+    tier: 3
+    est_min: 12
+    body: |
+      The troubleshooting chapter gives a progression (pp. 1776–1777). Follow it in order:
+
+      1. **Health:** `diagnose sys sdwan health-check` (state, loss, latency, jitter, `sla_map`), `diagnose sys link-monitor status`, `diagnose sys sdwan member`, `diagnose sys sdwan zone`.
+      2. **Rule decision:** `diagnose sys sdwan service4` (which members the rule selected and why), then the installed result with `diagnose firewall proute list` and `diagnose ip proute match`.
+      3. **Sessions and packets:** `diagnose sys session filter` + `list`, then `diagnose debug flow` with the sniffer.
+      4. **Overlays:** `diagnose vpn ike gateway list` and `diagnose vpn tunnel list`.
+      5. **Routing:** `get router info routing-table all`, `get router info kernel`, `diagnose ip route list` (RIB vs FIB).
+
+      ## Common failure patterns (pp. 1777–1778)
+
+      | Symptom | Check |
+      |---|---|
+      | SLA healthy but traffic uses the wrong member | `service4`, then `proute list` / `ip proute match` |
+      | SLA flapping | `diagnose sys link-monitor interface <if>`, `diagnose test application lnkmtd 2` |
+      | Session exists but return traffic missing | session list + sniffer; check the return path's tunnel and route |
+      | Tunnel up but member not selected | health-check association and SLA state: `health-check` + `vpn tunnel list` |
+      | Routing table looks right, forwarding wrong | Compare RIB and FIB: `routing-table all`, `router info kernel`, `ip route list` |
+
+      :::pitfall
+      Existing sessions keep their route. After you change a rule, old sessions may still use the old member until they end or you clear them in a window.
+      :::
+
+      :::ps
+      Before an SD-WAN go-live, agree with the customer which applications matter, their SLA numbers and the expected failover behaviour. That list becomes your test plan and the acceptance criteria.
+      :::
+
+cards:
+  - { id: M8.03.c01, unit: M8.03.u1, tier: 1, front: "Five SD-WAN building blocks?", back: "Members, zones, performance SLAs, SD-WAN rules, the implicit rule." }
+  - { id: M8.03.c02, unit: M8.03.u1, tier: 1, front: "Default SD-WAN zone name?", back: "virtual-wan-link" }
+  - { id: M8.03.c03, unit: M8.03.u1, tier: 2, front: "What do firewall policies reference for SD-WAN?", back: "Zones, not individual members." }
+  - { id: M8.03.c04, unit: M8.03.u1, tier: 2, front: "Default distance of a static route via an SD-WAN zone?", back: "1. (p. 1161)" }
+  - { id: M8.03.c05, unit: M8.03.u1, tier: 2, front: "SD-WAN member cost: which is preferred?", back: "Lower cost. Used by Lowest Cost (SLA)." }
+  - { id: M8.03.c06, unit: M8.03.u1, tier: 3, front: "Fortinet quick-start build order?", back: "Underlay → overlay → routing → security → SD-WAN." }
+  - { id: M8.03.c07, unit: M8.03.u2, tier: 2, front: "Three parts of a health check?", back: "Probe mode, protocol, server." }
+  - { id: M8.03.c08, unit: M8.03.u2, tier: 2, front: "Two servers in a health check: when does it fail?", back: "Only when both fail." }
+  - { id: M8.03.c09, unit: M8.03.u2, tier: 2, front: "Default SLA latency / jitter / loss thresholds?", back: "5 ms / 5 ms / 0 %." }
+  - { id: M8.03.c10, unit: M8.03.u2, tier: 2, front: "Default check interval, failtime, recoverytime?", back: "500 ms, 5, 5." }
+  - { id: M8.03.c11, unit: M8.03.u2, tier: 3, front: "Dead/Alive vs In/Out-of-SLA: which strategies use SLA state?", back: "Lowest Cost (SLA) and Maximize Bandwidth use SLA; Manual and Best Quality use only Dead/Alive." }
+  - { id: M8.03.c12, unit: M8.03.u2, tier: 2, front: "What does update-static-route enable do?", back: "Withdraws the static routes of a member when it becomes inactive." }
+  - { id: M8.03.c13, unit: M8.03.u3, tier: 2, front: "Best Quality CLI name and logic?", back: "priority: picks the member with the best value of the chosen link-cost-factor." }
+  - { id: M8.03.c14, unit: M8.03.u3, tier: 2, front: "Lowest Cost (SLA) CLI name and logic?", back: "sla: the cheapest member that meets the SLA targets." }
+  - { id: M8.03.c15, unit: M8.03.u3, tier: 2, front: "Maximize Bandwidth CLI name?", back: "load-balance: spreads across members that meet SLA." }
+  - { id: M8.03.c16, unit: M8.03.u3, tier: 3, front: "Two default FIB conditions for an SD-WAN rule to be used?", back: "FIB best match for the destination is an SD-WAN member, and the chosen member has a valid route to it." }
+  - { id: M8.03.c17, unit: M8.03.u3, tier: 2, front: "Implicit rule default load-balance-mode?", back: "source-ip-based (ECMP)." }
+  - { id: M8.03.c18, unit: M8.03.u4, tier: 2, front: "Command to see a rule's selected members?", back: "diagnose sys sdwan service4" }
+  - { id: M8.03.c19, unit: M8.03.u4, tier: 2, front: "Commands to confirm the installed steering decision?", back: "diagnose firewall proute list and diagnose ip proute match." }
+  - { id: M8.03.c20, unit: M8.03.u4, tier: 3, front: "SLA flapping: which commands?", back: "diagnose sys link-monitor interface <if> and diagnose test application lnkmtd 2." }
+
+quiz:
+  - id: M8.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: What happens to traffic that matches no SD-WAN rule?
+    options:
+      - { id: a, text: "The implicit rule: ECMP across members using load-balance-mode", correct: true }
+      - { id: b, text: "It is dropped", why_wrong: "The implicit rule forwards it." }
+      - { id: c, text: "It always uses the first member", why_wrong: "Only if it's the only valid ECMP path." }
+      - { id: d, text: "It goes to the policy route table", why_wrong: "Policy routes are checked before SD-WAN rules, not after." }
+    explanation: Implicit rule, default source-ip-based.
+    source: FortiOS 8.0.2 Admin Guide p. 1269
+  - id: M8.03.q02
+    type: single
+    tier: 1
+    pretest: true
+    stem: In a firewall policy for internet traffic over SD-WAN, what do you select as the destination interface?
+    options:
+      - { id: a, text: "The SD-WAN zone (e.g. virtual-wan-link or Underlay)", correct: true }
+      - { id: b, text: "Each member in a separate policy", why_wrong: "Policies reference zones; rules choose members." }
+      - { id: c, text: "Any", why_wrong: "Too broad and not how SD-WAN is designed." }
+      - { id: d, text: "The health-check server", why_wrong: "That's not an interface." }
+    explanation: Policies use zones.
+    source: FortiOS 8.0.2 Admin Guide p. 1162
+  - id: M8.03.q03
+    type: numeric
+    tier: 2
+    stem: What is the default health-check interval, in milliseconds?
+    answer: 500
+    explanation: 500 ms; failtime and recoverytime default to 5.
+    source: FortiOS 8.0.2 Admin Guide p. 1198
+  - id: M8.03.q04
+    type: single
+    tier: 2
+    stem: A health check lists two servers. When is the member considered failed?
+    options:
+      - { id: a, text: "When both servers fail", correct: true }
+      - { id: b, text: "When either server fails", why_wrong: "That would cause false link-down events." }
+      - { id: c, text: "Only the first server is used", why_wrong: "Both are probed." }
+      - { id: d, text: "When the average latency exceeds 5 ms", why_wrong: "That's an SLA target, not dead/alive." }
+    explanation: Two servers avoid false positives.
+    source: FortiOS 8.0.2 Admin Guide p. 1198
+  - id: M8.03.q05
+    type: single
+    tier: 2
+    stem: "The customer: 'Use cheap broadband for Office 365 unless it's bad, then MPLS.' Which strategy?"
+    options:
+      - { id: a, text: "Lowest Cost (SLA)", correct: true }
+      - { id: b, text: "Best Quality", why_wrong: "It always picks the best link, even if more expensive." }
+      - { id: c, text: "Maximize Bandwidth", why_wrong: "That spreads traffic over all good links." }
+      - { id: d, text: "Manual", why_wrong: "Manual ignores SLA quality." }
+    explanation: Cheapest member that meets the SLA.
+  - id: M8.03.q06
+    type: single
+    tier: 2
+    stem: Which strategies only look at Dead/Alive and ignore SLA targets?
+    options:
+      - { id: a, text: "Manual and Best Quality", correct: true }
+      - { id: b, text: "Lowest Cost and Maximize Bandwidth", why_wrong: "Those use SLA targets." }
+      - { id: c, text: "All strategies use SLA targets", why_wrong: "Not according to the guide." }
+      - { id: d, text: "Only the implicit rule", why_wrong: "The question is about rule strategies." }
+    explanation: Best Quality compares a metric; it doesn't use pass/fail targets.
+    source: FortiOS 8.0.2 Admin Guide p. 1199
+  - id: M8.03.q07
+    type: single
+    tier: 3
+    stem: "An SD-WAN rule for 10.50.0.0/16 never matches. There's a static route 10.50.0.0/16 via port5, which is not an SD-WAN member. Why?"
+    options:
+      - { id: a, text: "The FIB best match isn't an SD-WAN member, so by default the rule is not consulted", correct: true }
+      - { id: b, text: "The SLA is failing", why_wrong: "SLA state doesn't matter if the rule isn't consulted." }
+      - { id: c, text: "Rules only work for internet traffic", why_wrong: "Rules work for any destination with SD-WAN routes." }
+      - { id: d, text: "The implicit rule has priority", why_wrong: "Rules are checked before the implicit rule." }
+    explanation: Routing decides whether SD-WAN rules apply.
+    source: FortiOS 8.0.2 Admin Guide p. 1262
+  - id: M8.03.q08
+    type: output
+    tier: 3
+    output: |
+      Health Check(azure):
+      Seq(1 wan1): state(alive), packet-loss(0.000%) latency(18.210), jitter(2.101) sla_map=0x1
+      Seq(2 wan2): state(alive), packet-loss(4.000%) latency(95.732), jitter(31.005) sla_map=0x0
+    stem: "The SLA target is latency 50 ms, jitter 10 ms, loss 1 %. What does this show?"
+    options:
+      - { id: a, text: "Both members are alive; wan1 meets the SLA, wan2 is out of SLA", correct: true }
+      - { id: b, text: "wan2 is dead", why_wrong: "state(alive); it's out of SLA, not dead." }
+      - { id: c, text: "Both meet the SLA", why_wrong: "wan2 exceeds all three targets." }
+      - { id: d, text: "The health check has no server", why_wrong: "It's measuring both members." }
+    explanation: Alive and Out-of-SLA are separate states; sla_map shows which targets pass.
+    source: FortiOS 8.0.2 Admin Guide pp. 1169, 1199
+  - id: M8.03.q09
+    type: order
+    tier: 2
+    stem: Put the guide's SD-WAN troubleshooting progression in order.
+    items: ["Health: diagnose sys sdwan health-check", "Rule: diagnose sys sdwan service4", "Installed result: diagnose firewall proute list", "Session and packets: session list, debug flow, sniffer"]
+    explanation: Health, decision, installed route, then the traffic itself.
+    source: FortiOS 8.0.2 Admin Guide pp. 1776–1777
+  - id: M8.03.q10
+    type: single
+    tier: 2
+    stem: Which is the default implicit load-balance mode?
+    options:
+      - { id: a, text: "source-ip-based", correct: true }
+      - { id: b, text: "weight-based", why_wrong: "Available, not the default." }
+      - { id: c, text: "measured-volume-based", why_wrong: "Available, not the default." }
+      - { id: d, text: "round-robin per packet", why_wrong: "Not an SD-WAN mode." }
+    explanation: Sessions from the same source IP use the same path.
+    source: FortiOS 8.0.2 Admin Guide p. 1269
+  - id: M8.03.q11
+    type: single
+    tier: 3
+    stem: Links flip between members every few minutes and users complain. The SLA latency target is the default 5 ms. Best fix?
+    options:
+      - { id: a, text: "Set targets from the application's real needs (slightly inside its limit) and keep failtime/recoverytime to dampen flaps", correct: true }
+      - { id: b, text: "Lower the check interval to 100 ms", why_wrong: "Faster checks make flapping more visible, not less." }
+      - { id: c, text: "Remove the health check", why_wrong: "You lose failover." }
+      - { id: d, text: "Switch to Maximize Bandwidth", why_wrong: "Same SLA problem." }
+    explanation: Targets too tight cause flapping.
+    source: FortiOS 8.0.2 Admin Guide p. 1198
+  - id: M8.03.q12
+    type: multi
+    tier: 2
+    stem: Which can be SD-WAN members? Select all that apply.
+    options:
+      - { id: a, text: "A physical WAN port", correct: true }
+      - { id: b, text: "An IPsec tunnel interface", correct: true }
+      - { id: c, text: "A VLAN interface", correct: true }
+      - { id: d, text: "A firewall address object", why_wrong: "Members are interfaces." }
+    explanation: Ports, VLANs, LAGs, tunnels and more.
+    source: FortiOS 8.0.2 Admin Guide p. 1170
+  - id: M8.03.q13
+    type: single
+    tier: 3
+    stem: "You changed a rule so Teams goes over wan2, but an active call stays on wan1. Why?"
+    options:
+      - { id: a, text: "Existing sessions keep their route until they end or are cleared", correct: true }
+      - { id: b, text: "The rule change failed", why_wrong: "New sessions will use it." }
+      - { id: c, text: "wan2 is dead", why_wrong: "Nothing suggests that." }
+      - { id: d, text: "Teams can't be steered", why_wrong: "It can, via ISDB or application rules." }
+    explanation: Sessions are sticky to their original decision.
+  - id: M8.03.q14
+    type: text
+    tier: 2
+    stem: "Which setting withdraws a member's static routes when its health check marks it dead? (three hyphenated words)"
+    accept: ["update-static-route", "set update-static-route enable"]
+    explanation: update-static-route enable.
+    source: FortiOS 8.0.2 Admin Guide p. 1169
+
+labs:
+  - id: M8.03.lab1
+    title: Members, zone, health check and a Lowest Cost rule
+    goal: Two ISPs (wan1 cheaper, wan2 backup). Office traffic to the SaaS uses wan1 while it meets 150 ms / 30 ms / 2 %.
+    worked:
+      config: |
+        config system sdwan
+            set status enable
+            config zone
+                edit "Underlay"
+                next
+            end
+            config members
+                edit 1
+                    set interface "wan1"
+                    set zone "Underlay"
+                    set gateway 198.51.100.1
+                    set cost 10
+                next
+                edit 2
+                    set interface "wan2"
+                    set zone "Underlay"
+                    set gateway 203.0.113.1
+                    set cost 50
+                next
+            end
+            config health-check
+                edit "saas"
+                    set server "<saas-probe-host>"
+                    set protocol https
+                    set update-static-route enable
+                    set members 1 2
+                    config sla
+                        edit 1
+                            set latency-threshold 150
+                            set jitter-threshold 30
+                            set packetloss-threshold 2
+                        next
+                    end
+                next
+            end
+            config service
+                edit 1
+                    set name "SaaS-lowest-cost"
+                    set mode sla
+                    set dst "SaaS-destinations"
+                    config sla
+                        edit "saas"
+                            set id 1
+                        next
+                    end
+                    set priority-members 1 2
+                next
+            end
+        end
+      notes:
+        - "Probe a host on the SaaS path, not a generic public IP."
+        - "Lowest Cost uses member cost: wan1 (10) wins while it meets SLA 1."
+        - "Add a default route via the Underlay zone and a policy LAN → Underlay."
+    faded:
+      template: |
+        config system sdwan
+            config members
+                edit 1
+                    set interface "wan1"
+                    set {{zone}} "Underlay"
+                    set {{cost}} 10
+                next
+            end
+            config health-check
+                edit "saas"
+                    set {{update-static-route}} enable
+                next
+            end
+            config service
+                edit 1
+                    set mode {{sla}}
+                next
+            end
+        end
+    solo:
+      prompt: "Add rule 2 named Voice-best that sends voice (destination address group VOICE-SERVERS) over the member with the lowest latency, using health check saas, members 1 and 2."
+      required: ["config service", "edit 2", "set name \"Voice-best\"", "set mode priority", "set dst \"VOICE-SERVERS\"", "set health-check \"saas\"", "set link-cost-factor latency", "set priority-members 1 2"]
+      solution: |
+        config system sdwan
+            config service
+                edit 2
+                    set name "Voice-best"
+                    set mode priority
+                    set dst "VOICE-SERVERS"
+                    set health-check "saas"
+                    set link-cost-factor latency
+                    set priority-members 1 2
+                next
+            end
+        end
+      notes: "Move it above rule 1 if both could match: rules are checked in order."
+  - id: M8.03.lab2
+    title: Prove why traffic took a member
+    goal: A user at 10.1.10.25 says SaaS is slow. Show the health, the rule decision, the installed route and the session.
+    worked:
+      config: |
+        # diagnose sys sdwan health-check
+        # diagnose sys sdwan member
+        # diagnose sys sdwan service4
+        # diagnose firewall proute list
+        # diagnose sys session filter clear
+        # diagnose sys session filter src 10.1.10.25
+        # diagnose sys session list
+      notes:
+        - "health-check: alive? in SLA (sla_map)?"
+        - "service4: which members the rule selected, in which order."
+        - "Session list: which interface the existing session actually uses."
+    faded:
+      template: |
+        # diagnose sys sdwan {{health-check}}
+        # diagnose sys sdwan {{service4}}
+        # diagnose firewall {{proute}} list
+        # diagnose sys session filter {{src}} 10.1.10.25
+    solo:
+      prompt: "SLA keeps flapping on wan2. Write the guide's two commands for probe state and fail counters on that interface."
+      required: ["diagnose sys link-monitor interface wan2", "diagnose test application lnkmtd 2"]
+      solution: |
+        # diagnose sys link-monitor interface wan2
+        # diagnose test application lnkmtd 2
+      notes: "Then check whether the targets are realistic for that link."
+
+scenarios:
+  - id: M8.03.sc1
+    kind: situation
+    tier: 3
+    title: '"SD-WAN isn''t working, Teams is bad again"'
+    situation: |
+      A retail customer with 40 branches complains Teams calls are choppy at several stores, "even though we paid for SD-WAN".
+    ask: How do you approach it, technically and with the customer?
+    right_thinking:
+      - "Ask what 'bad' means: which stores, when, symptoms"
+      - "Check whether a rule matches Teams at all, and with which strategy"
+      - "Check the health check: probing the right destination? realistic targets?"
+      - "Use data from the FortiGates to show the link quality per store"
+    what: A data-backed diagnosis and a rule/SLA change for real-time traffic.
+    why: SD-WAN only steers as well as its rules and probes are designed.
+    how:
+      - "service4 and session list: does Teams hit a rule or the implicit rule?"
+      - "health-check: loss/jitter on each member at those stores"
+      - "Add or fix an ISDB-based Teams rule with Best Quality on jitter or loss"
+      - "Pilot in two stores, measure, then roll out"
+    model_answer: |
+      First I'd make "bad" specific: which stores, what times, and what users see. Then I'd look at one affected FortiGate. Often Teams isn't matched by any rule and falls into the implicit rule, which load-balances by source IP without looking at quality. I'd also check the health check: if it probes a generic site with default 5 ms targets, the data isn't meaningful. The fix is a Teams rule using the Internet Service Database with Best Quality on jitter or packet loss, and a probe on a relevant destination with realistic thresholds. I'd pilot it in two stores, show the customer before-and-after numbers, then roll it out with FortiManager.
+    could_have_added: ["Check whether the issue is the store Wi-Fi, not the WAN"]
+    best_way: "Make 'bad' specific, check whether Teams even hits a rule, fix the rule and probe, pilot, then show the numbers."
+    rubric: ["clarifies symptoms", "rule vs implicit", "probe design", "pilot and measure"]
+  - id: M8.03.sc2
+    kind: situation
+    tier: 2
+    title: Choosing strategies in a design workshop
+    situation: |
+      In a kickoff workshop the customer lists three traffic types: ERP to the data centre over the overlay, voice, and nightly backups to cloud storage. Two ISPs per site.
+    ask: Propose a strategy per traffic type and explain it simply.
+    right_thinking:
+      - "Map business need to strategy"
+      - "ERP: reliable, cost-aware → Lowest Cost (SLA) over overlays"
+      - "Voice: best link now → Best Quality on jitter/loss"
+      - "Backups: throughput → Maximize Bandwidth"
+    what: A short strategy table the customer can sign off.
+    why: Strategy choice is a business decision expressed in config.
+    how: ["One line per app: need → strategy → SLA numbers", "Agree thresholds", "Turn it into the test plan"]
+    model_answer: |
+      ERP needs to be reliable and doesn't need the best link at every moment, so Lowest Cost (SLA): the preferred overlay while it meets the targets, failing over when it doesn't. Voice needs the best link right now, so Best Quality on jitter or packet loss. Backups need throughput and tolerate delay, so Maximize Bandwidth across links that meet SLA. I'd put that in a table with the thresholds you agree, and it becomes our test plan for go-live.
+    best_way: "ERP: Lowest Cost. Voice: Best Quality. Backups: Maximize Bandwidth. Agreed thresholds become the test plan."
+    rubric: ["correct mapping", "plain explanation", "thresholds agreed", "test plan"]
+  - id: M8.03.sc3
+    kind: hypothetical
+    tier: 3
+    title: What if the rule looks right but traffic ignores it?
+    situation: |
+      During a migration, a rule sends 10.60.0.0/16 to the overlay, but traffic still leaves via the old MPLS router interface.
+    ask: What's your hypothesis and how do you prove it?
+    right_thinking:
+      - "Routing decides whether SD-WAN rules are consulted"
+      - "Look for a more specific route or a policy route via the old path"
+      - "Policy routes come before SD-WAN rules"
+    what: Proof that routing or a policy route bypasses SD-WAN.
+    why: Migrations leave old routes and policy routes behind.
+    how: ["get router info routing-table all for 10.60.x", "diagnose firewall proute list", "diagnose ip proute match", "Remove or change the old route in a window"]
+    model_answer: |
+      I'd suspect the old path is still winning before SD-WAN is even consulted. By default the rule is only used if the FIB best match is an SD-WAN member, and policy routes are checked before SD-WAN rules. So I'd check the routing table for 10.60.0.0, and diagnose firewall proute list for a leftover policy route. diagnose ip proute match shows what a test packet would actually use. Then we remove or adjust the old route in the change window.
+    best_way: "An old route or policy route is winning before SD-WAN is consulted. Routing table, proute list and proute match prove it."
+    rubric: ["routing-first reasoning", "policy route order", "proof commands"]
+
+interview:
+  - id: M8.03.t01
+    stage: technical
+    question: Explain how FortiGate SD-WAN decides which link a session uses.
+    testing: End-to-end understanding
+    framework: "Routing → rules → strategy → implicit"
+    model_answer: |
+      "Members are grouped into zones, and health checks measure each member. When a new session arrives, policy routes are checked first, then SD-WAN rules in order. A rule only applies if routing points the destination at SD-WAN, and its strategy picks the member: manual order, best quality on a metric, lowest cost that meets the SLA, or maximize bandwidth. If no rule matches, the implicit rule load-balances with ECMP, by source IP by default."
+    best_way: "Policy routes, then SD-WAN rules with a strategy and health data, then the implicit ECMP rule."
+    target: "0:50"
+  - id: M8.03.t02
+    stage: technical
+    question: How would you design health checks for a SaaS application?
+    testing: Practical design
+    framework: "Server → protocol → targets → timers"
+    model_answer: |
+      "Probe something on the application's path, ideally the SaaS provider's endpoint, with HTTP or HTTPS if ping is filtered, and two servers so one dead server doesn't fail the link. Set targets from what the app needs, slightly inside the limit, because the 5 ms defaults would flap on any real internet link. And keep failtime and recoverytime so it doesn't bounce."
+    best_way: "Probe the app's path with two servers, realistic targets, and damping timers."
+    target: "0:40"
+  - id: M8.03.t03
+    stage: technical
+    question: An SD-WAN rule doesn't match the traffic you expect. What do you check?
+    testing: Troubleshooting depth
+    framework: "Routing → policy routes → rule match → commands"
+    model_answer: |
+      "First routing: by default a rule is only consulted if the FIB best match is an SD-WAN member, so a more specific route elsewhere bypasses it. Then policy routes, which come first. Then the rule's match criteria and order. diagnose sys sdwan service4 shows the rule's selection, diagnose firewall proute list the installed result, and diagnose ip proute match what a given packet would use."
+    best_way: "Routing first, then policy routes, then the rule. service4, proute list and proute match prove it."
+    target: "0:45"
+  - id: M8.03.h01
+    stage: hm
+    question: Tell me about a rollout you planned with a customer. How did you make sure it succeeded?
+    testing: Delivery approach (bridge from your Netskope rollouts)
+    framework: "STAR: plan, pilot, measure, scale"
+    model_answer: |
+      "[Use your Netskope rollout story: the account you took from below 50 % to 70 % utilisation.] Show the same pattern you'd use for SD-WAN: agree success criteria first, pilot with a small group, measure, adjust, then scale with the customer and partner, with a clear communication plan."
+    best_way: "Success criteria, pilot, measure, scale: the same pattern for SD-WAN."
+    target: "1:15"
+  - id: M8.03.t04
+    stage: technical
+    question: When would you choose Lowest Cost (SLA) over Best Quality?
+    testing: Strategy judgement
+    framework: "Definition → example"
+    model_answer: |
+      "Lowest Cost uses the cheapest link as long as it meets the SLA targets, so it's for business apps that need good enough, like SaaS over broadband with MPLS as backup. Best Quality always picks the link with the best metric, so it's for real-time traffic like voice, where the best link right now matters more than cost."
+    best_way: "Lowest Cost for good-enough-and-cheap, Best Quality for real-time."
+    target: "0:30"
+
+field_reports:
+  - id: M8.03.fr1
+    title: Third parties on the path
+    body: |
+      Third-party involvement appeared in **48 %** of breaches in the 2026 DBIR. SD-WAN often brings new ISPs, cloud on-ramps and managed services into the design. Segment overlays and inspect traffic between zones instead of trusting every path equally.
+    source: Verizon 2026 DBIR
+  - id: M8.03.fr2
+    title: AI traffic is now normal traffic
+    body: |
+      **45 %** of employees are regular AI users on corporate devices (2026 DBIR). Expect customers to ask for SaaS and AI services to get specific steering and security inspection: plan ISDB-based rules and SSL inspection together.
+    source: Verizon 2026 DBIR

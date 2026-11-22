@@ -28,6 +28,7 @@ func run(srv *server.Server, url string, browser bool) {
 				Width:  1280,
 				Height: 840,
 				Center: true,
+				IconId: 1, // the icon group embedded by rsrc_windows_amd64.syso
 			},
 		})
 		if w != nil {

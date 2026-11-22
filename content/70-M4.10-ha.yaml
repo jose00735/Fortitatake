@@ -1,0 +1,546 @@
+id: M4.10
+title: "High availability: FGCP clusters, failover and upgrades"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 80
+est_sessions: 1
+objectives:
+  - Explain FGCP, FGSP and VRRP and when each one fits
+  - Predict which unit becomes primary, with and without override
+  - Design heartbeat, monitored interfaces and session pickup for a customer's real failure modes
+  - Upgrade a cluster with the right upgrade mode and verify it afterwards
+  - Diagnose split brain and out-of-sync clusters calmly, from the console
+sources:
+  - "FortiOS 8.0.2 Admin Guide: High Availability overview and FGCP (pp. 4556–4559), primary selection and override (pp. 4561–4567), A-P / A-A setup (pp. 4567–4571)"
+  - "FortiOS 8.0.2 Admin Guide: A-A load balancing (pp. 4583–4586), heartbeat (pp. 4586–4597), session failover (pp. 4598–4615)"
+  - "FortiOS 8.0.2 Admin Guide: management interfaces (pp. 4620–4626), upgrades (pp. 4638–4640), troubleshooting (pp. 4701–4716)"
+
+units:
+  - id: M4.10.u1
+    title: Three ways to stay up
+    tier: 1
+    est_min: 10
+    body: |
+      A FortiGate carrying critical traffic is a single point of failure. The guide lists three HA answers (pp. 4556–4557):
+
+      - **FGCP (FortiGate Clustering Protocol):** the classic cluster. Two or more FortiGates of the **same model, firmware and hardware** negotiate a cluster and share one configuration; only the **hostname and the HA priority** differ. Modes: **active-passive (A-P)** and **active-active (A-A)**.
+      - **FGSP (Session Life Support Protocol):** for networks that already have **external load balancers or routers** spreading sessions; FGSP only synchronizes sessions (TCP, UDP, ICMP, NAT, expectation) between peers.
+      - **VRRP:** standard first-hop redundancy, versions 2 and 3, also with third-party routers.
+
+      ## How FGCP keeps one brain
+
+      - Members talk over **heartbeat interfaces**. Fortinet recommends **two back-to-back heartbeat links** in a two-member cluster (p. 4557).
+      - All synchronization runs over the heartbeat link on **TCP/703 and UDP/703** (p. 4559).
+      - The primary owns the cluster's **virtual MAC addresses** and IPs. After a failover the new primary sends **gratuitous ARP** so switches learn the new path (p. 4564).
+      - All cluster members must be registered under the **same FortiCare account**, or you get licensing issues (p. 4557).
+
+      :::recall
+      Q: Which two settings may differ between FGCP members?
+      A: The hostname and the HA (device) priority. Everything else is synchronized.
+      :::
+
+      :::delta
+      Customers with an external load balancer in front of two FortiGates don't need FGCP: that is the FGSP use case.
+      :::
+  - id: M4.10.u2
+    title: Who becomes primary
+    tier: 2
+    est_min: 14
+    body: |
+      Primary election is the most-tested HA topic and the first thing a customer asks after a failover. The order depends on **override** (pp. 4562–4563):
+
+      | override | Order (first difference wins) | Mnemonic |
+      |---|---|---|
+      | disabled (default) | Connected **M**onitored interfaces → HA **U**ptime → **P**riority → **S**erial number | MUPS |
+      | enabled | Connected **M**onitored interfaces → **P**riority → HA **U**ptime → **S**erial number | MPUS |
+
+      Details that matter in the field:
+
+      - **Priority:** 0–255, **default 128**, higher wins (pp. 4561, 4576).
+      - **Uptime tie:** uptimes within **300 seconds** count as a tie (`ha-uptime-diff-margin` changes it). A **monitored-interface failure or a reboot resets that unit's uptime to zero** (p. 4563).
+      - **Override:** make it the same on all members; mixing it causes unpredictable elections (p. 4561). With override enabled, the higher-priority unit takes over again as soon as it comes back, which means a **second failover**.
+      - **override-wait-time** (0–3600 s, default 0, not synchronized) delays that takeover after a reboot so the returning unit can sync first. From 8.0.1, during the wait the unit with the longest uptime stays primary (pp. 4563–4564).
+
+      :::cli
+      # get system ha status
+      ...
+      Primary selected using:
+      <...> vcluster-1: FG101F...7 is selected as the primary because its override priority is larger than peer member FG101F...8.
+      :::
+
+      "Primary selected using" is the history that answers *why* (p. 4566). `diagnose sys ha dump-by group` shows the uptime difference between members (p. 4567).
+
+      :::pitfall
+      With override disabled, raising the priority on the unit you want as primary does nothing while the other unit has more than 5 minutes more uptime. Uptime beats priority.
+      :::
+
+      :::recall
+      Q: Override disabled, both units have all monitored ports up, A has 2 h more uptime, B has priority 200. Who is primary?
+      A: A. Uptime is checked before priority when override is disabled (and the difference is above 300 s).
+      :::
+  - id: M4.10.u3
+    title: Heartbeat, monitoring and session pickup
+    tier: 2
+    est_min: 14
+    body: |
+      ## Heartbeat timing
+
+      `hb-interval` (default 2, in units of `hb-interval-in-milliseconds`, default 100 ms) and `hb-lost-threshold` (typically 6 on hardware and 20 on VMs; check with `get system ha | grep hb-lost-threshold`). The guide's example: 2 × 100 ms × 20 = **4 seconds** to declare a peer dead (p. 4593). Lower values give faster failover but more false positives.
+
+      `backup-hbdev` is used only when the secondary stops hearing the primary on the normal heartbeat links, to prevent split brain; configuration isn't synchronized while it's in use (pp. 4589–4590).
+
+      ## What triggers a failover
+
+      - **Device failure:** heartbeats stop.
+      - **Link failure:** `set monitor port1 port2`. A monitored port going down on the primary moves the role.
+      - **Remote link failure:** `pingserver-monitor-interface` checks reachability of a remote IP through an interface (p. 4576).
+
+      ## Session pickup
+
+      **Session failover (`session-pickup`) is not enabled by default** (p. 4598). Without it, a failover keeps the cluster up but **drops existing sessions**; users reconnect.
+
+      - `session-pickup enable`: synchronizes the TCP session table.
+      - `session-pickup-connectionless enable`: adds UDP and ICMP (p. 4602).
+      - `session-pickup-delay enable`: only sessions older than **30 seconds** are synced, which cuts load with many short HTTP sessions (p. 4607).
+
+      ## Active-active
+
+      In A-A, the primary receives all traffic on the virtual MACs and uses a **load-balancing schedule** to hand sessions to the others; `load-balance-all` extends this to all TCP sessions (pp. 4583–4584). A-A adds complexity; for most customers A-P plus right-sizing is easier to operate.
+
+      :::why
+      Q: Why is session pickup off by default?
+      A: Synchronizing every session costs CPU and heartbeat bandwidth. It's a design decision per customer: enable it when long-lived sessions (VoIP, database, VPN) must survive a failover.
+      :::
+
+      :::tip
+      In a change plan, write the expected failover time and whether sessions survive, so the customer approves a measured behaviour, not a hope.
+      :::
+  - id: M4.10.u4
+    title: Upgrades, management and the bad days
+    tier: 3
+    est_min: 14
+    body: |
+      ## Upgrade modes (pp. 4638–4640)
+
+      `set upgrade-mode {simultaneous | uninterruptible | local-only | secondary-only}`
+
+      - **uninterruptible:** the subordinates are upgraded first, a new primary is chosen from the upgraded units, then the former primary is upgraded. Traffic keeps flowing. Simultaneous (interrupted) upgrade is **disabled by default**.
+      - **simultaneous:** all members at once. Faster, but an outage.
+      - **local-only / secondary-only:** advanced, manual staged upgrades (multi-version cluster) for testing one member before the rest.
+
+      Always check the supported upgrade path and book a window first.
+
+      ## Managing each unit
+
+      - `execute ha manage <id> <username>` jumps to the other member's CLI (p. 4597, p. 4707).
+      - **Reserved management interfaces** (`ha-mgmt-status enable`, `config ha-mgmt-interfaces`) give each unit its own management IP; `ha-direct` lets services such as SNMP, syslog and FortiAnalyzer logging leave from each unit's own interface (pp. 4622–4625).
+
+      ## Split brain (pp. 4702–4703)
+
+      Both units think they're primary and use the **same IP and virtual MAC**: switches flap, admin access is intermittent, traffic drops. Cause: **all heartbeat links lost**, or congested links that exceed the lost threshold.
+
+      Fix: get to the **console** (on-site if possible), check the heartbeat ports are physically up and passing heartbeats, check **mode, group-name, group-id and password** match, then confirm with `get system ha status`.
+
+      Prevent: back-to-back heartbeat cables, **redundant heartbeat interfaces**, and for geo-separated members, thresholds longer than the link latency.
+
+      ## Out of sync (pp. 4707–4709)
+
+      `get system ha status` → **Configuration Status** shows in-sync / out-of-sync per serial and the checksums. The GUI HA monitor highlights the member in red; **Force resync** pushes the primary's config. `diagnose sys ha checksum cluster` is the classic CLI comparison.
+
+      `execute ha failover set <cluster_id>` forces a failover for **testing in a maintenance window only** (p. 4703).
+
+      :::threat
+      Downtime is a big share of breach cost: in IBM's 2026 report, detection and escalation plus lost business are 63 % of the cost of a breach. A cluster that fails over cleanly during an incident protects revenue as well as security.
+      :::
+
+cards:
+  - { id: M4.10.c01, unit: M4.10.u1, tier: 1, front: "FGCP requirements for members?", back: "Same model, same firmware, same hardware configuration; same FortiCare account. (p. 4557)" }
+  - { id: M4.10.c02, unit: M4.10.u1, tier: 1, front: "What differs between FGCP members' configs?", back: "Only the hostname and the HA priority." }
+  - { id: M4.10.c03, unit: M4.10.u1, tier: 2, front: "Ports used for FGCP synchronization?", back: "TCP/703 and UDP/703 over the heartbeat link. (p. 4559)" }
+  - { id: M4.10.c04, unit: M4.10.u1, tier: 2, front: "When is FGSP the right choice?", back: "When external load balancers or routers already distribute sessions; FGSP only syncs sessions between peers." }
+  - { id: M4.10.c05, unit: M4.10.u1, tier: 2, front: "What does the new primary send after failover?", back: "Gratuitous ARP for the virtual MACs/IPs, so switches update their tables." }
+  - { id: M4.10.c06, unit: M4.10.u2, tier: 2, front: "Primary election order with override disabled?", back: "Monitored interfaces → uptime → priority → serial number (MUPS)." }
+  - { id: M4.10.c07, unit: M4.10.u2, tier: 2, front: "Primary election order with override enabled?", back: "Monitored interfaces → priority → uptime → serial number (MPUS)." }
+  - { id: M4.10.c08, unit: M4.10.u2, tier: 1, front: "HA priority range and default?", back: "0–255, default 128; higher wins." }
+  - { id: M4.10.c09, unit: M4.10.u2, tier: 2, front: "Uptime difference treated as a tie?", back: "Less than 300 seconds (ha-uptime-diff-margin)." }
+  - { id: M4.10.c10, unit: M4.10.u2, tier: 3, front: "What resets a unit's HA uptime?", back: "A monitored interface failing, or the unit restarting. (diagnose sys ha reset-uptime does it manually)" }
+  - { id: M4.10.c11, unit: M4.10.u2, tier: 3, front: "What does override-wait-time do?", back: "Delays a higher-priority unit's takeover after it reboots (0–3600 s, default 0, not synced) so it can sync first." }
+  - { id: M4.10.c12, unit: M4.10.u3, tier: 2, front: "Default heartbeat detection in the guide's example?", back: "2 × 100 ms × 20 lost = 4 s." }
+  - { id: M4.10.c13, unit: M4.10.u3, tier: 1, front: "Is session pickup on by default?", back: "No. Without it, sessions drop on failover." }
+  - { id: M4.10.c14, unit: M4.10.u3, tier: 2, front: "Setting that adds UDP/ICMP session failover?", back: "session-pickup-connectionless enable." }
+  - { id: M4.10.c15, unit: M4.10.u3, tier: 3, front: "What does session-pickup-delay do?", back: "Syncs only sessions older than 30 s, reducing load from short sessions." }
+  - { id: M4.10.c16, unit: M4.10.u3, tier: 2, front: "How do you fail over when a remote site is unreachable?", back: "Remote link monitoring: pingserver-monitor-interface." }
+  - { id: M4.10.c17, unit: M4.10.u4, tier: 2, front: "Uninterruptible upgrade order?", back: "Subordinates first → new primary chosen from upgraded units → former primary upgraded." }
+  - { id: M4.10.c18, unit: M4.10.u4, tier: 2, front: "Split brain: what to check?", back: "Console in; heartbeat ports physically up and passing heartbeats; mode, group-name, group-id and password match." }
+  - { id: M4.10.c19, unit: M4.10.u4, tier: 2, front: "Where do you see sync status in the CLI?", back: "get system ha status → Configuration Status (checksums per serial)." }
+  - { id: M4.10.c20, unit: M4.10.u4, tier: 3, front: "Give each cluster unit its own management IP?", back: "Reserved management interface: ha-mgmt-status enable + config ha-mgmt-interfaces (ha-direct for services)." }
+
+quiz:
+  - id: M4.10.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which pair is required for two FortiGates to form an FGCP cluster?
+    options:
+      - { id: a, text: "Same model and same firmware", correct: true }
+      - { id: b, text: "Same hostname and same priority", why_wrong: "Those are exactly the two settings that can differ." }
+      - { id: c, text: "Same public IP on each WAN", why_wrong: "The cluster shares virtual addresses; units don't need their own public IPs." }
+      - { id: d, text: "Different FortiCare accounts for redundancy", why_wrong: "They must be on the same FortiCare account." }
+    explanation: Same model, firmware and hardware configuration.
+    source: FortiOS 8.0.2 Admin Guide p. 4557
+  - id: M4.10.q02
+    type: order
+    tier: 2
+    pretest: true
+    stem: Put the primary-election criteria in order with override disabled (the default).
+    items: ["Connected monitored interfaces", "HA uptime", "Device priority", "Serial number"]
+    explanation: MUPS. With override enabled, priority moves above uptime (MPUS).
+    source: FortiOS 8.0.2 Admin Guide pp. 4562–4563
+  - id: M4.10.q03
+    type: single
+    tier: 2
+    stem: "Override disabled. Unit A: uptime 3 days, priority 128. Unit B: uptime 2 days, priority 250. Both have all monitored interfaces up. Who is primary?"
+    options:
+      - { id: a, text: "A, because uptime is compared before priority and the difference exceeds 300 s", correct: true }
+      - { id: b, text: "B, because priority 250 is higher", why_wrong: "Priority only decides first when override is enabled." }
+      - { id: c, text: "Whichever has the higher serial number", why_wrong: "Serial is the last tiebreaker." }
+      - { id: d, text: "Neither; the cluster won't form", why_wrong: "Different priorities are normal." }
+    explanation: Uptime beats priority with override disabled.
+  - id: M4.10.q04
+    type: single
+    tier: 2
+    stem: "Override enabled on both units. The higher-priority primary reboots and comes back 5 minutes later. What happens by default?"
+    options:
+      - { id: a, text: "It takes the primary role back, causing a second failover", correct: true }
+      - { id: b, text: "It stays secondary until an admin intervenes", why_wrong: "That's the override-disabled behaviour (uptime wins)." }
+      - { id: c, text: "Both become primary", why_wrong: "That's split brain, a heartbeat failure, not override." }
+      - { id: d, text: "It waits override-wait-time of 300 s", why_wrong: "override-wait-time defaults to 0." }
+    explanation: Use override-wait-time if you want it to sync before taking over.
+    source: FortiOS 8.0.2 Admin Guide p. 4563
+  - id: M4.10.q05
+    type: numeric
+    tier: 1
+    pretest: true
+    stem: What is the default FortiGate HA device priority?
+    answer: 128
+    explanation: Range 0–255, default 128.
+    source: FortiOS 8.0.2 Admin Guide p. 4576
+  - id: M4.10.q06
+    type: single
+    tier: 2
+    stem: "After a failover, every user had to reconnect their VPN and SSH sessions. What was most likely missing?"
+    options:
+      - { id: a, text: "session-pickup enable", correct: true }
+      - { id: b, text: "A second heartbeat interface", why_wrong: "That prevents split brain; it doesn't preserve sessions." }
+      - { id: c, text: "override enable", why_wrong: "Override decides who's primary, not session survival." }
+      - { id: d, text: "A higher hb-lost-threshold", why_wrong: "That changes detection time, not session sync." }
+    explanation: Session failover is off by default; existing sessions drop without it.
+    source: FortiOS 8.0.2 Admin Guide p. 4598
+  - id: M4.10.q07
+    type: multi
+    tier: 2
+    stem: Which events can move the primary role? Select all that apply.
+    options:
+      - { id: a, text: "Heartbeats from the primary stop", correct: true }
+      - { id: b, text: "A monitored interface on the primary goes down", correct: true }
+      - { id: c, text: "A remote IP checked by pingserver monitoring stops answering", correct: true }
+      - { id: d, text: "An administrator logs in to the secondary", why_wrong: "Logging in changes nothing." }
+    explanation: Device, link and remote-link failures.
+  - id: M4.10.q08
+    type: single
+    tier: 3
+    stem: "Both cluster units show 'Primary' in get system ha status from the console, and switches report MAC flapping. Best first step?"
+    options:
+      - { id: a, text: "Check the heartbeat links are physically up and passing heartbeats, and that group-name, group-id, mode and password match", correct: true }
+      - { id: b, text: "Upgrade both units", why_wrong: "Changing firmware during split brain adds risk." }
+      - { id: c, text: "Enable session-pickup", why_wrong: "Unrelated to heartbeat loss." }
+      - { id: d, text: "Raise priority on one unit", why_wrong: "They can't see each other, so priority isn't compared." }
+    explanation: Split brain is a heartbeat problem first.
+    source: FortiOS 8.0.2 Admin Guide pp. 4702–4703
+  - id: M4.10.q09
+    type: single
+    tier: 2
+    stem: In an uninterruptible cluster upgrade, which unit is upgraded first?
+    options:
+      - { id: a, text: "The subordinate (secondary) units", correct: true }
+      - { id: b, text: "The primary", why_wrong: "The primary is upgraded last, after a new primary is chosen." }
+      - { id: c, text: "All at once", why_wrong: "That's simultaneous mode." }
+      - { id: d, text: "The unit with the lowest serial number", why_wrong: "Order is by role, not serial." }
+    explanation: Subordinates, new primary from upgraded units, then the former primary.
+    source: FortiOS 8.0.2 Admin Guide p. 4639
+  - id: M4.10.q10
+    type: text
+    tier: 2
+    stem: "Which CLI command shows why the current primary was selected? (three words after 'get')"
+    accept: ["get system ha status", "system ha status"]
+    explanation: Look at "Primary selected using".
+    source: FortiOS 8.0.2 Admin Guide p. 4566
+  - id: M4.10.q11
+    type: single
+    tier: 3
+    stem: A customer has many short HTTP sessions and session pickup is overloading the cluster. Which option helps most?
+    options:
+      - { id: a, text: "session-pickup-delay enable (sync only sessions older than 30 s)", correct: true }
+      - { id: b, text: "session-pickup-connectionless enable", why_wrong: "That adds more sessions to sync." }
+      - { id: c, text: "Lower hb-interval", why_wrong: "Faster heartbeats don't reduce sync load." }
+      - { id: d, text: "Switch to A-A", why_wrong: "A-A still syncs sessions and adds complexity." }
+    explanation: Short sessions aren't worth syncing.
+    source: FortiOS 8.0.2 Admin Guide p. 4607
+  - id: M4.10.q12
+    type: single
+    tier: 3
+    stem: "Two members are in different buildings over a shared fibre. Heartbeats are lost during backups and both go primary. Which design change does the guide recommend?"
+    options:
+      - { id: a, text: "Make the heartbeat lost interval and threshold longer than the possible latency, and use redundant heartbeat links", correct: true }
+      - { id: b, text: "Lower hb-lost-threshold to fail over faster", why_wrong: "That makes false failovers more likely." }
+      - { id: c, text: "Disable heartbeat encryption", why_wrong: "Not related to latency." }
+      - { id: d, text: "Use override", why_wrong: "Override doesn't help when units can't see each other." }
+    explanation: Tune timers to the link, add redundant heartbeat paths.
+    source: FortiOS 8.0.2 Admin Guide p. 4703
+  - id: M4.10.q13
+    type: single
+    tier: 2
+    stem: In active-active FGCP, who receives packets sent to the cluster?
+    options:
+      - { id: a, text: "The primary, which distributes sessions with a load-balancing schedule", correct: true }
+      - { id: b, text: "Each member equally, via ECMP from the switch", why_wrong: "That's closer to FGSP with an external load balancer." }
+      - { id: c, text: "The secondary only", why_wrong: "The primary owns the virtual MACs." }
+      - { id: d, text: "Whichever unit has the lower serial", why_wrong: "Not how A-A works." }
+    explanation: The primary receives and hands out sessions.
+    source: FortiOS 8.0.2 Admin Guide p. 4583
+  - id: M4.10.q14
+    type: single
+    tier: 2
+    stem: The monitoring team needs SNMP and syslog from each cluster member separately. What do you configure?
+    options:
+      - { id: a, text: "Reserved HA management interfaces with ha-direct", correct: true }
+      - { id: b, text: "A second cluster", why_wrong: "Unnecessary." }
+      - { id: c, text: "FGSP", why_wrong: "FGSP is for session sync with external load balancers." }
+      - { id: d, text: "override-wait-time", why_wrong: "Unrelated to management traffic." }
+    explanation: Each unit keeps its own management IP; ha-direct sends services from it.
+    source: FortiOS 8.0.2 Admin Guide pp. 4622–4625
+  - id: M4.10.q15
+    type: single
+    tier: 3
+    stem: The GUI shows a member highlighted red as Not Synchronized. What's the right next step?
+    options:
+      - { id: a, text: "Check which tables differ (hover or Config diff), fix the cause, then Force resync if needed", correct: true }
+      - { id: b, text: "Factory-reset both units", why_wrong: "Destructive and unnecessary." }
+      - { id: c, text: "Force an HA failover in production hours", why_wrong: "Failover doesn't fix sync; only do it in a window." }
+      - { id: d, text: "Ignore it; it fixes itself", why_wrong: "Out-of-sync config means a failover could change behaviour." }
+    explanation: Find the differing tables, then resync.
+    source: FortiOS 8.0.2 Admin Guide pp. 4707–4709
+
+labs:
+  - id: M4.10.lab1
+    title: Build an active-passive cluster
+    goal: Configure the first unit of an A-P cluster with two heartbeat links, session pickup and two monitored ports, preferring this unit.
+    worked:
+      config: |
+        config system global
+            set hostname FGT-HQ-A
+        end
+        config system ha
+            set mode a-p
+            set group-id 10
+            set group-name "HQ-CLUSTER"
+            set password <shared-secret>
+            set hbdev "ha1" 50 "ha2" 50
+            set session-pickup enable
+            set monitor "port1" "port2"
+            set override disable
+            set priority 200
+        end
+      notes:
+        - "group-id, group-name, mode and password must match on both units."
+        - "Two heartbeat links, cabled back to back."
+        - "With override disabled, priority 200 only decides on a tie in uptime."
+    faded:
+      template: |
+        config system ha
+            set mode {{a-p}}
+            set group-name "HQ-CLUSTER"
+            set {{hbdev}} "ha1" 50 "ha2" 50
+            set {{session-pickup}} enable
+            set {{monitor}} "port1" "port2"
+            set priority {{200}}
+        end
+    solo:
+      prompt: "Configure the second unit: same cluster settings, hostname FGT-HQ-B, priority 100. Include mode, group-id 10, group-name, password, both heartbeats, session pickup and the monitored ports."
+      required: ["set hostname FGT-HQ-B", "config system ha", "set mode a-p", "set group-id 10", "set group-name \"HQ-CLUSTER\"", "set password", "set hbdev \"ha1\" 50 \"ha2\" 50", "set session-pickup enable", "set monitor \"port1\" \"port2\"", "set priority 100"]
+      solution: |
+        config system global
+            set hostname FGT-HQ-B
+        end
+        config system ha
+            set mode a-p
+            set group-id 10
+            set group-name "HQ-CLUSTER"
+            set password <shared-secret>
+            set hbdev "ha1" 50 "ha2" 50
+            set session-pickup enable
+            set monitor "port1" "port2"
+            set override disable
+            set priority 100
+        end
+      notes: "Only hostname and priority differ. Everything else is synchronized once the cluster forms."
+  - id: M4.10.lab2
+    title: Verify the cluster and test failover safely
+    goal: In the maintenance window, prove the cluster is healthy, then test a controlled failover and return.
+    worked:
+      config: |
+        # get system ha status
+        # diagnose sys ha dump-by group
+        # diagnose sys ha checksum cluster
+        # execute ha manage 1 admin
+        # execute ha failover set 1
+        # get system ha status
+        # execute ha failover unset 1
+      notes:
+        - "Check Configuration Status is in-sync and HBDEV/MONDEV are up before touching anything."
+        - "dump-by group shows the uptime difference that drives elections."
+        - "Failover set/unset is for maintenance windows and testing only."
+    faded:
+      template: |
+        # get system ha {{status}}
+        # diagnose sys ha {{dump-by}} group
+        # execute ha {{manage}} 1 admin
+        # execute ha failover {{set}} 1
+        # execute ha failover {{unset}} 1
+    solo:
+      prompt: "Write the commands to confirm the cluster is in sync, force a test failover of cluster 1, check the new state, and undo the forced failover."
+      required: ["get system ha status", "execute ha failover set 1", "execute ha failover unset 1"]
+      solution: |
+        # get system ha status
+        # execute ha failover set 1
+        # get system ha status
+        # execute ha failover unset 1
+      notes: "Run a continuous ping and an SSH session through the cluster while you test, so you can show the customer exactly what survives."
+
+scenarios:
+  - id: M4.10.sc1
+    kind: situation
+    tier: 3
+    title: '"The cluster failed over by itself last night"'
+    situation: |
+      A customer's CIO emails: "Our FortiGate cluster switched primaries at 02:14 and VoIP calls dropped. Was this a bug? Do we need to replace hardware?"
+    ask: How do you investigate and answer?
+    right_thinking:
+      - "Find out why before blaming hardware: the cluster records why it chose each primary"
+      - "Correlate with monitored interfaces, heartbeat and event logs at 02:14"
+      - "Explain separately why calls dropped (session pickup) and why the role moved"
+      - "Propose a measured fix, not a guess"
+    what: A root cause for the role change and for the dropped calls, plus a change plan.
+    why: The customer needs to know if it can happen again and whether it was handled correctly.
+    how:
+      - "get system ha status → Primary selected using (time, reason)"
+      - "Event logs for monitored-interface or heartbeat changes at 02:14"
+      - "Check session-pickup and session-pickup-connectionless (VoIP is often UDP)"
+      - "Present findings and a change with expected behaviour"
+    model_answer: |
+      I'd start with the cluster's own history. get system ha status shows when and why each primary was selected. Then I'd look at the event logs around 02:14 for a monitored port going down or heartbeats lost. In most cases it's a monitored link that flapped, for example a switch upgrade, which is the cluster doing its job. The dropped calls are a separate question: if session pickup, and connectionless pickup for UDP voice, aren't enabled, a correct failover still drops calls. I'd send the CIO a short summary: what triggered the failover, that it behaved as designed, and a proposed change to enable session pickup in a window, with the expected effect.
+    could_have_added:
+      - "Ask whether a network change was scheduled at that time"
+      - "Offer a tested failover in a window to show the improvement"
+    best_way: "The cluster logs why it switched. A link flapped and it failed over as designed; calls dropped because session pickup is off. Let's enable it in a window."
+    rubric: ["evidence first", "separates two causes", "customer-ready explanation", "measured change"]
+  - id: M4.10.sc2
+    kind: situation
+    tier: 3
+    title: The upgrade window
+    situation: |
+      You must upgrade a production A-P cluster from 7.4 to 7.6 tonight. The customer asks for "zero downtime".
+    ask: Plan the upgrade and set expectations.
+    right_thinking:
+      - "Check the supported upgrade path first; multiple hops may be needed"
+      - "Use uninterruptible mode and confirm the cluster is in sync before starting"
+      - "Be honest: uninterruptible means no outage of the cluster, but some sessions may still reset without session pickup"
+      - "Have a rollback and console access"
+    what: A step-by-step change plan with checks and a rollback.
+    why: Promises you can't measure become escalations.
+    how:
+      - "Upgrade path tool, release notes, config backup"
+      - "get system ha status: in sync, heartbeats up"
+      - "upgrade-mode uninterruptible; upgrade; watch subordinates then primary"
+      - "Verify version, sync, traffic tests; sign-off"
+    model_answer: |
+      First I'd check the upgrade path and release notes, back up the configuration and confirm console access. Before starting, get system ha status must show both units in sync with heartbeats up. With upgrade-mode uninterruptible, the secondary upgrades first, a new primary is chosen from the upgraded unit, then the old primary upgrades, so the cluster keeps passing traffic. I'd tell the customer honestly: no outage of the cluster, but with session pickup off some sessions will reset at the role change. After the upgrade I verify versions, sync status and the customer's test list, and hand over a short report.
+    best_way: "No outage of the cluster with uninterruptible mode, but sessions survive only with session pickup. Here's the plan, the checks and the rollback."
+    rubric: ["upgrade path", "pre-checks", "honest expectations", "rollback"]
+  - id: M4.10.sc3
+    kind: hypothetical
+    tier: 2
+    title: What if the priority change "doesn't work"?
+    situation: |
+      A colleague set priority 250 on the unit that should be primary, but it's still secondary. Override is disabled. They want to reboot the current primary to force it.
+    ask: What do you tell them?
+    right_thinking:
+      - "Uptime beats priority with override disabled"
+      - "A reboot causes an outage and only works because it resets uptime"
+      - "Better options: wait for a window, use execute ha failover, or decide deliberately to enable override"
+    what: Explain the election order and a safe way to move the role.
+    why: Rebooting production to fix a misunderstanding creates an incident.
+    how: ["Show get system ha status reason", "Explain MUPS", "Plan the change in a window"]
+    model_answer: |
+      Don't reboot. With override disabled the cluster compares uptime before priority, and the current primary has more than 5 minutes more uptime, so priority isn't even reached. get system ha status will show that reason. If we really want that unit as primary, we can move the role in a maintenance window, or decide as a design choice to enable override on both units, knowing it will take the role back after every reboot.
+    best_way: "Uptime wins before priority when override is off. Don't reboot; plan the role change in a window."
+    rubric: ["correct election logic", "avoids outage", "offers options"]
+
+interview:
+  - id: M4.10.t01
+    stage: technical
+    question: Walk me through how a FortiGate cluster elects its primary.
+    testing: Core FGCP knowledge
+    framework: "Order → override difference → field gotcha"
+    model_answer: |
+      "First, the unit with the most connected monitored interfaces. Then, with override disabled, HA uptime, where less than five minutes' difference is a tie, then priority, then serial number. With override enabled, priority comes before uptime. The gotcha I've seen in support is people raising priority and nothing happening, because uptime still wins with override off. get system ha status shows the reason."
+    best_way: "Monitored ports, then uptime then priority, or priority then uptime with override, then serial. get system ha status tells you why."
+    target: "0:45"
+  - id: M4.10.t02
+    stage: technical
+    question: A customer says sessions dropped during a failover. Why, and what would you change?
+    testing: Session pickup understanding
+    framework: "Cause → change → trade-off"
+    model_answer: |
+      "Session pickup isn't enabled by default, so after a failover the new primary doesn't know the existing sessions and users reconnect. I'd enable session-pickup, plus connectionless pickup if UDP like voice matters. The trade-off is CPU and heartbeat bandwidth, so with lots of short web sessions I'd add session-pickup-delay, which only syncs sessions older than 30 seconds."
+    best_way: "Session pickup is off by default. Enable it, plus connectionless for UDP, and use the delay option if short sessions overload it."
+    target: "0:40"
+  - id: M4.10.t03
+    stage: technical
+    question: What is split brain and how do you prevent it?
+    testing: Failure-mode thinking
+    framework: "Definition → symptoms → prevention"
+    model_answer: |
+      "Both members lose the heartbeat and each becomes primary with the same IP and virtual MAC, so switches flap and traffic drops. I'd fix it from the console: check heartbeat cabling and that mode, group ID, group name and password match. To prevent it: two back-to-back heartbeat links, and if the units are in different locations, heartbeat timers longer than the link latency."
+    best_way: "Both think they're primary because heartbeats are lost. Redundant back-to-back heartbeats and sane timers prevent it."
+    target: "0:40"
+  - id: M4.10.h01
+    stage: hm
+    question: How would you run a cluster upgrade for a customer who's nervous about downtime?
+    testing: Change management, communication
+    framework: "Prepare → execute → verify → report"
+    model_answer: |
+      "I'd agree a window, check the upgrade path and back up the config. Before starting I confirm the cluster is in sync. With uninterruptible mode the secondary upgrades first, then the role moves and the old primary upgrades, so the cluster keeps passing traffic. I tell the customer upfront what to expect, for example that some sessions may reset if session pickup is off. Afterwards I run their test list and send a short report. Being honest beforehand is what makes them trust you on the next change."
+    best_way: "Prepare, set honest expectations, uninterruptible upgrade, verify with their tests, report."
+    target: "1:00"
+  - id: M4.10.t04
+    stage: technical
+    question: FGCP, FGSP or VRRP? When would you use each?
+    testing: Design judgement
+    framework: "Three options, one line each"
+    model_answer: |
+      "FGCP when the customer wants a classic cluster of identical FortiGates acting as one, A-P for simplicity. FGSP when they already have external load balancers or routers spreading sessions and just need session sync between firewalls. VRRP when they need standard first-hop redundancy, including with third-party routers."
+    best_way: "FGCP for a true cluster, FGSP behind existing load balancers, VRRP for standard first-hop redundancy."
+    target: "0:30"
+
+field_reports:
+  - id: M4.10.fr1
+    title: Downtime is part of the breach bill
+    body: |
+      IBM's 2026 Cost of a Data Breach report puts the average breach at **USD 4.99 million**, and detection and escalation plus lost business make up **63 %** of that cost. Resilient edge design, including a cluster that fails over cleanly, is part of keeping the second half small.
+    source: IBM Cost of a Data Breach Report 2026
+  - id: M4.10.fr2
+    title: Patch windows are where HA earns its keep
+    body: |
+      Vulnerability exploitation was the top initial access vector in the 2026 DBIR (**31 %**), and only **26 %** of known-exploited vulnerabilities were fully remediated, with a median of **43 days**. Uninterruptible cluster upgrades remove the "we can't afford the outage" excuse for delaying firewall patches.
+    source: Verizon 2026 DBIR

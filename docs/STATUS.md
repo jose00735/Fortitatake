@@ -27,7 +27,6 @@
 
 ### Known gaps
 
-- No embedded .ico in the exe yet (Explorer shows the default icon; the window and pages use the shield).
 - Session timing is a guide: blocks end when the work is done, not when the clock says.
 - Self-scored drills and situations depend on honest scoring.
 
@@ -38,6 +37,11 @@
 - **Content packs:** the hub serves its content bundle; a phone with older content downloads it, verifies the SHA-256 and reloads. A newer `bundle.json` in the data folder's `content/` overrides the embedded one, so new modules can reach the PC without rebuilding the exe.
 - **Android app:** Kotlin WebView shell that runs the same Go engine (`lib/<abi>/libfortitatake.so`: android/arm64, static linux armv7 and x86_64). Backups and TeleCyborg exports save to Downloads.
 - Build: `tools/build_android.sh` (needs ANDROID_HOME). APK signed with the committed sideload key so every build updates the installed app.
+
+### v0.2.1
+
+- Three modules: M4.09 IPsec VPN, M4.10 HA, M8.03 SD-WAN (FortiOS 8.0.2 guide, printed pages; in these chapters PDF page = printed page).
+- Windows exe and window now carry the shield icon (`assets/fortitatake.ico`, `rsrc_windows_amd64.syso`, IconId 1).
 
 ### P2 gaps
 
@@ -58,31 +62,32 @@
 
 ## Content
 
-Sprint order for the first 24 hours (six sorties of about 4 hours):
+Sprint order: the first six sorties (about 24 hours) come first; v0.2.1 adds three more (about 12 hours).
 
-| # | Module | Cards | Quiz | Labs | Situations | Interview items | Version |
-|---|---|---|---|---|---|---|---|
-| 1 | I1 Kickoff: recruiter screen and why you're a strong PS asset | 15 | 12 | 0 | 3 | 18 | 2026-11-21 |
-| 2 | M1.03 Transport, state and NAT theory | 20 | 20 | 2 | 3 | 5 | 2026-11-21 |
-| 3 | M1.04 Routing fundamentals and the FortiGate route lookup | 20 | 19 | 2 | 3 | 5 | 2026-11-21 |
-| 4 | M4.03 FortiGate firewall policies, objects and NAT | 22 | 21 | 3 | 3 | 6 | 2026-11-21 |
-| 5 | M4.12 FortiGate diagnostics: debug flow, sniffer and sessions | 20 | 19 | 3 | 3 | 5 | 2026-11-21 |
-| 6 | M11.01 PS delivery: kickoff to handover, plus the STAR bank | 18 | 14 | 2 | 3 | 12 | 2026-11-21 |
-| | **Total** | **115** | **105** | **12** | **18** | **51** | |
+| # | Module | Cards | Quiz | Labs | Situations | Interview items |
+|---|---|---|---|---|---|---|
+| 1 | I1 Kickoff: recruiter screen and why you're a strong PS asset | 15 | 12 | 0 | 3 | 18 |
+| 2 | M1.03 Transport, state and NAT theory | 20 | 20 | 2 | 3 | 5 |
+| 3 | M1.04 Routing fundamentals and the FortiGate route lookup | 20 | 19 | 2 | 3 | 5 |
+| 4 | M4.03 FortiGate firewall policies, objects and NAT | 22 | 21 | 3 | 3 | 6 |
+| 5 | M4.12 FortiGate diagnostics: debug flow, sniffer and sessions | 20 | 19 | 3 | 3 | 5 |
+| 6 | M11.01 PS delivery: kickoff to handover, plus the STAR bank | 18 | 14 | 2 | 3 | 12 |
+| 7 | M4.09 IPsec VPN: build, verify and troubleshoot | 19 | 14 | 2 | 3 | 5 |
+| 8 | M4.10 High availability: FGCP clusters, failover and upgrades | 20 | 15 | 2 | 3 | 5 |
+| 9 | M8.03 SD-WAN: members, health checks, rules and troubleshooting | 20 | 14 | 2 | 3 | 5 |
+| | **Total** | **174** | **148** | **18** | **27** | **66** |
 
-Interview pool by stage: recruiter 17, hiring manager 13, technical 21.
+Interview pool by stage: recruiter 17, hiring manager 16, technical 33.
 
 ### Next in the queue
 
 Ids follow CURRICULUM.md, written with two digits (M4.9 → M4.09).
 
-1. M8.03 SD-WAN deep dive (members, zones, SLA, rules, ADVPN), with M2.3 concepts folded in.
-2. M4.09 VPN on FortiGate (site-to-site, dial-up, troubleshooting).
-3. M4.10 High availability (FGCP, failover, upgrades).
-4. M4.07 Certificates and SSL inspection, then M4.08 Security profiles.
-5. I2 hiring-manager and I3 technical-panel kickoff modules (the STAR bank already lives in M11.01).
-6. S5 FortiManager and S6 FortiAnalyzer.
-7. Fundamentals gaps (M0/M1 remaining modules) if pretest scores show weakness.
+1. M4.07 Certificates and SSL inspection, then M4.08 Security profiles.
+2. I2 hiring-manager and I3 technical-panel kickoff modules (the STAR bank already lives in M11.01).
+3. S5 FortiManager (ADOMs, policy packages, installs) and S6 FortiAnalyzer.
+4. M8.x deeper SD-WAN: ADVPN and overlays, routing over overlays (BGP).
+5. Fundamentals gaps (M0/M1 remaining modules) if pretest scores show weakness.
 
 ## Open decisions
 

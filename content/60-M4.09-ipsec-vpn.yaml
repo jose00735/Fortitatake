@@ -1,0 +1,581 @@
+id: M4.09
+title: "IPsec VPN on FortiGate: build, verify and troubleshoot"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 70
+est_sessions: 1
+objectives:
+  - Explain phase 1 and phase 2 in plain words and say which settings must match on both sides
+  - Build a route-based site-to-site tunnel with routes, blackhole route and policies in both directions
+  - Choose modern proposals and DH groups, and justify IKEv2
+  - Read diagnose vpn output and an IKE debug to find the failing step
+  - Talk a customer through a tunnel that is up but passes no traffic
+sources:
+  - "FortiOS 8.0.2 Admin Guide: General IPsec VPN configuration, phase 1 (pp. 3128–3143), phase 2 (pp. 3168–3171)"
+  - "FortiOS 8.0.2 Admin Guide: FortiGate-to-FortiGate site-to-site with the VPN Wizard (pp. 3247–3252)"
+  - "FortiOS 8.0.2 Admin Guide: VPN IPsec troubleshooting, logs and diagnose commands (pp. 3754–3768)"
+
+units:
+  - id: M4.09.u1
+    title: Two phases, one tunnel
+    tier: 1
+    est_min: 12
+    body: |
+      An IPsec tunnel is built in two steps.
+
+      **Phase 1 (IKE SA)** is the two gateways agreeing to talk securely: who the peer is (`remote-gw`), how they authenticate (pre-shared key or certificates), which **IKE version**, and the **proposals** (encryption + hash) and **Diffie-Hellman groups** they accept (pp. 3129–3140). IKE uses **UDP 500**, and **UDP 4500** when NAT traversal is in use.
+
+      **Phase 2 (IPsec SA, "quick mode")** is the agreement for the actual traffic: the **selectors** (which local and remote networks), the phase 2 proposals, **PFS**, replay detection and key lifetime (pp. 3168–3170). In tunnel mode the original packet is encrypted inside ESP with a new IP header.
+
+      ## Must match on both sides
+
+      - Phase 1: IKE version, at least **one proposal**, at least **one DH group**, the authentication method and key.
+      - Phase 2: at least one proposal and DH group (if PFS), and **mirror-image selectors** (my local = your remote).
+
+      ## IKEv1 or IKEv2
+
+      Both are supported. IKEv1 uses XAuth for user authentication; IKEv2 uses EAP and can run over TCP. **New tunnels default to IKEv2** (p. 3142). Use IKEv2 unless the peer can't.
+
+      ## Strong choices
+
+      The guide marks NULL, DES, 3DES, MD5 and SHA1 as **not recommended**; AES-GCM and ChaCha20-Poly1305 are IKEv2-only; Fortinet recommends **DH groups 15–21 and 28–32** (pp. 3169–3170). By default the CLI only shows recommended IKE proposals (`ike-proposal-visibility`, p. 3139).
+
+      :::recall
+      Q: Phase 1 is up but phase 2 never comes up. What's the first thing to compare?
+      A: The phase 2 selectors (local/remote subnets must mirror each other) and the phase 2 proposals/PFS groups.
+      :::
+  - id: M4.09.u2
+    title: Route-based site to site, the complete build
+    tier: 2
+    est_min: 14
+    body: |
+      On FortiGate the normal design is **route-based**: phase 1 is an interface (`phase1-interface`), and routing decides what enters the tunnel. The VPN Wizard's site-to-site template creates everything a working tunnel needs (pp. 3250–3251):
+
+      1. `config vpn ipsec phase1-interface`: interface, `ike-version 2`, `remote-gw`, `psksecret`, proposals.
+      2. `config vpn ipsec phase2-interface`: proposals and selectors.
+      3. **A static route** to the remote subnet with `device` = the tunnel interface.
+      4. **A blackhole route** to the same subnet with **distance 254**, so that when the tunnel is down the traffic is dropped instead of leaking out the default route in clear text.
+      5. **Two firewall policies**: LAN → tunnel and tunnel → LAN.
+
+      Forgetting steps 3–5 is the most common reason a tunnel is "up" but nothing works: IPsec builds the pipe, **routing and policy** decide whether anything uses it.
+
+      ## Keeping it alive
+
+      - **DPD (dead peer detection):** `set dpd on-idle | on-demand`, with `dpd-retrycount` and `dpd-retryinterval` (p. 3140), so a dead peer is detected and the tunnel renegotiates.
+      - **add-route** (enabled by default) adds routes to the peer's selectors automatically, mainly useful for dial-up tunnels (p. 3141).
+      - `auto-negotiate` keeps phase 2 up without waiting for traffic.
+
+      :::cli
+      config router static
+          edit 20
+              set dst 10.20.0.0 255.255.255.0
+              set device "to-branch"
+          next
+          edit 21
+              set dst 10.20.0.0 255.255.255.0
+              set blackhole enable
+              set distance 254
+          next
+      end
+      :::
+
+      :::pitfall
+      An MTU problem looks like a VPN problem: small pings work, file copies and web pages hang. ESP adds overhead, so clamp TCP MSS on the tunnel policy (`tcp-mss-sender` / `tcp-mss-receiver`), exactly as in the transport module.
+      :::
+  - id: M4.09.u3
+    title: Reading what the FortiGate tells you
+    tier: 2
+    est_min: 14
+    body: |
+      Work bottom-up: is IKE reaching the peer, did phase 1 come up, did phase 2 come up, does traffic use it?
+
+      ## Summary first
+
+      - `get vpn ipsec tunnel summary`: every tunnel, up/down, selectors up.
+      - `diagnose vpn ike gateway list`: **phase 1**: peer address and port (`:4500` means NAT-T), IKE version, negotiated **proposal**, `status: established`, DPD counters (pp. 3757–3758).
+      - `diagnose vpn tunnel list`: **phase 2**: `status=up`, the proxy ID **selectors** (`src:` / `dst:`), packet counters `rxp`/`txp`, DPD and NAT-T state (pp. 3758–3759).
+
+      If `txp` grows and `rxp` stays at zero, you're sending into the tunnel and nothing comes back: check the peer's routes and policies, not your phase 1.
+
+      ## The IKE debug
+
+      :::cli
+      diagnose vpn ike log filter rem-addr4 203.0.113.10
+      diagnose debug application ike -1
+      diagnose debug enable
+      ...bring the tunnel up...
+      diagnose debug disable
+      diagnose debug reset
+      :::
+
+      Always filter by the peer (p. 3761); on a busy hub an unfiltered IKE debug is unreadable. In the output, look for the **negotiation result** and **proposal** lines, `PSK authentication succeeded`, NAT detection, then the phase 2 **selectors** (p. 3762). A proposal mismatch typically shows as *no proposal chosen*; a wrong key fails at authentication.
+
+      ## Logs
+
+      VPN event logs mirror the steps: *Progress IPsec phase 1* (negotiate → DONE), *IPsec connection status changed* (tunnel-up), *Progress IPsec phase 2*, *IPsec SA installed* with the SPIs, and tunnel-down or *phase 1 SA deleted* when it fails (pp. 3755–3756).
+
+      Sniff the control plane when nothing arrives: `diagnose sniffer packet any 'host 203.0.113.10 and (port 500 or port 4500)' 4`.
+
+      :::recall
+      Q: Which command shows the phase 2 selectors and packet counters?
+      A: diagnose vpn tunnel list.
+      :::
+  - id: M4.09.u4
+    title: Remote access, and the consultant's view
+    tier: 3
+    est_min: 10
+    body: |
+      ## Remote access in FortiOS 8.0
+
+      In 8.0 the browser-based SSL VPN portal is called **Agentless VPN**, and full-tunnel remote access is covered under **IPsec VPN** (dial-up, typically with FortiClient). Use IKEv2 for FortiClient 7.4.4 and later (p. 3142). Dial-up tunnels create a **dynamic instance per client** (`name_0`, `name_1` in `diagnose vpn ike gateway list`).
+
+      ## Questions to ask before you build
+
+      - What's on each side: subnets, overlaps (overlapping subnets need NAT), and who manages the far end?
+      - Third-party peer? Agree a written parameter sheet: IKE version, proposals, DH groups, lifetimes, selectors, PSK delivery method.
+      - Redundancy: one tunnel per ISP? Then it belongs in **SD-WAN** (next module) with health checks.
+      - Security: which services cross the tunnel? A tunnel is a trust path; policies on it should be as tight as on the internet edge.
+
+      :::threat
+      Internet-facing VPN gateways are prime targets. In the 2026 DBIR, exploitation of vulnerabilities was the top initial access vector (31 %), and only 26 % of known-exploited vulnerabilities were fully remediated. Patch edge devices quickly, limit who can reach IKE with local-in policies (p. 3242), and keep strong proposals.
+      :::
+
+      :::ps
+      In a third-party tunnel the problem is usually a mismatch nobody wrote down. The parameter sheet is the deliverable that prevents the 2 a.m. call.
+      :::
+
+cards:
+  - { id: M4.09.c01, unit: M4.09.u1, tier: 1, front: "What does phase 1 establish?", back: "The IKE SA: peer identity, authentication, IKE version, proposals and DH group." }
+  - { id: M4.09.c02, unit: M4.09.u1, tier: 1, front: "What does phase 2 establish?", back: "The IPsec SA for traffic: selectors, proposals, PFS, replay detection, key lifetime." }
+  - { id: M4.09.c03, unit: M4.09.u1, tier: 1, front: "IKE ports?", back: "UDP 500; UDP 4500 with NAT traversal." }
+  - { id: M4.09.c04, unit: M4.09.u1, tier: 2, front: "IKEv1 vs IKEv2 user authentication?", back: "IKEv1 uses XAuth; IKEv2 uses EAP. New FortiGate tunnels default to IKEv2." }
+  - { id: M4.09.c05, unit: M4.09.u1, tier: 2, front: "DH groups Fortinet recommends?", back: "15–21 and 28–32. (p. 3170)" }
+  - { id: M4.09.c06, unit: M4.09.u1, tier: 2, front: "Algorithms the guide marks not recommended?", back: "NULL, DES, 3DES, MD5, SHA1." }
+  - { id: M4.09.c07, unit: M4.09.u1, tier: 3, front: "Ciphers available only with IKEv2?", back: "AES128GCM, AES256GCM, CHACHA20POLY1305." }
+  - { id: M4.09.c08, unit: M4.09.u2, tier: 2, front: "Five parts of a working route-based site-to-site VPN?", back: "Phase 1 interface, phase 2, static route via tunnel, blackhole route (distance 254), two policies." }
+  - { id: M4.09.c09, unit: M4.09.u2, tier: 2, front: "Why a blackhole route with distance 254?", back: "When the tunnel is down, traffic for the remote subnet is dropped instead of leaking out the default route unencrypted." }
+  - { id: M4.09.c10, unit: M4.09.u2, tier: 2, front: "DPD modes?", back: "on-idle or on-demand (or disable), with dpd-retrycount and dpd-retryinterval." }
+  - { id: M4.09.c11, unit: M4.09.u2, tier: 3, front: "What does add-route do, and its default?", back: "Adds routes to the peer's selectors (mainly dial-up); enabled by default." }
+  - { id: M4.09.c12, unit: M4.09.u2, tier: 2, front: "Small pings work, big transfers hang over the VPN?", back: "MTU/MSS. Clamp TCP MSS on the tunnel policies." }
+  - { id: M4.09.c13, unit: M4.09.u3, tier: 1, front: "Quick list of all tunnels and their state?", back: "get vpn ipsec tunnel summary" }
+  - { id: M4.09.c14, unit: M4.09.u3, tier: 2, front: "Command for phase 1 status and negotiated proposal?", back: "diagnose vpn ike gateway list" }
+  - { id: M4.09.c15, unit: M4.09.u3, tier: 2, front: "Command for phase 2 selectors and rxp/txp counters?", back: "diagnose vpn tunnel list" }
+  - { id: M4.09.c16, unit: M4.09.u3, tier: 2, front: "Filtered IKE debug, first command?", back: "diagnose vpn ike log filter rem-addr4 <peer IP>" }
+  - { id: M4.09.c17, unit: M4.09.u3, tier: 3, front: "txp increasing, rxp stuck at 0. Meaning?", back: "You send into the tunnel but nothing returns: check the peer's routes, policies and selectors." }
+  - { id: M4.09.c18, unit: M4.09.u4, tier: 2, front: "FortiOS 8.0 name for browser-based SSL VPN?", back: "Agentless VPN. Full-tunnel remote access is under IPsec VPN." }
+  - { id: M4.09.c19, unit: M4.09.u4, tier: 3, front: "What should a third-party tunnel always have?", back: "A written parameter sheet: IKE version, proposals, DH, lifetimes, selectors, PSK handling." }
+
+quiz:
+  - id: M4.09.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which phase negotiates the selectors (local and remote subnets)?
+    options:
+      - { id: a, text: "Phase 2", correct: true }
+      - { id: b, text: "Phase 1", why_wrong: "Phase 1 builds the IKE SA between gateways." }
+      - { id: c, text: "Both equally", why_wrong: "Selectors belong to phase 2 (quick mode)." }
+      - { id: d, text: "Neither; routing does", why_wrong: "Routing decides what enters the tunnel, but selectors are negotiated in phase 2." }
+    explanation: Selectors are phase 2.
+    source: FortiOS 8.0.2 Admin Guide p. 3169
+  - id: M4.09.q02
+    type: multi
+    tier: 2
+    pretest: true
+    stem: A route-based site-to-site tunnel is up, but no traffic passes. Which could be missing? Select all that apply.
+    options:
+      - { id: a, text: "A static route to the remote subnet via the tunnel interface", correct: true }
+      - { id: b, text: "A firewall policy LAN → tunnel", correct: true }
+      - { id: c, text: "A firewall policy tunnel → LAN (on the peer, too)", correct: true }
+      - { id: d, text: "A higher HA priority", why_wrong: "HA has nothing to do with it." }
+    explanation: IPsec builds the pipe; routes and policies make traffic use it.
+  - id: M4.09.q03
+    type: single
+    tier: 2
+    stem: Why does the VPN Wizard add a blackhole route with distance 254?
+    options:
+      - { id: a, text: "So traffic to the remote subnet is dropped instead of leaving in clear text when the tunnel is down", correct: true }
+      - { id: b, text: "To speed up IKE negotiation", why_wrong: "Routes don't affect IKE speed." }
+      - { id: c, text: "To load balance two tunnels", why_wrong: "That's SD-WAN or ECMP." }
+      - { id: d, text: "To block IKE from the internet", why_wrong: "Use local-in policies for that." }
+    explanation: A safety net against leaks.
+    source: FortiOS 8.0.2 Admin Guide p. 3251
+  - id: M4.09.q04
+    type: single
+    tier: 2
+    stem: Which DH groups does Fortinet recommend as best practice?
+    options:
+      - { id: a, text: "15–21 and 28–32", correct: true }
+      - { id: b, text: "1, 2 and 5", why_wrong: "Old and weak." }
+      - { id: c, text: "Only 14", why_wrong: "14 is allowed but the guide recommends 15–21 and 28–32." }
+      - { id: d, text: "Any; DH groups don't matter", why_wrong: "At least one must match and strength matters." }
+    explanation: Strong groups.
+    source: FortiOS 8.0.2 Admin Guide p. 3170
+  - id: M4.09.q05
+    type: text
+    tier: 1
+    pretest: true
+    stem: "Which UDP port does IKE move to when NAT traversal is used?"
+    accept: ["4500", "udp 4500", "udp/4500"]
+    explanation: UDP 500 normally, 4500 with NAT-T.
+  - id: M4.09.q06
+    type: single
+    tier: 2
+    stem: Which command shows the negotiated phase 1 proposal and whether the IKE SA is established?
+    options:
+      - { id: a, text: "diagnose vpn ike gateway list", correct: true }
+      - { id: b, text: "diagnose vpn tunnel list", why_wrong: "That's phase 2 (selectors, counters)." }
+      - { id: c, text: "get router info routing-table all", why_wrong: "Routing, not IKE." }
+      - { id: d, text: "diagnose sys session list", why_wrong: "Sessions, not IKE SAs." }
+    explanation: gateway list = phase 1.
+    source: FortiOS 8.0.2 Admin Guide pp. 3757–3758
+  - id: M4.09.q07
+    type: output
+    tier: 3
+    output: |
+      name=to-branch ver=2 serial=3 192.0.2.1:0->203.0.113.10:0 status=up
+      proxyid=to-branch proto=0 sa=1 ref=3 serial=1
+        src: 0:10.10.0.0-10.10.0.255:0
+        dst: 0:10.20.0.0-10.20.0.255:0
+      stat: rxp=0 txp=4821 rxb=0 txb=385680
+    stem: Users at HQ can't reach the branch. What does this output suggest?
+    options:
+      - { id: a, text: "Phase 2 is up and HQ sends into the tunnel, but nothing returns: check the branch's route and policy back", correct: true }
+      - { id: b, text: "Phase 1 is down", why_wrong: "status=up and an SA exists." }
+      - { id: c, text: "The selectors don't include the branch subnet", why_wrong: "dst covers 10.20.0.0/24." }
+      - { id: d, text: "NAT-T is failing", why_wrong: "No sign of that; traffic is leaving." }
+    explanation: txp grows, rxp is zero.
+    source: FortiOS 8.0.2 Admin Guide pp. 3758–3759
+  - id: M4.09.q08
+    type: order
+    tier: 2
+    stem: Put the safe IKE debug in order.
+    items: ["diagnose vpn ike log filter rem-addr4 <peer>", "diagnose debug application ike -1", "diagnose debug enable", "Reproduce: bring the tunnel up", "diagnose debug disable"]
+    explanation: Filter first, enable, reproduce, then disable.
+    source: FortiOS 8.0.2 Admin Guide p. 3761
+  - id: M4.09.q09
+    type: single
+    tier: 2
+    stem: Phase 1 comes up with a third-party firewall, but phase 2 keeps failing. Most likely cause?
+    options:
+      - { id: a, text: "The selectors don't mirror each other, or the phase 2 proposals/PFS groups don't match", correct: true }
+      - { id: b, text: "Wrong pre-shared key", why_wrong: "A wrong key fails phase 1 authentication." }
+      - { id: c, text: "IKE blocked by the ISP", why_wrong: "Phase 1 wouldn't come up." }
+      - { id: d, text: "Missing blackhole route", why_wrong: "That affects leaks, not negotiation." }
+    explanation: "Phase 2 mismatch: selectors, proposals, PFS."
+  - id: M4.09.q10
+    type: single
+    tier: 2
+    stem: Which IKE version do new FortiGate tunnels use by default?
+    options:
+      - { id: a, text: "IKEv2", correct: true }
+      - { id: b, text: "IKEv1 main mode", why_wrong: "Still supported, but not the default for new tunnels." }
+      - { id: c, text: "IKEv1 aggressive mode", why_wrong: "Not the default." }
+      - { id: d, text: "Depends on the model", why_wrong: "The guide states new tunnels default to IKEv2." }
+    explanation: IKEv2 by default.
+    source: FortiOS 8.0.2 Admin Guide p. 3142
+  - id: M4.09.q11
+    type: single
+    tier: 3
+    stem: "Over a new tunnel, ping and SSH work, but SMB file copies and some HTTPS pages freeze. Best fix?"
+    options:
+      - { id: a, text: "Clamp TCP MSS on the tunnel policies (and check for blocked ICMP 'fragmentation needed')", correct: true }
+      - { id: b, text: "Change the DH group", why_wrong: "Negotiation is fine; data flows." }
+      - { id: c, text: "Enable aggressive mode", why_wrong: "Unrelated." }
+      - { id: d, text: "Add a second phase 2", why_wrong: "Selectors are fine; this is packet size." }
+    explanation: ESP overhead plus blocked PMTUD.
+  - id: M4.09.q12
+    type: single
+    tier: 3
+    stem: Two sites both use 192.168.1.0/24 and must be connected. What do you tell the customer?
+    options:
+      - { id: a, text: "Overlapping subnets need NAT across the tunnel (or re-addressing); selectors can't distinguish them as they are", correct: true }
+      - { id: b, text: "IKEv2 handles overlaps automatically", why_wrong: "No version does." }
+      - { id: c, text: "Use a blackhole route", why_wrong: "It doesn't solve overlap." }
+      - { id: d, text: "Increase the key lifetime", why_wrong: "Unrelated." }
+    explanation: Overlap is a design problem; plan NAT or re-addressing.
+  - id: M4.09.q13
+    type: single
+    tier: 2
+    stem: In FortiOS 8.0, what is the browser-based SSL VPN portal called?
+    options:
+      - { id: a, text: "Agentless VPN", correct: true }
+      - { id: b, text: "ZTNA", why_wrong: "ZTNA is a different access model." }
+      - { id: c, text: "Dial-up IPsec", why_wrong: "That's full-tunnel remote access." }
+      - { id: d, text: "ADVPN", why_wrong: "ADVPN is dynamic spoke-to-spoke shortcuts." }
+    explanation: Agentless VPN.
+  - id: M4.09.q14
+    type: single
+    tier: 3
+    stem: "In a dial-up tunnel named 'remote', what does an entry named 'remote_0' in diagnose vpn ike gateway list represent?"
+    options:
+      - { id: a, text: "A dynamic instance created for one connected client", correct: true }
+      - { id: b, text: "A failed tunnel", why_wrong: "Instances are created on connection." }
+      - { id: c, text: "The phase 2 of the tunnel", why_wrong: "Phase 2 shows in tunnel list as a proxy ID." }
+      - { id: d, text: "A backup tunnel", why_wrong: "Not how dial-up names work." }
+    explanation: Each client gets its own instance.
+    source: FortiOS 8.0.2 Admin Guide pp. 3757–3758
+
+labs:
+  - id: M4.09.lab1
+    title: Build the HQ side of a route-based tunnel
+    goal: HQ (LAN 10.10.0.0/24 on port2, WAN port1) connects to a branch at 203.0.113.10 protecting 10.20.0.0/24.
+    worked:
+      config: |
+        config vpn ipsec phase1-interface
+            edit "to-branch"
+                set interface "port1"
+                set ike-version 2
+                set peertype any
+                set proposal aes256gcm-prfsha384 aes256-sha256
+                set dhgrp 20 19
+                set remote-gw 203.0.113.10
+                set psksecret <strong-shared-key>
+                set dpd on-idle
+            next
+        end
+        config vpn ipsec phase2-interface
+            edit "to-branch"
+                set phase1name "to-branch"
+                set proposal aes256gcm aes256-sha256
+                set dhgrp 20 19
+                set src-subnet 10.10.0.0 255.255.255.0
+                set dst-subnet 10.20.0.0 255.255.255.0
+                set auto-negotiate enable
+            next
+        end
+        config router static
+            edit 20
+                set dst 10.20.0.0 255.255.255.0
+                set device "to-branch"
+            next
+            edit 21
+                set dst 10.20.0.0 255.255.255.0
+                set blackhole enable
+                set distance 254
+            next
+        end
+        config firewall policy
+            edit 0
+                set name "HQ-to-branch"
+                set srcintf "port2"
+                set dstintf "to-branch"
+                set srcaddr "HQ-LAN"
+                set dstaddr "BRANCH-LAN"
+                set action accept
+                set schedule "always"
+                set service "ALL"
+            next
+            edit 0
+                set name "branch-to-HQ"
+                set srcintf "to-branch"
+                set dstintf "port2"
+                set srcaddr "BRANCH-LAN"
+                set dstaddr "HQ-LAN"
+                set action accept
+                set schedule "always"
+                set service "ALL"
+            next
+        end
+      notes:
+        - "The branch mirrors it: its src-subnet is 10.20.0.0/24 and dst-subnet 10.10.0.0/24."
+        - "Tighten service ALL to what the business needs once it works."
+        - "No NAT on the tunnel policies: both sides route real addresses."
+    faded:
+      template: |
+        config vpn ipsec {{phase1-interface}}
+            edit "to-branch"
+                set ike-version {{2}}
+                set {{remote-gw}} 203.0.113.10
+            next
+        end
+        config router static
+            edit 21
+                set dst 10.20.0.0 255.255.255.0
+                set {{blackhole}} enable
+                set distance {{254}}
+            next
+        end
+    solo:
+      prompt: "Write the branch's phase 2 selectors and its two static routes (tunnel route and blackhole) for the HQ LAN 10.10.0.0/24, tunnel name to-hq."
+      required: ["set src-subnet 10.20.0.0 255.255.255.0", "set dst-subnet 10.10.0.0 255.255.255.0", "set dst 10.10.0.0 255.255.255.0", "set device \"to-hq\"", "set blackhole enable", "set distance 254"]
+      solution: |
+        config vpn ipsec phase2-interface
+            edit "to-hq"
+                set phase1name "to-hq"
+                set src-subnet 10.20.0.0 255.255.255.0
+                set dst-subnet 10.10.0.0 255.255.255.0
+            next
+        end
+        config router static
+            edit 10
+                set dst 10.10.0.0 255.255.255.0
+                set device "to-hq"
+            next
+            edit 11
+                set dst 10.10.0.0 255.255.255.0
+                set blackhole enable
+                set distance 254
+            next
+        end
+      notes: "Selectors mirror HQ's exactly."
+  - id: M4.09.lab2
+    title: Troubleshoot a tunnel that won't come up
+    goal: The branch tunnel to 203.0.113.10 is down. Check summary, phase 1, phase 2, then debug IKE for this peer only.
+    worked:
+      config: |
+        # get vpn ipsec tunnel summary
+        # diagnose vpn ike gateway list name to-branch
+        # diagnose vpn tunnel list name to-branch
+        # diagnose sniffer packet any 'host 203.0.113.10 and (port 500 or port 4500)' 4 20
+        # diagnose vpn ike log filter rem-addr4 203.0.113.10
+        # diagnose debug application ike -1
+        # diagnose debug enable
+        ...bring the tunnel up...
+        # diagnose debug disable
+        # diagnose debug reset
+      notes:
+        - "Sniffer first: if no IKE packets come back, it's reachability, ISP or a remote filter, not your proposals."
+        - "In the debug, read proposal → authentication → selectors, in that order."
+        - "Always reset debug at the end."
+    faded:
+      template: |
+        # get vpn ipsec tunnel {{summary}}
+        # diagnose vpn ike {{gateway}} list
+        # diagnose vpn {{tunnel}} list
+        # diagnose vpn ike log filter {{rem-addr4}} 203.0.113.10
+        # diagnose debug application {{ike}} -1
+        # diagnose debug {{enable}}
+    solo:
+      prompt: "Write the commands to run a filtered IKE debug for peer 198.51.100.7, then turn debugging off and reset it."
+      required: ["diagnose vpn ike log filter rem-addr4 198.51.100.7", "diagnose debug application ike -1", "diagnose debug enable", "diagnose debug disable", "diagnose debug reset"]
+      solution: |
+        # diagnose vpn ike log filter rem-addr4 198.51.100.7
+        # diagnose debug application ike -1
+        # diagnose debug enable
+        # diagnose debug disable
+        # diagnose debug reset
+      notes: "Clear the IKE log filter afterwards so the next person doesn't inherit it."
+
+scenarios:
+  - id: M4.09.sc1
+    kind: situation
+    tier: 3
+    title: "The partner's tunnel: 'it's your side'"
+    situation: |
+      A customer's FortiGate must build a tunnel to a supplier's third-party firewall. Phase 1 is up. Phase 2 fails. The supplier's engineer says, "Our side is fine, it's your FortiGate."
+    ask: How do you get it working without a blame game?
+    right_thinking:
+      - "Phase 1 up means reachability, key and phase 1 proposals are fine"
+      - "Phase 2 failures are selectors, proposals or PFS"
+      - "Get evidence from your side (debug) and ask for theirs"
+      - "Agree a written parameter sheet both sides sign off"
+    what: A matched phase 2 and a documented parameter sheet.
+    why: Third-party tunnels fail on unwritten assumptions; evidence ends the argument.
+    how:
+      - "Filtered IKE debug: read the phase 2 selectors and proposals we send and receive"
+      - "Share the exact values; ask for their proposal and selector config"
+      - "Fix the mismatch (commonly subnet mask or PFS group)"
+      - "Document the final parameters for both teams"
+    model_answer: |
+      I'd keep it factual. Phase 1 is up, so reachability, the key and phase 1 are fine; the issue is phase 2. I'd run a filtered IKE debug and read the selectors and proposals we send and what they answer. Then I'd send the supplier a short table: our local and remote subnets, our proposals and PFS group, and ask for theirs. Usually it's a mask, like a /24 against a /23, or PFS on one side only. Once it's up, both teams sign off the same parameter sheet so the next change doesn't break it.
+    could_have_added: ["Offer a quick joint call with both screens on the debug"]
+    best_way: "Phase 1 is fine, so it's phase 2: here are our selectors and proposals from the debug, please share yours."
+    rubric: ["correct phase reasoning", "evidence", "non-confrontational", "documents parameters"]
+  - id: M4.09.sc2
+    kind: situation
+    tier: 2
+    title: Tunnel up, users still complaining
+    situation: |
+      The tunnel shows up on both sides. Branch users can open the HQ intranet homepage, but uploading files to SharePoint on-prem hangs.
+    ask: What do you suspect and how do you prove it?
+    right_thinking:
+      - "Some traffic works, so routing, policies and selectors are fine"
+      - "Large transfers failing = packet size"
+      - "Prove with ping using DF and sizes, or a sniffer"
+      - "Fix with MSS clamping on the tunnel policies"
+    what: An MTU/MSS diagnosis and fix.
+    why: It's the classic "VPN works but doesn't" problem.
+    how: ["Ping with DF bit and decreasing size", "Sniffer for retransmissions", "Set tcp-mss on both tunnel policies", "Retest uploads"]
+    model_answer: |
+      Since small requests work, the tunnel, routes and policies are fine. Big uploads hanging points at packet size: ESP adds overhead, so full-size packets don't fit, and if ICMP "fragmentation needed" is blocked somewhere, the hosts never learn it. I'd prove it with pings with the don't-fragment bit at decreasing sizes, then clamp the TCP MSS on both tunnel policies, for example around 1350, and retest the upload with the user.
+    best_way: "Small works, big hangs: packet size. Prove with DF pings, clamp MSS on the tunnel policies."
+    rubric: ["correct inference", "proof", "fix", "retest"]
+  - id: M4.09.sc3
+    kind: hypothetical
+    tier: 3
+    title: What if the customer wants 3DES "for compatibility"?
+    situation: |
+      An old partner device only supports 3DES-SHA1. The customer asks you to just enable it.
+    ask: How do you respond?
+    right_thinking:
+      - "Don't silently lower security; the guide marks 3DES and SHA1 not recommended"
+      - "Offer options: upgrade or replace the partner device, limit the tunnel's scope, time-box the exception"
+      - "Get the risk accepted in writing if they insist"
+    what: A risk-aware recommendation.
+    why: A consultant protects the customer from quiet risk, even when it's what they asked for.
+    how: ["Explain the risk briefly", "Offer alternatives", "If accepted: narrow selectors, strict policies, review date, written acceptance"]
+    model_answer: |
+      I'd explain that Fortinet's own guide marks 3DES and SHA1 as not recommended, so this weakens the tunnel. The best path is for the partner to upgrade their device. If that can't happen now, we can limit the risk: a separate tunnel just for that partner, narrow selectors, tight policies, and a review date. And I'd ask the customer to approve the exception in writing, so it's a decision, not an accident.
+    best_way: "It's not recommended. Best fix is the partner's upgrade; otherwise a narrow, time-boxed exception with written approval."
+    rubric: ["states risk", "offers options", "limits blast radius", "written acceptance"]
+
+interview:
+  - id: M4.09.t01
+    stage: technical
+    question: Explain phase 1 and phase 2 to me as if I were a customer's manager.
+    testing: Clear explanation
+    framework: "Analogy → what must match → why it fails"
+    model_answer: |
+      "Phase 1 is the two firewalls proving who they are and agreeing how to talk privately, like two people agreeing a secure phone line. Phase 2 is agreeing what will travel on that line: which networks, and how it's encrypted. Both sides must agree on the details, and most tunnel failures are one detail that doesn't match, often in phase 2, like a subnet."
+    best_way: "Phase 1 is a secure line between the firewalls; phase 2 is what travels on it. Most failures are one detail that doesn't match."
+    target: "0:40"
+  - id: M4.09.t02
+    stage: technical
+    question: A tunnel is up but traffic doesn't pass. How do you troubleshoot?
+    testing: Methodical troubleshooting
+    framework: "Layers: routing → policy → selectors → counters → peer"
+    model_answer: |
+      "Up only means IPsec is built. I check that there's a route to the remote subnet via the tunnel, policies in both directions, and that the selectors include the hosts. Then diagnose vpn tunnel list: if txp increases and rxp is zero, I'm sending and the peer isn't answering, so I look at their route and policy back. A debug flow on our side confirms which policy and route the packet takes."
+    best_way: "Route, policies both ways, selectors, then counters. txp without rxp means look at the peer."
+    target: "0:45"
+  - id: M4.09.t03
+    stage: technical
+    question: Why does FortiGate add a blackhole route for VPN subnets?
+    testing: Security-minded design
+    framework: "Problem → fix"
+    model_answer: |
+      "If the tunnel drops, the route via the tunnel disappears and traffic for the remote subnet would follow the default route to the internet, unencrypted. A blackhole route with distance 254 stays in the table and drops it instead. The VPN Wizard adds it automatically."
+    best_way: "So traffic is dropped, not leaked in clear text, when the tunnel is down."
+    target: "0:25"
+  - id: M4.09.t04
+    stage: technical
+    question: Which proposals and DH groups would you configure today, and why IKEv2?
+    testing: Current best practice
+    framework: "Choice → reason"
+    model_answer: |
+      "IKEv2 with AES-GCM, for example aes256gcm, and DH groups in Fortinet's recommended range, like 19, 20 or 21. IKEv2 is the default for new tunnels, it supports EAP and modern ciphers like GCM and ChaCha20, and it's what current FortiClient versions expect. I'd avoid 3DES, SHA1 and the old DH groups."
+    best_way: "IKEv2, AES-GCM, DH 19–21; no 3DES or SHA1."
+    target: "0:30"
+  - id: M4.09.h01
+    stage: hm
+    question: Tell me about a time you resolved a VPN problem for a customer.
+    testing: Real experience (STAR)
+    framework: "STAR, with the evidence step"
+    model_answer: |
+      "[Use a real Fortinet TAC case.] Structure it: situation (who, impact), the evidence you gathered (summary, gateway list, tunnel list, filtered IKE debug), the root cause in one sentence, the fix, and what you did so it wouldn't recur, such as documenting parameters or adding MSS clamping to the template."
+    could_have_added: ["Mention the customer outcome and CSAT if you have it"]
+    best_way: "Evidence first, one-line root cause, fix, prevention."
+    target: "1:15"
+
+field_reports:
+  - id: M4.09.fr1
+    title: VPN gateways are on the front line
+    body: |
+      Exploitation of vulnerabilities was the **top initial access vector (31 %)** in the 2026 DBIR, and only **26 %** of known-exploited vulnerabilities were fully remediated in the period studied. Internet-facing VPN and firewall interfaces are exactly where those exploits land: patch fast and restrict who can reach IKE.
+    source: Verizon 2026 DBIR
+  - id: M4.09.fr2
+    title: Third parties extend your attack surface
+    body: |
+      Third-party involvement appeared in **48 %** of breaches in the 2026 DBIR. Partner tunnels are third-party connections: narrow selectors and tight policies limit what a compromised partner can reach.
+    source: Verizon 2026 DBIR

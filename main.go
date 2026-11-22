@@ -16,7 +16,7 @@ import (
 	"github.com/jose00735/fortitatake/internal/store"
 )
 
-var version = "v0.2.0"
+var version = "v0.2.1"
 
 //go:embed web
 var webFS embed.FS
