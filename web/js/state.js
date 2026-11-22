@@ -5,7 +5,10 @@ export const S = {
   content: null,       // bundle
   mods: new Map(),     // id -> module
   itemIndex: new Map(),// item id -> { item, kind, module }
-  events: [],
+  events: [],         // confirmed + pending, what projections replay
+  confirmed: [],       // events as stored by the engine (in log order)
+  pending: [],         // recorded here, not yet acknowledged by the engine
+  serverCount: 0,      // how many log entries `confirmed` covers
   p: null,             // projections
   listeners: new Set(),
 };
@@ -19,9 +22,30 @@ export async function loadAll() {
     for (const q of m.quiz || []) S.itemIndex.set(q.id, { item: q, kind: "quiz", module: m.id });
     for (const q of m.interview || []) S.itemIndex.set(q.id, { item: q, kind: "interview", module: m.id });
   }
-  const { events } = await api("events");
-  S.events = events || [];
+  const r = await api("events");
+  S.confirmed = r.events || [];
+  S.serverCount = S.confirmed.length;
+  S.events = S.confirmed.slice();
   rebuild();
+}
+
+// pullLocal fetches events the engine stored since we last looked: our own flushed
+// events and anything merged in by a sync. Returns how many arrived.
+let pulling = null;
+export function pullLocal() {
+  if (!pulling) pulling = (async () => {
+    try {
+      const r = await api("events?since=" + S.serverCount);
+      const got = r.events || [];
+      if (!got.length) return 0;
+      S.confirmed.push(...got);
+      S.serverCount += got.length;
+      S.events = S.confirmed.concat(S.pending);
+      rebuild();
+      return got.length;
+    } finally { pulling = null; }
+  })();
+  return pulling;
 }
 
 export function onChange(fn) { S.listeners.add(fn); return () => S.listeners.delete(fn); }
@@ -30,8 +54,10 @@ let queue = [], flushing = null;
 // record appends events locally at once (optimistic) and persists them in order.
 export function record(type, body) {
   const ev = { type, v: 1, ts: Date.now(), body };
-  S.events.push({ ...ev, dev: "local", seq: 0, id: "pending" });
-  queue.push(ev);
+  const local = { ...ev, dev: "local", seq: 0, id: "pending" };
+  S.pending.push(local);
+  S.events.push(local);
+  queue.push({ ev, local });
   const before = S.p ? { level: S.p.level, medals: new Set(S.p.medals.map((m) => m.id)) } : null;
   rebuild();
   if (before) announce(before);
@@ -41,8 +67,12 @@ export function record(type, body) {
 async function flush() {
   while (queue.length) {
     const batch = queue.splice(0, queue.length);
-    try { await api("events", { method: "POST", body: { events: batch } }); }
-    catch (e) { queue.unshift(...batch); await new Promise((r) => setTimeout(r, 2000)); }
+    try {
+      await api("events", { method: "POST", body: { events: batch.map((b) => b.ev) } });
+      const done = new Set(batch.map((b) => b.local));
+      S.pending = S.pending.filter((x) => !done.has(x));
+      await pullLocal(); // swaps the placeholders for the stored events
+    } catch (e) { queue.unshift(...batch); await new Promise((r) => setTimeout(r, 2000)); }
   }
   flushing = null;
 }

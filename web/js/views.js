@@ -3,6 +3,7 @@ import { h, $, $$, esc, inline, md, shuffle, icon, tokenValue, download, api } f
 import { S, record, setting, dueItems, moduleOrder, nextModule, openSession, MEDALS, xpForNext } from "./state.js";
 import { anyItem, flashcard, quiz, lab, scenario, drill, telecyborg, setKeys } from "./widgets.js";
 import { newSession, BLOCKS } from "./session.js";
+import { syncPanel } from "./sync.js";
 
 const lv = (n) => `<span class="levels" title="Mastery L${Math.floor(n)}">${[1, 2, 3, 4, 5].map((i) => `<i class="${n >= i ? "on" : ""}"></i>`).join("")}</span>`;
 const daysTo = (d) => Math.ceil((new Date(d + "T09:00:00") - Date.now()) / 86400000);
@@ -182,14 +183,22 @@ export function settings(main, info) {
       <h3>Interview dates</h3>
       <div class="grid2"><label class="field">Recruiter<input type="date" data-k="date_recruiter" value="${esc(setting("date_recruiter", ""))}"></label><label class="field">Hiring manager<input type="date" data-k="date_hm" value="${esc(setting("date_hm", ""))}"></label></div>
       <label class="field" style="max-width:50%">Technical<input type="date" data-k="date_technical" value="${esc(setting("date_technical", ""))}"></label>
+      <h3>Sync</h3>
+      <div data-sync><p class="small muted">Loading…</p></div>
       <h3>Your data</h3>
       <p class="small muted">Progress is an append-only log in <code>${esc(info.dir)}</code>. Device ${esc(info.device)}.</p>
-      <div class="row"><a class="btn" href="/api/export?t=${esc(tokenValue())}" download>Download backup</a>${info.native ? `<button data-quit>Quit FortiTatake</button>` : ""}</div>
-      <p class="tiny">FortiTatake ${esc(info.version)} · content ${esc(S.content.version)} · Android app and LAN sync arrive in phase 2.</p>
+      <div class="row">${info.android ? `<button data-backup>Save backup to Downloads</button>` : `<a class="btn" href="/api/export?t=${esc(tokenValue())}" download>Download backup</a>`}${info.native ? `<button data-quit>Quit FortiTatake</button>` : ""}</div>
+      <p class="tiny">FortiTatake ${esc(info.version)} · content ${esc(S.content.version)}</p>
     </div></div>`);
   main.replaceChildren(el);
   $$("input[name=skin]", el).forEach((r) => (r.onchange = () => { record("setting_set", { key: "skin", value: r.value }); document.documentElement.dataset.skin = r.value; }));
   $$("[data-k]", el).forEach((x) => (x.onchange = () => record("setting_set", { key: x.dataset.k, value: x.type === "date" ? x.value : (isNaN(+x.value) ? x.value : +x.value) })));
   const q = $("[data-quit]", el);
   if (q) q.onclick = () => api("quit", { method: "POST" });
+  const bk = $("[data-backup]", el);
+  if (bk) bk.onclick = async () => {
+    const r = await fetch("/api/export?t=" + tokenValue());
+    download(`fortitatake-backup-${new Date().toISOString().slice(0, 10)}.ftbackup.jsonl`, await r.text(), "application/x-ndjson");
+  };
+  syncPanel($("[data-sync]", el));
 }

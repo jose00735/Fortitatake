@@ -10,9 +10,11 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jose00735/fortitatake/internal/ftsp"
 	"github.com/jose00735/fortitatake/internal/store"
 )
 
@@ -24,6 +26,10 @@ type Server struct {
 	Token   string
 	Native  bool
 	Quit    func()
+	Content *Content
+	Hub     *ftsp.Hub   // set on the PC
+	Spoke   *ftsp.Spoke // set on the phone
+	Android bool
 	ln      net.Listener
 }
 
@@ -59,6 +65,12 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'")
+		if r.URL.Path == "/content/bundle.json" && s.Content != nil {
+			data, _ := s.Content.Current()
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write(data)
+			return
+		}
 		static.ServeHTTP(w, r)
 	})
 	return mux
@@ -88,10 +100,20 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/")
 	switch {
 	case path == "info" && r.Method == http.MethodGet:
-		writeJSON(w, 200, map[string]any{"version": s.Version, "native": s.Native, "dir": s.Store.Dir, "device": s.Store.DeviceID})
+		info := map[string]any{"version": s.Version, "native": s.Native, "dir": s.Store.Dir, "device": s.Store.DeviceID,
+			"count": s.Store.Count(), "role": s.role(), "android": s.Android}
+		if s.Content != nil {
+			_, p := s.Content.Current()
+			info["content"] = p.Version
+		}
+		writeJSON(w, 200, info)
 
 	case path == "events" && r.Method == http.MethodGet:
-		writeJSON(w, 200, map[string]any{"events": s.Store.Events()})
+		n, _ := strconv.Atoi(r.URL.Query().Get("since"))
+		writeJSON(w, 200, map[string]any{"events": s.Store.Since(n), "count": s.Store.Count()})
+
+	case strings.HasPrefix(path, "sync"):
+		s.syncAPI(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "sync"), "/"))
 
 	case path == "events" && r.Method == http.MethodPost:
 		var in struct {
@@ -121,5 +143,118 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		writeJSON(w, 404, map[string]string{"error": "unknown endpoint"})
+	}
+}
+
+func (s *Server) role() string {
+	switch {
+	case s.Hub != nil:
+		return "hub"
+	case s.Spoke != nil:
+		return "spoke"
+	}
+	return "off"
+}
+
+func decode(r *http.Request, v any) error {
+	return json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(v)
+}
+
+func (s *Server) syncAPI(w http.ResponseWriter, r *http.Request, sub string) {
+	bad := func(err error) { writeJSON(w, 400, map[string]string{"error": err.Error()}) }
+	post := r.Method == http.MethodPost
+	switch {
+	case sub == "" && r.Method == http.MethodGet:
+		switch {
+		case s.Hub != nil:
+			writeJSON(w, 200, s.Hub.Status())
+		case s.Spoke != nil:
+			writeJSON(w, 200, s.Spoke.Status())
+		default:
+			writeJSON(w, 200, map[string]any{"role": "off"})
+		}
+
+	// ----- PC (hub) -----
+	case s.Hub != nil && sub == "hub" && post:
+		var in struct {
+			Enabled bool   `json:"enabled"`
+			Port    int    `json:"port"`
+			Name    string `json:"name"`
+		}
+		if err := decode(r, &in); err != nil {
+			bad(err)
+			return
+		}
+		if err := s.Hub.Configure(in.Enabled, in.Port, in.Name); err != nil {
+			bad(err)
+			return
+		}
+		writeJSON(w, 200, s.Hub.Status())
+	case s.Hub != nil && sub == "pair/open" && post:
+		info, err := s.Hub.OpenPairing()
+		if err != nil {
+			bad(err)
+			return
+		}
+		writeJSON(w, 200, info)
+	case s.Hub != nil && sub == "pair/close" && post:
+		s.Hub.ClosePairing()
+		writeJSON(w, 200, map[string]bool{"closed": true})
+	case s.Hub != nil && sub == "devices/revoke" && post:
+		var in struct {
+			ID string `json:"id"`
+		}
+		_ = decode(r, &in)
+		writeJSON(w, 200, map[string]bool{"revoked": s.Hub.Revoke(in.ID)})
+
+	// ----- phone (spoke) -----
+	case s.Spoke != nil && sub == "probe" && post:
+		var in struct {
+			Host string `json:"host"`
+			Port int    `json:"port"`
+		}
+		if err := decode(r, &in); err != nil {
+			bad(err)
+			return
+		}
+		res, err := s.Spoke.Probe(strings.TrimSpace(in.Host), in.Port)
+		if err != nil {
+			bad(err)
+			return
+		}
+		writeJSON(w, 200, res)
+	case s.Spoke != nil && sub == "pair" && post:
+		var in ftsp.PairRequest
+		if err := decode(r, &in); err != nil {
+			bad(err)
+			return
+		}
+		res, err := s.Spoke.Pair(in)
+		if err != nil {
+			bad(err)
+			return
+		}
+		writeJSON(w, 200, res)
+	case s.Spoke != nil && sub == "now" && post:
+		res, err := s.Spoke.SyncNow()
+		if err != nil {
+			bad(err)
+			return
+		}
+		writeJSON(w, 200, res)
+	case s.Spoke != nil && sub == "unpair" && post:
+		s.Spoke.Unpair()
+		writeJSON(w, 200, map[string]bool{"unpaired": true})
+	case s.Spoke != nil && sub == "hosts" && post:
+		var in struct {
+			Hub   string   `json:"hub"`
+			Hosts []string `json:"hosts"`
+			Port  int      `json:"port"`
+		}
+		_ = decode(r, &in)
+		writeJSON(w, 200, map[string]bool{"updated": s.Spoke.SetHosts(in.Hub, in.Hosts, in.Port)})
+
+	default:
+		writeJSON(w, 404, map[string]string{"error": "unknown sync endpoint"})
 	}
 }

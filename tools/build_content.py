@@ -82,7 +82,7 @@ def main():
         sys.exit(1)
     if "--check" in sys.argv:
         return
-    out = {"version": datetime.date.today().isoformat(), "modules": mods}
+    out = {"version": datetime.datetime.now().strftime("%Y-%m-%d.%H%M"), "modules": mods}
     os.makedirs(os.path.join(ROOT, "web", "content"), exist_ok=True)
     with open(os.path.join(ROOT, "web", "content", "bundle.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False)

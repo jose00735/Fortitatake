@@ -21,7 +21,12 @@ export async function api(path, opts = {}) {
     headers: { "X-FT-Token": token, "Content-Type": "application/json" },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  if (!res.ok) {
+    const t = await res.text();
+    let msg = t || res.statusText;
+    try { const j = JSON.parse(t); if (j && j.error) msg = typeof j.error === "string" ? j.error : j.error.message; } catch (e) { /* plain text */ }
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -175,6 +180,7 @@ export function fmtMin(ms) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 export function download(name, text, type = "text/markdown") {
+  if (window.FTAndroid && window.FTAndroid.saveFile) { window.FTAndroid.saveFile(name, type, text); return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name;

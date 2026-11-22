@@ -71,7 +71,7 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; min-height: 100%; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -174,7 +174,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 .rates .r4 { border-color: var(--focus); color: var(--focus); }
 
 /* Forms */
-input[type=text], input[type=number], input[type=date], textarea, select {
+input[type=text], input[type=number], input[type=date], input:not([type]), textarea, select {
   font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 8px 10px; width: 100%;
 }
@@ -323,3 +323,16 @@ label.field { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
 select { max-width: 100%; }
 .hero > * { min-width: 0; }
 .hero p, .hero .small { overflow-wrap: anywhere; }
+
+/* sync */
+.alert { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bad-soft); color: var(--bad); font-size: .9rem; }
+.pairbox { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-2); }
+.pairbox .qr { background: #fff; padding: 8px; border-radius: var(--radius); line-height: 0; }
+.pairbox .qr svg { width: 100%; height: auto; }
+.code-big { font-family: var(--mono); font-size: 1.9rem; font-weight: 700; letter-spacing: .08em; }
+.words { font-family: var(--mono); font-weight: 600; color: var(--accent); }
+.devlist { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.devlist li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.update-bar { position: fixed; z-index: 60; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--accent); box-shadow: var(--shadow); }
+details summary { cursor: pointer; }
+@media (max-width: 640px) { .pairbox { grid-template-columns: 1fr; } .pairbox .qr { max-width: 240px; } }

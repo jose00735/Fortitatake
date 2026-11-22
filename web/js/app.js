@@ -3,6 +3,7 @@ import { initToken, api, h, $, $$, esc, icon, MARK } from "./core.js";
 import { S, loadAll, setAnnouncer, setting, onChange, dueItems } from "./state.js";
 import { runSession } from "./session.js";
 import { home, review, library, moduleView, interview, progress, settings } from "./views.js";
+import { startPolling } from "./sync.js";
 
 const NAV = [["home", "Command", "home"], ["review", "Review", "cards"], ["library", "Library", "book"], ["interview", "Interview", "mic"], ["progress", "Progress", "chart"], ["settings", "Settings", "gear"]];
 let info = {};
@@ -76,5 +77,11 @@ async function start() {
   updateRail();
   window.addEventListener("hashchange", route);
   route();
+  startPolling(() => {
+    if (document.querySelector(".update-bar")) return;
+    const bar = h(`<div class="update-bar" role="status"><span class="small"><b>New study content arrived from your PC.</b> Reload to see it.</span><button class="primary">Reload</button></div>`);
+    $("button", bar).onclick = () => location.reload();
+    document.body.append(bar);
+  });
 }
 start();

@@ -40,6 +40,8 @@ type Store struct {
 	lastMS   int64
 	counter  int
 	events   []Event
+	seen     map[string]map[int64]struct{} // dev -> seqs held
+	contig   map[string]int64              // dev -> highest contiguous seq
 }
 
 // DefaultDir is %APPDATA%\FortiTatake on Windows and ~/.fortitatake elsewhere.
@@ -63,10 +65,12 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Store{Dir: dir}
+	s := &Store{Dir: dir, seen: map[string]map[int64]struct{}{}, contig: map[string]int64{}}
 	idPath := filepath.Join(dir, "device.json")
 	if b, err := os.ReadFile(idPath); err == nil {
-		var d struct{ ID string `json:"id"` }
+		var d struct {
+			ID string `json:"id"`
+		}
 		if json.Unmarshal(b, &d) == nil && d.ID != "" {
 			s.DeviceID = d.ID
 		}
@@ -104,13 +108,10 @@ func (s *Store) load() error {
 		if json.Unmarshal([]byte(line), &e) != nil {
 			continue // a torn last line after a crash is skipped, never fatal
 		}
-		s.events = append(s.events, e)
-		if e.Dev == s.DeviceID && e.Seq > s.seq {
-			s.seq = e.Seq
+		if s.has(e.Dev, e.Seq) {
+			continue
 		}
-		if e.TS > s.lastMS {
-			s.lastMS = e.TS
-		}
+		s.track(e)
 	}
 	return sc.Err()
 }
@@ -175,7 +176,9 @@ func (s *Store) Append(in []In) ([]Event, error) {
 	if err := f.Sync(); err != nil {
 		return nil, err
 	}
-	s.events = append(s.events, out...)
+	for _, e := range out {
+		s.track(e)
+	}
 	return out, nil
 }
 

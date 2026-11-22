@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Original FortiTatake mark: a firewall-grid shield. 108dp canvas, art in the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="25" android:translateY="23" android:scaleX="0.9" android:scaleY="0.9">
+        <path android:pathData="M32,4 L56,13 L56,30 C56,45 46,55 32,60 C18,55 8,45 8,30 L8,13 Z">
+            <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+                <gradient android:type="linear" android:startX="32" android:startY="4" android:endX="32" android:endY="60">
+                    <item android:offset="0" android:color="#FFFF7A1A" />
+                    <item android:offset="1" android:color="#FFC8281C" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M16,22 L48,22 M16,31 L48,31 M16,40 L48,40 M24,22 L24,31 M40,22 L40,31 M32,31 L32,40 M24,40 L24,48 M40,40 L40,46"
+            android:strokeColor="#D91A0D08" android:strokeWidth="3" android:strokeLineCap="round" />
+    </group>
+</vector>

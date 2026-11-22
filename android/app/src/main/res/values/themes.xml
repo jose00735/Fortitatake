@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ft_bg">#0E0C0B</color>
+    <color name="ft_accent">#FF4F14</color>
+    <style name="Theme.FortiTatake" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ft_bg</item>
+        <item name="android:statusBarColor">@color/ft_bg</item>
+        <item name="android:navigationBarColor">@color/ft_bg</item>
+        <item name="android:colorAccent">@color/ft_accent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
