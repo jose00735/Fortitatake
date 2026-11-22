@@ -1,0 +1,558 @@
+id: M4.08
+title: "Security profiles: AV, web and DNS filter, application control, IPS"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 110
+est_sessions: 1
+objectives:
+  - Choose flow or proxy inspection for a policy and justify it
+  - Explain the order of web filter checks and the five FortiGuard category actions
+  - Build an application control profile and predict which signature wins
+  - Tune an IPS sensor to the environment instead of turning everything on
+  - Control GenAI and shadow-AI use with web filter, application control and DLP
+sources:
+  - "FortiOS 8.0.2 Admin Guide: inspection modes (pp. 2481–2483), GenAI protection (p. 2500)"
+  - "FortiOS 8.0.2 Admin Guide: antivirus (pp. 2522–2524), web filter (pp. 2598–2603), DNS filter (pp. 2693–2694)"
+  - "FortiOS 8.0.2 Admin Guide: application control (pp. 2741–2744), IPS (pp. 2812–2818), virtual patching (pp. 3034–3035), profile groups (pp. 3125–3127)"
+
+units:
+  - id: M4.08.u1
+    title: Flow or proxy
+    tier: 1
+    est_min: 10
+    body: |
+      Each firewall policy has an inspection mode (p. 2481).
+
+      **Flow (the default, and recommended):** traffic isn't buffered. Content is inspected packet by packet, holding only the **last packet** until there's a verdict; if a threat is found, a **reset** is sent. All flow modules run in **one pass** with pattern matching that CP8/CP9 content processors accelerate. Lower resource use.
+
+      **Proxy:** the FortiGate **buffers the whole file, email or page**, inspects it, then releases it or replaces it with a **replacement message**. Client comforting trickles data so users don't time out (pp. 2481–2482).
+
+      Proxy-only capabilities include **video filter, inline CASB, WAF, content disarm and reconstruction (CDR), web quota, inline sandbox scanning**, and features that are only proxy-based such as **explicit web proxy, ZTNA and SSL offloading** (p. 2482). Most proxy features aren't supported on 2 GB RAM models.
+
+      Use flow unless you need a proxy feature, and keep the same mode across policies where you can: mixing modes costs performance (p. 2482). To configure profiles in a policy from the CLI, `set utm-status enable` first.
+
+      :::recall
+      Q: A customer needs Content Disarm and Reconstruction on email attachments. Which mode?
+      A: Proxy. CDR is a proxy-only feature.
+      :::
+
+      :::tip
+      Profiles have a *Feature set* (flow-based or proxy-based) so the GUI only shows the options that apply to that mode.
+      :::
+  - id: M4.08.u2
+    title: Antivirus, web filter and DNS filter
+    tier: 2
+    est_min: 14
+    body: |
+      ## Antivirus (pp. 2522–2524)
+
+      Signatures and engines are updated by **FortiGuard Antivirus** (subscription). New AV profiles default to **flow-based**. It can send suspicious files to **FortiSandbox** and block connections to botnet servers. FortiGuard only downloads AV definitions when **at least one policy uses an AV profile**. In flow mode, oversized files default to **pass**: tune `oversize-limit` deliberately.
+
+      ## Web filter (pp. 2598–2603)
+
+      Checks happen in this order:
+
+      1. **URL filter** (your static allow/block/exempt list)
+      2. **FortiGuard web filtering** (categories)
+      3. **Web content filter** (words and patterns)
+      4. **Web script filter**
+      5. **Antivirus scanning**
+
+      FortiGuard category actions: **Allow, Monitor** (permit and log), **Block** (replacement message), **Warning** (user may continue), **Authenticate** (log in first). An *exempt* URL filter entry skips the later checks, so use it sparingly.
+
+      Preloaded profiles: `default`, `monitor-all`, `wifi-default`. A good first step with a new customer is **monitor** on everything for a week to learn what's used.
+
+      ## DNS filter (pp. 2693–2694)
+
+      Blocks at name resolution, before any connection exists: **FortiGuard domain rating**, **botnet C&C domain blocking**, external dynamic categories, a local domain list, and an external IP block list for resolved addresses. In flow policies the IPS engine handles it; in proxy mode the DNS proxy does. It talks to the FortiGuard secure DNS servers over **anycast** by default.
+
+      :::why
+      Q: Why put DNS filter alongside web filter?
+      A: It blocks malicious and C&C domains for any application, not just web browsers, and before a connection is made. Web filter then handles full URLs on HTTP/HTTPS.
+      :::
+  - id: M4.08.u3
+    title: Application control and IPS
+    tier: 2
+    est_min: 14
+    body: |
+      ## Application control (pp. 2741–2744)
+
+      Uses IPS protocol decoders to identify applications. Preloaded sensors: `default` (monitor all), `wifi-default`, `block-high-risk`. Actions per category: **monitor, allow, block, quarantine**, plus **application and filter overrides** for exceptions.
+
+      **Which signature wins** when traffic matches several (p. 2743):
+
+      1. Entries (segments) are considered **in order**.
+      2. **Custom signatures beat FortiGuard** signatures.
+      3. Then signature weight and specificity (more specific apps beat broad protocols), visibility, pattern counts, and finally the higher (newer) ID.
+
+      Application control needs to see the traffic: with only certificate inspection, many apps inside TLS are identified by SNI; deep inspection adds sub-application control (for example, block uploads but allow viewing).
+
+      ## IPS (pp. 2812–2818)
+
+      An **IPS sensor** is a set of **filters** (by severity, target, OS, protocol, application) and individual **signature entries**. Each signature has a default action; a filter's action **Default** applies it, or you override it (allow, monitor, block, reset, quarantine). Also: **botnet C&C** scanning (block or monitor outgoing connections to botnet IPs) and blocking malicious URLs for drive-by exploits.
+
+      Predefined sensors include `default` and `high_security` (Critical/High/Medium), `all_default`, `all_default_pass`, `protect_client`, `protect_email_server`, `protect_http_server` (p. 2813).
+
+      Fortinet recommends **tuning the sensor to what it protects**: only the signatures that match the services and devices behind the policy (p. 2812). A server-facing policy uses server signatures for that server's OS and applications; a user-facing outbound policy uses client signatures. Smaller, relevant sensors mean fewer false positives and better performance.
+
+      :::threat
+      IPS is a stop-gap while patches roll out. With exploitation the top initial access vector (31 %) and only 26 % of known-exploited vulnerabilities fully remediated in the 2026 DBIR, a tuned IPS sensor on exposed servers buys real time.
+      :::
+  - id: M4.08.u4
+    title: GenAI, OT and operating the profiles
+    tier: 3
+    est_min: 10
+    body: |
+      ## Controlling GenAI use (p. 2500)
+
+      Three layers, from coarse to fine:
+
+      - **Web filter:** the FortiGuard **Artificial Intelligence Technology** category to monitor or block AI sites.
+      - **Application control:** the **Generative AI** category, matching traffic patterns with deep packet inspection, beyond URLs.
+      - **DLP:** block prompts to LLM apps that contain specific keywords, to stop sensitive data leaving.
+
+      A sensible customer policy: allow the sanctioned AI tool, monitor the category to measure shadow AI, block uploads of sensitive data with DLP, and review the logs monthly.
+
+      ## OT virtual patching (pp. 3034–3035)
+
+      With an OT license, **device detection** on the LAN interface and a **utm-status** policy, the FortiGate identifies OT/IoT devices and their vulnerabilities; a **virtual patching profile** blocks matching exploit traffic by severity (default action **block**). Only applies to OT devices.
+
+      ## Profile groups (pp. 3125–3127)
+
+      Hidden in the GUI until enabled in the CLI. A group bundles AV, web filter, IPS, application control, SSL profile and more; a policy uses **either a group or individual profiles**, not both. Good for consistency across many policies or FortiGates.
+
+      ## Operating them
+
+      - Start in **monitor**, review logs, then block with evidence.
+      - Licenses: AV, web filter, application control and IPS updates need FortiGuard subscriptions. Check the license page and `diagnose autoupdate versions` (engine and signature versions) before blaming a profile.
+      - Document exceptions (overrides, exempt URLs) with an owner and review date.
+
+      :::ps
+      Customers rarely ask "turn on IPS". They ask "can you stop this?" Translate the business risk into the smallest set of profiles that addresses it, and show the logs that prove it works.
+      :::
+
+cards:
+  - { id: M4.08.c01, unit: M4.08.u1, tier: 1, front: "Default inspection mode for new policies?", back: "Flow-based (recommended unless a proxy feature is needed)." }
+  - { id: M4.08.c02, unit: M4.08.u1, tier: 2, front: "How does flow mode block a threat?", back: "Holds the last packet until the verdict; on a violation it sends a reset." }
+  - { id: M4.08.c03, unit: M4.08.u1, tier: 2, front: "How does proxy mode handle content?", back: "Buffers the whole file/email/page, inspects, then releases or replaces it with a replacement message." }
+  - { id: M4.08.c04, unit: M4.08.u1, tier: 2, front: "Name four proxy-only security capabilities.", back: "Video filter, inline CASB, WAF, CDR, web quota, inline sandbox (and explicit proxy, ZTNA, SSL offloading are proxy-based)." }
+  - { id: M4.08.c05, unit: M4.08.u1, tier: 2, front: "CLI prerequisite to add profiles to a policy?", back: "set utm-status enable" }
+  - { id: M4.08.c06, unit: M4.08.u2, tier: 2, front: "Web filter check order?", back: "URL filter → FortiGuard categories → content filter → script filter → antivirus." }
+  - { id: M4.08.c07, unit: M4.08.u2, tier: 1, front: "Five FortiGuard web filter category actions?", back: "Allow, Monitor, Block, Warning, Authenticate." }
+  - { id: M4.08.c08, unit: M4.08.u2, tier: 2, front: "When does FortiGuard download AV definitions?", back: "When at least one policy uses an AV profile (same for IPS)." }
+  - { id: M4.08.c09, unit: M4.08.u2, tier: 3, front: "Flow AV default action for oversized files?", back: "Pass. Tune oversize-limit and the action deliberately." }
+  - { id: M4.08.c10, unit: M4.08.u2, tier: 2, front: "What can DNS filter block?", back: "FortiGuard-rated domains, botnet C&C domains, custom/external categories, local domains, resolved IPs on an external block list." }
+  - { id: M4.08.c11, unit: M4.08.u3, tier: 1, front: "Application control actions?", back: "Monitor, allow, block, quarantine (plus overrides)." }
+  - { id: M4.08.c12, unit: M4.08.u3, tier: 3, front: "App control: custom vs FortiGuard signature, which wins?", back: "Custom signatures take precedence (after entry order)." }
+  - { id: M4.08.c13, unit: M4.08.u3, tier: 2, front: "What is an IPS sensor made of?", back: "Filters (severity, target, OS, protocol, application) and individual signature entries, each with an action." }
+  - { id: M4.08.c14, unit: M4.08.u3, tier: 2, front: "Predefined IPS sensor for web servers?", back: "protect_http_server" }
+  - { id: M4.08.c15, unit: M4.08.u3, tier: 2, front: "Fortinet's IPS tuning advice?", back: "Select only signatures matching the services and devices the policy protects." }
+  - { id: M4.08.c16, unit: M4.08.u3, tier: 2, front: "IPS botnet C&C options?", back: "Disable, Block, or Monitor outgoing connections to botnet servers." }
+  - { id: M4.08.c17, unit: M4.08.u4, tier: 2, front: "Three ways to control GenAI on FortiGate?", back: "Web filter AI Technology category, application control Generative AI category, DLP on prompts." }
+  - { id: M4.08.c18, unit: M4.08.u4, tier: 3, front: "Virtual patching applies to which devices?", back: "OT devices (needs OT license, device detection, utm-status policy). Default action block." }
+  - { id: M4.08.c19, unit: M4.08.u4, tier: 3, front: "Profile group rule in a policy?", back: "Use a group or individual profiles, not both. Groups are hidden in the GUI until enabled in CLI." }
+
+quiz:
+  - id: M4.08.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which inspection mode is the default on new firewall policies?
+    options:
+      - { id: a, text: "Flow-based", correct: true }
+      - { id: b, text: "Proxy-based", why_wrong: "Available, but not the default." }
+      - { id: c, text: "None until a profile is added", why_wrong: "The mode is set regardless." }
+      - { id: d, text: "It depends on the model", why_wrong: "Flow is the default." }
+    explanation: Flow is default and recommended.
+    source: FortiOS 8.0.2 Admin Guide p. 2481
+  - id: M4.08.q02
+    type: order
+    tier: 2
+    pretest: true
+    stem: Put the web filter checks in the order FortiOS applies them.
+    items: ["URL filter", "FortiGuard web filtering (categories)", "Web content filter", "Web script filter", "Antivirus scanning"]
+    explanation: Your static list first, then categories, then content.
+    source: FortiOS 8.0.2 Admin Guide p. 2599
+  - id: M4.08.q03
+    type: single
+    tier: 2
+    stem: The customer needs a WAF profile on the policy to their web app. What must the policy use?
+    options:
+      - { id: a, text: "Proxy-based inspection", correct: true }
+      - { id: b, text: "Flow-based inspection", why_wrong: "WAF is proxy-only." }
+      - { id: c, text: "No inspection", why_wrong: "Then nothing is applied." }
+      - { id: d, text: "Certificate inspection", why_wrong: "That's an SSL setting, not the policy mode." }
+    explanation: WAF, CDR, video filter, inline CASB are proxy features.
+    source: FortiOS 8.0.2 Admin Guide p. 2482
+  - id: M4.08.q04
+    type: single
+    tier: 2
+    stem: Which FortiGuard web filter action lets users continue after a message?
+    options:
+      - { id: a, text: "Warning", correct: true }
+      - { id: b, text: "Monitor", why_wrong: "Monitor allows silently and logs." }
+      - { id: c, text: "Authenticate", why_wrong: "That requires a login, not just a click." }
+      - { id: d, text: "Block", why_wrong: "No way to continue." }
+    explanation: Warning shows a page with a continue option.
+    source: FortiOS 8.0.2 Admin Guide p. 2603
+  - id: M4.08.q05
+    type: single
+    tier: 3
+    stem: A URL is exempted in the URL filter. What happens to it?
+    options:
+      - { id: a, text: "It skips the later web filter checks (categories, content, and so on)", correct: true }
+      - { id: b, text: "It's still category-checked", why_wrong: "Exempt bypasses the subsequent checks." }
+      - { id: c, text: "It's blocked", why_wrong: "Exempt is the opposite." }
+      - { id: d, text: "Only antivirus is skipped", why_wrong: "Exempt skips more than AV." }
+    explanation: Use exempt sparingly.
+  - id: M4.08.q06
+    type: single
+    tier: 2
+    stem: IPS signatures haven't updated in weeks on a new FortiGate with a valid license. What's a classic cause?
+    options:
+      - { id: a, text: "No policy uses an IPS sensor, so updates aren't downloaded", correct: true }
+      - { id: b, text: "Flow mode disables updates", why_wrong: "No such behaviour." }
+      - { id: c, text: "IPS only updates monthly", why_wrong: "Updates are frequent." }
+      - { id: d, text: "The SSL profile is certificate inspection", why_wrong: "Unrelated to updates." }
+    explanation: At least one policy must use the profile.
+    source: FortiOS 8.0.2 Admin Guide pp. 2523, 2812
+  - id: M4.08.q07
+    type: single
+    tier: 3
+    stem: How should you build the IPS sensor for a policy protecting a Linux Apache web server in the DMZ?
+    options:
+      - { id: a, text: "Filters for server-side signatures matching Linux and Apache/HTTP, block on critical and high", correct: true }
+      - { id: b, text: "all_default on everything", why_wrong: "Untuned: more false positives and load." }
+      - { id: c, text: "protect_client", why_wrong: "That targets clients, not servers." }
+      - { id: d, text: "No IPS because the server is patched", why_wrong: "IPS covers the gap before the next patch." }
+    explanation: Tune to what's protected.
+    source: FortiOS 8.0.2 Admin Guide pp. 2812, 2817
+  - id: M4.08.q08
+    type: multi
+    tier: 2
+    stem: Which are FortiOS ways to control GenAI use? Select all that apply.
+    options:
+      - { id: a, text: "Web filter with the Artificial Intelligence Technology category", correct: true }
+      - { id: b, text: "Application control with the Generative AI category", correct: true }
+      - { id: c, text: "DLP keyword matching on prompts", correct: true }
+      - { id: d, text: "HA override", why_wrong: "Unrelated." }
+    explanation: Coarse to fine.
+    source: FortiOS 8.0.2 Admin Guide p. 2500
+  - id: M4.08.q09
+    type: single
+    tier: 2
+    stem: In application control, a custom signature and a FortiGuard signature both match. Which is used (same entry)?
+    options:
+      - { id: a, text: "The custom signature", correct: true }
+      - { id: b, text: "The FortiGuard signature", why_wrong: "Custom takes precedence." }
+      - { id: c, text: "The one with the lower ID", why_wrong: "ID is the last tiebreaker, and higher wins." }
+      - { id: d, text: "Both actions apply", why_wrong: "One signature is selected." }
+    explanation: Custom beats FortiGuard.
+    source: FortiOS 8.0.2 Admin Guide p. 2743
+  - id: M4.08.q10
+    type: single
+    tier: 2
+    stem: What does DNS filter do that web filter can't?
+    options:
+      - { id: a, text: "Block malicious or C&C domains for any application at name resolution, before a connection exists", correct: true }
+      - { id: b, text: "Inspect full HTTPS URLs", why_wrong: "That's web filter with deep inspection." }
+      - { id: c, text: "Scan files", why_wrong: "That's antivirus." }
+      - { id: d, text: "Decrypt TLS", why_wrong: "That's SSL inspection." }
+    explanation: Early and protocol-agnostic.
+    source: FortiOS 8.0.2 Admin Guide p. 2693
+  - id: M4.08.q11
+    type: single
+    tier: 3
+    stem: A policy uses a profile group. The admin tries to add an extra web filter profile individually. What happens?
+    options:
+      - { id: a, text: "Not possible: a policy uses either a profile group or individual profiles", correct: true }
+      - { id: b, text: "Both apply", why_wrong: "They can't be combined." }
+      - { id: c, text: "The individual profile overrides the group", why_wrong: "Not how it works." }
+      - { id: d, text: "The group is ignored", why_wrong: "No." }
+    explanation: Group or individual, not both.
+    source: FortiOS 8.0.2 Admin Guide p. 3126
+  - id: M4.08.q12
+    type: numeric
+    tier: 2
+    stem: How many FortiGuard web filter category actions are there (Allow, Monitor, Block, Warning, Authenticate)?
+    answer: 5
+    explanation: Five actions.
+    source: FortiOS 8.0.2 Admin Guide p. 2603
+  - id: M4.08.q13
+    type: single
+    tier: 3
+    stem: A new customer wants strict web filtering from day one but doesn't know what their users need. Best approach?
+    options:
+      - { id: a, text: "Monitor all categories for a short period, review logs with them, then block with evidence", correct: true }
+      - { id: b, text: "Block everything except a few categories immediately", why_wrong: "Breaks the business and erodes trust." }
+      - { id: c, text: "Leave web filter off", why_wrong: "No protection." }
+      - { id: d, text: "Use Warning on every category forever", why_wrong: "Users click through; little value." }
+    explanation: Evidence first.
+
+labs:
+  - id: M4.08.lab1
+    title: Web filter and DNS filter for a new office
+    goal: Block malicious and adult categories, monitor AI tools, and block botnet domains in DNS.
+    worked:
+      config: |
+        config webfilter profile
+            edit "office-wf"
+                set feature-set flow
+                config ftgd-wf
+                    config filters
+                        edit 1
+                            set category 26
+                            set action block
+                        next
+                        edit 2
+                            set category <AI-Technology-category-id>
+                            set action monitor
+                        next
+                    end
+                end
+            next
+        end
+        config dnsfilter profile
+            edit "office-dns"
+                set block-botnet enable
+                config ftgd-dns
+                    config filters
+                        edit 1
+                            set category 26
+                            set action block
+                        next
+                    end
+                end
+            next
+        end
+        config firewall policy
+            edit 10
+                set utm-status enable
+                set ssl-ssh-profile "certificate-inspection"
+                set webfilter-profile "office-wf"
+                set dnsfilter-profile "office-dns"
+            next
+        end
+      notes:
+        - "Category 26 is Malicious Websites in FortiGuard; confirm IDs on your unit (the GUI shows names)."
+        - "Look up the Artificial Intelligence Technology category ID in the GUI before using it."
+        - "Certificate inspection is enough for categories; deep inspection adds full URLs."
+    faded:
+      template: |
+        config webfilter profile
+            edit "office-wf"
+                config ftgd-wf
+                    config filters
+                        edit 1
+                            set {{category}} 26
+                            set {{action}} block
+                        next
+                    end
+                end
+            next
+        end
+        config dnsfilter profile
+            edit "office-dns"
+                set {{block-botnet}} enable
+            next
+        end
+    solo:
+      prompt: "Add web filter and DNS filter profiles office-wf and office-dns to policy 12 (remember the prerequisite)."
+      required: ["edit 12", "set utm-status enable", "set webfilter-profile \"office-wf\"", "set dnsfilter-profile \"office-dns\""]
+      solution: |
+        config firewall policy
+            edit 12
+                set utm-status enable
+                set webfilter-profile "office-wf"
+                set dnsfilter-profile "office-dns"
+            next
+        end
+      notes: "utm-status enable must come first."
+  - id: M4.08.lab2
+    title: A tuned IPS sensor for a DMZ web server
+    goal: Protect a Linux Apache server with server-side signatures, block critical and high, and block botnet connections.
+    worked:
+      config: |
+        config ips sensor
+            edit "dmz-web"
+                set scan-botnet-connections block
+                config entries
+                    edit 1
+                        set location server
+                        set os Linux
+                        set application Apache
+                        set severity high critical
+                        set action block
+                    next
+                    edit 2
+                        set location server
+                        set protocol HTTP
+                        set severity medium
+                        set action default
+                    next
+                end
+            next
+        end
+        config firewall policy
+            edit 30
+                set utm-status enable
+                set ips-sensor "dmz-web"
+            next
+        end
+      notes:
+        - "Entry 1 matches signatures that apply to Linux AND Apache (filters are ANDed)."
+        - "Entry 2 keeps each signature's own default action for medium severity."
+        - "Review IPS logs for false positives before tightening further."
+    faded:
+      template: |
+        config ips sensor
+            edit "dmz-web"
+                set {{scan-botnet-connections}} block
+                config entries
+                    edit 1
+                        set location {{server}}
+                        set severity high critical
+                        set action {{block}}
+                    next
+                end
+            next
+        end
+    solo:
+      prompt: "Create IPS sensor users-out for outbound user traffic: client-side signatures, severity high and critical, action block, and monitor botnet connections."
+      required: ["config ips sensor", "edit \"users-out\"", "set scan-botnet-connections monitor", "set location client", "set severity high critical", "set action block"]
+      solution: |
+        config ips sensor
+            edit "users-out"
+                set scan-botnet-connections monitor
+                config entries
+                    edit 1
+                        set location client
+                        set severity high critical
+                        set action block
+                    next
+                end
+            next
+        end
+      notes: "protect_client is the predefined starting point for the same idea."
+
+scenarios:
+  - id: M4.08.sc1
+    kind: situation
+    tier: 3
+    title: '"Stop people pasting customer data into ChatGPT"'
+    situation: |
+      A legal firm's managing partner asks you to stop staff pasting client documents into public AI tools, but they've licensed one approved AI assistant.
+    ask: Design the controls and explain them to the partner.
+    right_thinking:
+      - "Don't just block a category: they have a sanctioned tool"
+      - "Layer: identify AI use, allow the sanctioned one, control data with DLP"
+      - "Deep inspection is needed to see prompts and uploads"
+      - "Measure and report shadow AI"
+    what: A layered GenAI policy with reporting.
+    why: Blocking everything pushes users to personal devices; layered control keeps work visible.
+    how:
+      - "Application control Generative AI category: allow the approved app, block or monitor others"
+      - "DLP on prompts and uploads for client identifiers"
+      - "Deep inspection on that policy, with privacy sign-off"
+      - "Monthly report of attempts"
+    model_answer: |
+      I'd give them three layers. Application control on the Generative AI category: the approved assistant allowed, other AI tools blocked or at least monitored. DLP to stop prompts and uploads that contain client identifiers or document markers, which needs deep inspection on that policy, with the partners' sign-off. And a monthly report of who tried which tools, because shadow AI is a behaviour you manage, not just block. I did similar work at Netskope, getting a couple of accounts close to zero unsanctioned AI traffic with the same pattern: visibility first, then targeted control.
+    could_have_added: ["Combine with a short staff policy and training"]
+    best_way: "Allow the approved AI, block the rest by application category, DLP on prompts, and a monthly report."
+    rubric: ["layered design", "keeps sanctioned tool", "data control", "reporting"]
+  - id: M4.08.sc2
+    kind: situation
+    tier: 2
+    title: IPS is "breaking the ERP"
+    situation: |
+      After enabling an IPS sensor, the ERP application intermittently fails. The customer wants IPS turned off.
+    ask: What do you do?
+    right_thinking:
+      - "Find the exact signature in the IPS logs"
+      - "Check it's a false positive, not a real attack"
+      - "Narrow exception, not disabling IPS"
+      - "Tune the sensor to the ERP's platform"
+    what: A precise exception and a tuned sensor.
+    why: Turning IPS off removes protection for everything else.
+    how: ["Filter IPS logs by ERP server IPs", "Identify signature and action", "Validate with the vendor or packet capture", "Override that signature for those hosts; tune filters"]
+    model_answer: |
+      I'd ask for a bit of time before turning anything off. The IPS logs will show the exact signature, source and destination when the ERP fails. If it's a false positive, I'd add an override for that one signature on the ERP policy, rather than disabling IPS. I'd also tune the sensor to the ERP's platform so it only uses relevant signatures. Then we retest with the ERP team and document the exception.
+    best_way: "Find the exact signature in the logs, override just that one if it's a false positive, and tune the sensor."
+    rubric: ["evidence", "narrow exception", "tuning", "retest"]
+  - id: M4.08.sc3
+    kind: hypothetical
+    tier: 3
+    title: What if the customer wants proxy mode everywhere "for maximum security"?
+    situation: |
+      A customer on a mid-range model asks for proxy inspection on every policy.
+    ask: What's your recommendation?
+    right_thinking:
+      - "Flow is the default and recommended unless a proxy feature is needed"
+      - "Proxy costs resources and buffering latency"
+      - "Use proxy where a proxy-only feature is required"
+    what: A justified per-policy mode choice.
+    why: Unneeded proxy mode can hurt performance without adding protection.
+    how: ["List required proxy-only features per policy", "Proxy only there", "Size the model"]
+    model_answer: |
+      Proxy isn't automatically more secure; it adds specific features like CDR, WAF, inline CASB and video filter. Fortinet recommends flow unless you need those. I'd list which policies actually need a proxy feature, use proxy only there, and keep the rest flow, which uses fewer resources. If they need proxy broadly, we check the model's sizing first.
+    best_way: "Flow by default; proxy only where a proxy-only feature is needed, after checking sizing."
+    rubric: ["accurate trade-off", "per-policy choice", "sizing"]
+
+interview:
+  - id: M4.08.t01
+    stage: technical
+    question: "Flow versus proxy inspection: when do you use each?"
+    testing: Core design
+    framework: "How each works → when"
+    model_answer: |
+      "Flow inspects packets as they pass, holding only the last packet until there's a verdict, so it's fast and is the default. Proxy buffers the whole file or page, inspects it, then releases it or shows a replacement message. I use flow unless I need a proxy-only feature like WAF, CDR, inline CASB or video filtering, and I try to keep modes consistent for performance."
+    best_way: "Flow by default; proxy when a proxy-only feature is needed."
+    target: "0:35"
+  - id: M4.08.t02
+    stage: technical
+    question: How would you design an IPS sensor for a DMZ web server?
+    testing: Tuning mindset
+    framework: "Scope → severity/action → botnet → review"
+    model_answer: |
+      "Tune it to what it protects: server-side signatures filtered by the server's OS and application, say Linux and Apache, blocking critical and high, and default action for medium. Add botnet C&C blocking. Then I review the logs for false positives and adjust with signature overrides, not by turning IPS off."
+    best_way: "Server-side signatures for that OS and app, block high and critical, botnet blocking, then tune from logs."
+    target: "0:35"
+  - id: M4.08.t03
+    stage: technical
+    question: In what order does FortiGate apply web filtering?
+    testing: Detail knowledge
+    framework: "List"
+    model_answer: |
+      "URL filter first, then FortiGuard categories, then the content filter, the script filter, and finally antivirus scanning. That's why an exempt in the URL filter is powerful: it skips the later checks."
+    best_way: "URL filter, FortiGuard categories, content, script, then AV."
+    target: "0:20"
+  - id: M4.08.t04
+    stage: technical
+    question: A customer asks how to control generative AI use. What do you propose?
+    testing: Current topic, bridging Netskope experience
+    framework: "Layers → evidence"
+    model_answer: |
+      "Three layers on FortiGate: web filter with the AI Technology category, application control with the Generative AI category, and DLP on prompts for sensitive data, with deep inspection where needed. Allow the sanctioned tool, measure the rest, then block with evidence. I did this kind of shadow-AI work at Netskope, and visibility first is what made it stick."
+    best_way: "Web filter category, app control, DLP on prompts: allow the sanctioned tool and measure the rest."
+    target: "0:40"
+  - id: M4.08.h01
+    stage: hm
+    question: How do you balance security and usability when deploying controls for a customer?
+    testing: Consultative approach
+    framework: "Monitor → evidence → block → exceptions with owners"
+    model_answer: |
+      "I start in monitor mode, so the customer sees what's really happening, and we decide what to block using that evidence. Then we block in phases, with a clear path for exceptions that have an owner and a review date. That way security goes up without surprising the business, and the controls stay switched on."
+    best_way: "Monitor first, block with evidence, exceptions with owners."
+    target: "0:35"
+
+field_reports:
+  - id: M4.08.fr1
+    title: Shadow AI is mainstream
+    body: |
+      **45 %** of employees are regular AI users on corporate devices, and shadow AI became the third most common non-malicious insider action in DLP data (2026 DBIR). GenAI controls are now a standard customer request.
+    source: Verizon 2026 DBIR
+  - id: M4.08.fr2
+    title: AI on the attacker's side too
+    body: |
+      IBM's 2026 report saw AI-driven attacks rise **56 %**, adding about **USD 1 million** per breach, while organizations using security AI and automation extensively saved **USD 1.93 million** and **65 days**. FortiGuard's AI-driven signatures and categories are part of that defensive side.
+    source: IBM Cost of a Data Breach Report 2026

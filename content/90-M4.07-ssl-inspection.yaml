@@ -1,0 +1,528 @@
+id: M4.07
+title: "Certificates and SSL inspection: see inside encrypted traffic, safely"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 100
+est_sessions: 1
+objectives:
+  - Explain certificate inspection versus deep (full) inspection, and what each can and can't see
+  - Roll out deep inspection without certificate warnings, using the right CA and distribution method
+  - Design exemptions for privacy, pinned apps and regulated categories
+  - Protect an inbound server with its own certificate
+  - Troubleshoot certificate warnings, broken apps and the "untrusted CA" trap
+sources:
+  - "FortiOS 8.0.2 Admin Guide: SSL & SSH Inspection, profile settings, certificate and deep inspection (pp. 3048–3058)"
+  - "FortiOS 8.0.2 Admin Guide: protecting an SSL server and SSL offload (pp. 3058–3060)"
+  - "FortiOS 8.0.2 Admin Guide: Certificates, signed certificates and Microsoft CA deep packet inspection (pp. 4411–4436)"
+
+units:
+  - id: M4.07.u1
+    title: Two ways to look at TLS
+    tier: 1
+    est_min: 12
+    body: |
+      Most traffic is encrypted, so security profiles only see what SSL inspection lets them see. FortiOS ships four SSL/SSH inspection profiles (p. 3048): **certificate-inspection**, **deep-inspection** and **no-inspection** are read-only (clone them to change them), and **custom-deep-inspection** can be edited.
+
+      ## Certificate inspection
+
+      The FortiGate only reads the handshake: up to the TLS layer, the **SNI and the server certificate**, not the content (p. 3052). That's enough for **web filtering by category**, application identification by name and blocking bad certificates, with no certificate deployment and less privacy impact. It **can't** see URLs paths, files, or malware inside the session.
+
+      When it blocks an HTTPS page, the user gets a block page signed by the FortiGate CA, so the browser warns unless the CA is trusted (pp. 3052–3054). The built-in certificate-inspection profile is read-only and **only listens on 443**; clone it to add ports such as 8443 (p. 3054).
+
+      ## Deep (full) inspection
+
+      The FortiGate **impersonates the server to the client**: it terminates TLS, decrypts, inspects with AV, web filter, IPS, DLP and so on, re-encrypts and sends it on (p. 3056). It protects HTTPS and other TLS protocols (SMTPS, POP3S, IMAPS, FTPS).
+
+      Why it matters: malware downloaded over HTTPS and command-and-control channels are encrypted, so without deep inspection they "might get past your network's security measures" (p. 3055).
+
+      :::recall
+      Q: A customer wants category filtering only and no certificate rollout. Which profile?
+      A: Certificate inspection: it reads SNI and the server certificate, enough for categories.
+      :::
+
+      :::delta
+      Encrypted Client Hello (ECH) hides the SNI. The profile can allow or block ECH; with certificate inspection, ECH limits what you can classify (p. 3050).
+      :::
+  - id: M4.07.u2
+    title: Rolling out deep inspection without warnings
+    tier: 2
+    est_min: 14
+    body: |
+      With deep inspection, the browser receives a certificate **re-signed by the FortiGate**. By default the profile uses **Fortinet_CA_SSL** (p. 3054). If clients don't trust that CA, every site shows a warning.
+
+      ## Two CAs, one rule
+
+      - Server certificate **trusted** → FortiGate re-signs with **Fortinet_CA_SSL** (or your own CA).
+      - Server certificate **untrusted** → FortiGate re-signs with **Fortinet_CA_Untrusted**, so the user still sees a warning for a genuinely bad site.
+      - **Never import Fortinet_CA_Untrusted into browsers** (p. 3056). That would hide real attacks.
+
+      ## Use the customer's PKI
+
+      In production, use a CA from the customer's own PKI rather than the factory CA (p. 4435): it's already trusted by managed devices and **can be revoked** if compromised. Microsoft's two-tier practice: an **offline Root CA** signs an **issuing sub-CA**, and the sub-CA signs the certificate the FortiGate uses for inspection (pp. 4435–4436).
+
+      ## Distribute the CA
+
+      Download the CA from the profile (*Download* next to CA certificate) and install it in the **Trusted Root Certification Authorities** store; for domain PCs, push it with **Group Policy** (p. 3057). Plan non-Windows devices separately: macOS, mobiles (MDM), Linux servers, and apps with their own certificate stores (Firefox, Java, Python).
+
+      ## Rollout plan
+
+      1. Pilot group and a pilot policy, with exemptions ready.
+      2. Distribute the CA before you enable inspection.
+      3. Enable deep inspection on the pilot policy; watch SSL logs and user reports.
+      4. Add exemptions for broken apps, then widen in phases.
+
+      :::pitfall
+      Users still see warnings after you imported Fortinet_CA_SSL? Check whether the site's real certificate is untrusted: then the warning is coming from Fortinet_CA_Untrusted, and it's correct (p. 3056).
+      :::
+  - id: M4.07.u3
+    title: Exemptions, invalid certificates and protocol options
+    tier: 2
+    est_min: 12
+    body: |
+      ## Exemptions (Full SSL only, pp. 3050–3051, 3057)
+
+      Exempt sessions from deep inspection by:
+
+      - **Reputable websites:** a FortiGuard allowlist of common trusted sites.
+      - **Web categories:** **Finance and Banking, Health and Wellness, and Personal Privacy** are exempt by default; they're also the categories most likely to involve privacy rules or pinned certificates.
+      - **Addresses:** IP, range, subnet, FQDN, wildcard FQDN, geography.
+      - Turn on **Log SSL exemptions** so you can prove what was exempted.
+
+      Typical exemptions: banking and health (privacy, law), apps with **certificate pinning** (they reject any re-signed certificate), OS and security-agent updates, and partner services that use client certificates.
+
+      ## Invalid certificate actions (p. 3051)
+
+      With *Custom*: **expired → block**, **revoked → block**, **validation failed → block** (defaults); validation timed-out → allow (certificate inspection) or *Keep Untrusted & Allow* (deep inspection). Deep inspection actions: *Keep Untrusted & Allow*, *Block*, *Trust & Allow*. **SSL anomaly logging is on by default** (UTM log, SSL subtype).
+
+      ## Other settings worth knowing
+
+      - **SNI check** (p. 3050): compare SNI with the certificate CN/SAN; *Strict* closes mismatches.
+      - **Inspect all ports**: in **flow mode deep inspection, all ports are scanned anyway**; in proxy mode only mapped ports unless *Inspect all ports* is on (p. 3052).
+      - **Minimum TLS version** per protocol with `min-allowed-ssl-version`, and `unsupported-ssl-version {allow | block}` (p. 3058).
+      - **HTTP/3 and DNS over QUIC**: inspect, bypass or block under Full SSL (p. 3050). Blocking QUIC makes browsers fall back to TCP/TLS, which you can inspect.
+
+      :::why
+      Q: Why exempt Finance and Banking by default?
+      A: Privacy and regulation, and banking sites and apps often break with re-signed certificates. Inspecting them adds risk and little security value.
+      :::
+  - id: M4.07.u4
+    title: Inbound servers, offload and the consultant's checklist
+    tier: 3
+    est_min: 10
+    body: |
+      ## Protecting an SSL server (pp. 3058–3059)
+
+      For inbound traffic to your own web server, there's no need to impersonate anyone: import the **server's own certificate and private key** into the FortiGate, create a profile with **Protecting SSL Server**, select the certificate, and use it on the inbound (VIP) policy. The FortiGate presents the real server certificate, decrypts and inspects (IPS, AV, WAF in proxy mode).
+
+      ## Behind an external decryptor
+
+      If load balancers decrypt before and re-encrypt after the FortiGate (an "SSL offload sandwich"), enable `ssl-offloaded` in the protocol options so the FortiGate scans the plain text (p. 3059).
+
+      ## Certificates on the FortiGate itself
+
+      Replace the self-signed admin certificate with a signed one: import the signed certificate and its CA under *System > Certificates*, then `set admin-server-cert <name>` under `config system global` (p. 4435). The same certificate can serve Agentless VPN.
+
+      ## Consultant's checklist before go-live
+
+      - Legal/HR sign-off on what is decrypted and logged (privacy policy, works councils, local law).
+      - Which CA, issued by whom, revocation plan.
+      - Distribution to every device type, tested.
+      - Exemption list agreed, with an owner.
+      - Pilot, then phases; a rollback (switch the policy back to certificate inspection).
+      - Sizing: deep inspection costs CPU; check the model's SSL inspection throughput.
+
+      :::threat
+      Ransomware featured in 48 % of breaches in the 2026 DBIR, and most malware and command-and-control now hide inside TLS. Without deep inspection, AV and IPS see only encrypted bytes.
+      :::
+
+cards:
+  - { id: M4.07.c01, unit: M4.07.u1, tier: 1, front: "The four preloaded SSL/SSH inspection profiles?", back: "certificate-inspection, deep-inspection, no-inspection (read-only), custom-deep-inspection (editable)." }
+  - { id: M4.07.c02, unit: M4.07.u1, tier: 1, front: "What does certificate inspection see?", back: "The handshake up to the TLS layer: SNI and server certificate, not the content." }
+  - { id: M4.07.c03, unit: M4.07.u1, tier: 2, front: "What can't certificate inspection do?", back: "See URL paths, files or malware inside the session." }
+  - { id: M4.07.c04, unit: M4.07.u1, tier: 2, front: "Ports in the built-in certificate-inspection profile?", back: "Only 443. Clone it to add ports like 8443." }
+  - { id: M4.07.c05, unit: M4.07.u1, tier: 2, front: "How does deep inspection work?", back: "The FortiGate impersonates the server to the client, decrypts, inspects, re-encrypts and forwards." }
+  - { id: M4.07.c06, unit: M4.07.u2, tier: 1, front: "Default CA used for deep inspection?", back: "Fortinet_CA_SSL." }
+  - { id: M4.07.c07, unit: M4.07.u2, tier: 2, front: "When does the FortiGate sign with Fortinet_CA_Untrusted?", back: "When the real server certificate is untrusted, so users still get a warning." }
+  - { id: M4.07.c08, unit: M4.07.u2, tier: 2, front: "Which CA must never be imported into browsers?", back: "Fortinet_CA_Untrusted." }
+  - { id: M4.07.c09, unit: M4.07.u2, tier: 2, front: "Why use the customer's own PKI for inspection?", back: "Devices already trust it, and it can be revoked if compromised." }
+  - { id: M4.07.c10, unit: M4.07.u2, tier: 3, front: "Microsoft two-tier PKI for DPI?", back: "Offline Root CA signs an issuing sub-CA; the sub-CA signs the FortiGate's inspection CA certificate." }
+  - { id: M4.07.c11, unit: M4.07.u2, tier: 2, front: "How to push the CA to domain PCs?", back: "Group Policy, into Trusted Root Certification Authorities." }
+  - { id: M4.07.c12, unit: M4.07.u3, tier: 2, front: "Web categories exempt from deep inspection by default?", back: "Finance and Banking, Health and Wellness, Personal Privacy." }
+  - { id: M4.07.c13, unit: M4.07.u3, tier: 2, front: "Default actions for expired, revoked, validation-failed certificates?", back: "Block, block, block." }
+  - { id: M4.07.c14, unit: M4.07.u3, tier: 3, front: "Flow mode deep inspection: which ports are scanned?", back: "All ports, whether or not Inspect all ports is enabled." }
+  - { id: M4.07.c15, unit: M4.07.u3, tier: 2, front: "Why do some apps break under deep inspection?", back: "Certificate pinning: they reject any re-signed certificate. Exempt them." }
+  - { id: M4.07.c16, unit: M4.07.u3, tier: 3, front: "Setting for minimum TLS version in a deep profile?", back: "min-allowed-ssl-version (per protocol), plus unsupported-ssl-version allow|block." }
+  - { id: M4.07.c17, unit: M4.07.u4, tier: 2, front: "Inspect inbound HTTPS to your own server?", back: "Protecting SSL Server profile with the server's own certificate and key imported." }
+  - { id: M4.07.c18, unit: M4.07.u4, tier: 3, front: "FortiGate between load balancers that decrypt?", back: "Enable ssl-offloaded in protocol options to scan the plain text." }
+  - { id: M4.07.c19, unit: M4.07.u4, tier: 2, front: "Command to set the admin GUI certificate?", back: "config system global → set admin-server-cert <name>." }
+
+quiz:
+  - id: M4.07.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which inspection lets antivirus find malware inside an HTTPS download?
+    options:
+      - { id: a, text: "Deep (full) SSL inspection", correct: true }
+      - { id: b, text: "Certificate inspection", why_wrong: "It only sees the handshake, not the file." }
+      - { id: c, text: "no-inspection", why_wrong: "Nothing is inspected." }
+      - { id: d, text: "IPS alone without SSL inspection", why_wrong: "IPS sees only encrypted bytes." }
+    explanation: Only deep inspection decrypts the content.
+    source: FortiOS 8.0.2 Admin Guide pp. 3055–3056
+  - id: M4.07.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: After enabling deep inspection, every website shows a certificate warning. Most likely cause?
+    options:
+      - { id: a, text: "Clients don't trust the CA the FortiGate uses to re-sign (e.g. Fortinet_CA_SSL)", correct: true }
+      - { id: b, text: "The web filter is blocking everything", why_wrong: "That would show block pages, not warnings on every site." }
+      - { id: c, text: "TLS 1.3 isn't supported", why_wrong: "Not the cause of universal warnings." }
+      - { id: d, text: "The SNI check is strict", why_wrong: "That closes mismatched sessions; it doesn't cause warnings everywhere." }
+    explanation: Distribute the CA before enabling deep inspection.
+    source: FortiOS 8.0.2 Admin Guide p. 3056
+  - id: M4.07.q03
+    type: single
+    tier: 2
+    stem: "A user still sees a warning on one site after Fortinet_CA_SSL was installed. The site's own certificate is self-signed. What's happening?"
+    options:
+      - { id: a, text: "The FortiGate re-signed it with Fortinet_CA_Untrusted, correctly warning about an untrusted server", correct: true }
+      - { id: b, text: "The CA import failed", why_wrong: "Other sites work, so the import is fine." }
+      - { id: c, text: "Import Fortinet_CA_Untrusted to fix it", why_wrong: "Never do that: it hides real attacks." }
+      - { id: d, text: "Deep inspection is off for that site", why_wrong: "Then the browser would show the site's own self-signed warning, but the cause is still the untrusted certificate." }
+    explanation: The warning is the system working.
+    source: FortiOS 8.0.2 Admin Guide p. 3056
+  - id: M4.07.q04
+    type: multi
+    tier: 2
+    stem: Which web categories are exempt from deep inspection by default? Select all that apply.
+    options:
+      - { id: a, text: "Finance and Banking", correct: true }
+      - { id: b, text: "Health and Wellness", correct: true }
+      - { id: c, text: "Personal Privacy", correct: true }
+      - { id: d, text: "Social Networking", why_wrong: "Not exempt by default." }
+    explanation: The privacy-sensitive categories.
+    source: FortiOS 8.0.2 Admin Guide p. 3051
+  - id: M4.07.q05
+    type: single
+    tier: 2
+    stem: A web server uses HTTPS on port 8443 and you use the built-in certificate-inspection profile. What happens?
+    options:
+      - { id: a, text: "Port 8443 isn't inspected; clone the profile and add 8443 (or inspect all ports)", correct: true }
+      - { id: b, text: "It's inspected automatically", why_wrong: "The built-in profile only listens on 443." }
+      - { id: c, text: "Edit the built-in profile to add 8443", why_wrong: "It's read-only." }
+      - { id: d, text: "Switch to no-inspection", why_wrong: "That inspects nothing." }
+    explanation: Clone and add the port.
+    source: FortiOS 8.0.2 Admin Guide p. 3054
+  - id: M4.07.q06
+    type: single
+    tier: 3
+    stem: A banking app on employees' phones stops working when deep inspection is enabled, but the bank's website works. Why, and what do you do?
+    options:
+      - { id: a, text: "The app pins its certificate and rejects the re-signed one; exempt its destinations", correct: true }
+      - { id: b, text: "The CA isn't installed on phones; install Fortinet_CA_Untrusted", why_wrong: "Never install the untrusted CA, and pinned apps reject any CA." }
+      - { id: c, text: "The app uses UDP", why_wrong: "Irrelevant to the certificate issue." }
+      - { id: d, text: "Lower the minimum TLS version", why_wrong: "Version isn't the issue." }
+    explanation: Pinning needs an exemption.
+  - id: M4.07.q07
+    type: single
+    tier: 2
+    stem: How do you inspect inbound HTTPS to your own web server behind a VIP?
+    options:
+      - { id: a, text: "Import the server's certificate and key, and use a Protecting SSL Server profile on the inbound policy", correct: true }
+      - { id: b, text: "Use the deep-inspection profile with Fortinet_CA_SSL", why_wrong: "Internet clients don't trust that CA; you'd break the site." }
+      - { id: c, text: "Certificate inspection is enough", why_wrong: "It doesn't see the content." }
+      - { id: d, text: "It's not possible", why_wrong: "That's what Protecting SSL Server is for." }
+    explanation: Present the real certificate.
+    source: FortiOS 8.0.2 Admin Guide pp. 3058–3059
+  - id: M4.07.q08
+    type: single
+    tier: 3
+    stem: In a flow-mode policy with deep inspection, Inspect all ports is disabled. Which ports are scanned?
+    options:
+      - { id: a, text: "All ports", correct: true }
+      - { id: b, text: "Only the mapped ports (e.g. 443)", why_wrong: "That's proxy mode behaviour." }
+      - { id: c, text: "None", why_wrong: "Deep inspection is on." }
+      - { id: d, text: "Only 443 and 8443", why_wrong: "Not how it works in flow mode." }
+    explanation: Flow deep inspection scans all ports regardless.
+    source: FortiOS 8.0.2 Admin Guide p. 3052
+  - id: M4.07.q09
+    type: single
+    tier: 2
+    stem: What is the default action for revoked server certificates with Custom invalid-certificate settings?
+    options:
+      - { id: a, text: "Block", correct: true }
+      - { id: b, text: "Allow", why_wrong: "Revoked certificates are blocked by default." }
+      - { id: c, text: "Trust & Allow", why_wrong: "Not the default." }
+      - { id: d, text: "Keep Untrusted & Allow", why_wrong: "That's the deep-inspection default for validation time-outs." }
+    explanation: Expired, revoked and validation-failed default to block.
+    source: FortiOS 8.0.2 Admin Guide p. 3051
+  - id: M4.07.q10
+    type: order
+    tier: 2
+    stem: Put a safe deep-inspection rollout in order.
+    items: ["Agree scope, privacy sign-off and exemptions", "Distribute the inspection CA to devices", "Enable deep inspection on a pilot policy", "Fix issues with exemptions and widen in phases"]
+    explanation: CA first, pilot second, then widen.
+  - id: M4.07.q11
+    type: single
+    tier: 3
+    stem: Why does Fortinet's guide recommend a certificate from the customer's own PKI (e.g. Microsoft sub-CA) for deep inspection?
+    options:
+      - { id: a, text: "It's already trusted by managed devices and can be revoked if compromised", correct: true }
+      - { id: b, text: "It makes inspection faster", why_wrong: "Performance is the same." }
+      - { id: c, text: "Fortinet_CA_SSL expires after a year", why_wrong: "Not the reason given." }
+      - { id: d, text: "It removes the need for exemptions", why_wrong: "Pinned apps still need exemptions." }
+    explanation: Trust and revocation.
+    source: FortiOS 8.0.2 Admin Guide p. 4435
+  - id: M4.07.q12
+    type: text
+    tier: 2
+    stem: "Which CLI setting under config system global selects the certificate for the admin GUI?"
+    accept: ["admin-server-cert", "set admin-server-cert"]
+    explanation: set admin-server-cert <name>.
+    source: FortiOS 8.0.2 Admin Guide p. 4435
+  - id: M4.07.q13
+    type: single
+    tier: 2
+    stem: A customer only wants category-based web filtering and refuses to deploy a CA. What do you recommend?
+    options:
+      - { id: a, text: "Certificate inspection with a web filter profile, explaining what it can't see", correct: true }
+      - { id: b, text: "Deep inspection anyway", why_wrong: "Without the CA, every site breaks." }
+      - { id: c, text: "no-inspection with web filter", why_wrong: "HTTPS categories need at least certificate inspection." }
+      - { id: d, text: "Disable HTTPS", why_wrong: "Not realistic." }
+    explanation: Meet the requirement and state the limits.
+
+labs:
+  - id: M4.07.lab1
+    title: A deep-inspection profile with your CA and exemptions
+    goal: Create a deep-inspection profile that uses the customer's CA, exempts banking and health, blocks old TLS and logs exemptions.
+    worked:
+      config: |
+        config firewall ssl-ssh-profile
+            edit "deep-corp"
+                set server-cert-mode re-sign
+                set caname "CORP-Issuing-DPI"
+                config https
+                    set ports 443 8443
+                    set status deep-inspection
+                    set min-allowed-ssl-version tls-1.2
+                end
+                config ssl-exempt
+                    edit 1
+                        set type fortiguard-category
+                        set fortiguard-category 31
+                    next
+                    edit 2
+                        set type fortiguard-category
+                        set fortiguard-category 33
+                    next
+                end
+                set ssl-exemption-log enable
+            next
+        end
+        config firewall policy
+            edit 10
+                set ssl-ssh-profile "deep-corp"
+            next
+        end
+      notes:
+        - "Category IDs vary: confirm the IDs for Finance and Banking and Health and Wellness on your FortiGate (the GUI shows names)."
+        - "The CA (CORP-Issuing-DPI) is imported first and already trusted by managed devices."
+        - "Apply to a pilot policy first."
+    faded:
+      template: |
+        config firewall ssl-ssh-profile
+            edit "deep-corp"
+                set server-cert-mode {{re-sign}}
+                set caname "CORP-Issuing-DPI"
+                config https
+                    set status {{deep-inspection}}
+                    set {{min-allowed-ssl-version}} tls-1.2
+                end
+                set {{ssl-exemption-log}} enable
+            next
+        end
+    solo:
+      prompt: "Create a certificate-inspection profile named cert-8443 that inspects HTTPS on ports 443 and 8443."
+      required: ["config firewall ssl-ssh-profile", "edit \"cert-8443\"", "config https", "set ports 443 8443", "set status certificate-inspection"]
+      solution: |
+        config firewall ssl-ssh-profile
+            edit "cert-8443"
+                config https
+                    set ports 443 8443
+                    set status certificate-inspection
+                end
+            next
+        end
+      notes: "The built-in certificate-inspection profile is read-only and only uses 443."
+  - id: M4.07.lab2
+    title: Protect an inbound web server
+    goal: Inspect HTTPS to the company portal (VIP portal-vip) with the portal's own certificate.
+    worked:
+      config: |
+        config firewall ssl-ssh-profile
+            edit "protect-portal"
+                set server-cert-mode replace
+                set server-cert "portal-company-com"
+                config https
+                    set ports 443
+                    set status deep-inspection
+                end
+            next
+        end
+        config firewall policy
+            edit 30
+                set name "Internet-to-portal"
+                set srcintf "wan1"
+                set dstintf "dmz"
+                set srcaddr "all"
+                set dstaddr "portal-vip"
+                set action accept
+                set schedule "always"
+                set service "HTTPS"
+                set utm-status enable
+                set ssl-ssh-profile "protect-portal"
+                set ips-sensor "protect_http_server"
+            next
+        end
+      notes:
+        - "Import the portal certificate with its private key first (System > Certificates)."
+        - "server-cert-mode replace = Protecting SSL Server in the GUI."
+        - "protect_http_server is a predefined IPS sensor for HTTP servers."
+    faded:
+      template: |
+        config firewall ssl-ssh-profile
+            edit "protect-portal"
+                set server-cert-mode {{replace}}
+                set {{server-cert}} "portal-company-com"
+            next
+        end
+    solo:
+      prompt: "Set the FortiGate admin GUI to use the imported certificate named fw-admin-company-com."
+      required: ["config system global", "set admin-server-cert \"fw-admin-company-com\""]
+      solution: |
+        config system global
+            set admin-server-cert "fw-admin-company-com"
+        end
+      notes: "You'll be logged out of the GUI when it changes."
+
+scenarios:
+  - id: M4.07.sc1
+    kind: situation
+    tier: 3
+    title: '"Turn on SSL inspection for everyone on Monday"'
+    situation: |
+      The CISO of a 1,200-user company wants deep inspection on all internet traffic from Monday, after a phishing incident. Laptops are domain-joined; there are also Macs and unmanaged BYOD phones on the guest Wi-Fi.
+    ask: How do you respond and plan it?
+    right_thinking:
+      - "Support the goal: the incident is a real reason"
+      - "A big-bang rollout breaks things and burns trust; propose a fast phased plan"
+      - "CA distribution per device type, privacy sign-off, exemptions"
+      - "BYOD: certificate inspection only, or no CA deployment"
+    what: A one-week phased plan with clear decisions for the CISO.
+    why: Deep inspection done badly leads to it being switched off; done well it stays on.
+    how:
+      - "Day 1: legal/HR sign-off, exemption list, CA from their PKI"
+      - "Day 1–2: GPO for Windows, MDM for Macs; test"
+      - "Day 2–3: pilot with IT and a business group"
+      - "Day 4+: phases by department; BYOD stays on certificate inspection"
+    model_answer: |
+      I'd support the goal: after a phishing incident, inspecting HTTPS is the right move. But switching everyone on Monday will break apps and generate warnings, and the pressure will be to turn it off. I'd propose a fast phased plan instead: get privacy sign-off and agree exemptions like banking and health, issue the inspection certificate from their Microsoft PKI, push it by Group Policy to Windows and MDM to Macs, pilot with IT and one business team for two days, then roll out by department. Guest BYOD stays on certificate inspection because we can't install the CA there. They get protection within the week, and it sticks.
+    could_have_added: ["Show the SSL logs from the pilot as evidence of value"]
+    best_way: "Right goal; let's do it in a week, in phases: sign-off, CA via GPO and MDM, pilot, then departments. BYOD stays on certificate inspection."
+    rubric: ["supports goal", "phased plan", "device-type CA plan", "BYOD handled"]
+  - id: M4.07.sc2
+    kind: situation
+    tier: 2
+    title: The app that broke
+    situation: |
+      Day two of the pilot. Finance reports that their banking token software and a tax-authority portal client stopped working.
+    ask: Diagnose and fix without weakening the whole policy.
+    right_thinking:
+      - "Likely certificate pinning or client certificates"
+      - "Find the destinations from logs, exempt narrowly"
+      - "Log exemptions, document the owner"
+    what: Narrow exemptions with evidence.
+    why: Broad exemptions defeat the purpose.
+    how: ["Check SSL/UTM logs for the user's sessions", "Identify FQDNs", "Add address or wildcard-FQDN exemptions", "Retest and document"]
+    model_answer: |
+      These apps usually pin their certificate or use a client certificate, so a re-signed certificate breaks them. I'd find their destinations in the logs for that user, add narrow exemptions by FQDN or wildcard FQDN, not whole categories, and turn on exemption logging. Then retest with Finance and add the entries to the exemption register with an owner.
+    best_way: "Pinned apps: exempt their exact destinations, log it, and record who owns the exemption."
+    rubric: ["correct cause", "narrow fix", "documentation"]
+  - id: M4.07.sc3
+    kind: hypothetical
+    tier: 3
+    title: What if legal says "no decryption of personal data"?
+    situation: |
+      The customer's legal team says employees' personal browsing must not be decrypted.
+    ask: What options do you give?
+    right_thinking:
+      - "Respect the constraint; it's a requirement, not an obstacle"
+      - "Exempt personal categories, decrypt business-relevant traffic"
+      - "Certificate inspection for the rest still blocks bad categories"
+    what: A policy design that meets legal and security goals.
+    why: The best design is one the customer can legally keep running.
+    how: ["Exempt privacy categories", "Deep-inspect high-risk and uncategorized sites", "Certificate inspection elsewhere", "Document"]
+    model_answer: |
+      That's a requirement we design around. Banking, health and personal privacy are already exempt by default, and we can exempt other personal categories legal names. We'd keep deep inspection where the risk is: uncategorized and newly registered domains, file downloads, and business apps. Everything else gets certificate inspection, which still blocks malicious categories without decrypting. Legal signs off the category list, and we log exemptions so audits are easy.
+    best_way: "Exempt personal categories, deep-inspect risky and business traffic, certificate-inspect the rest, with legal signing the list."
+    rubric: ["respects constraint", "risk-based design", "audit trail"]
+
+interview:
+  - id: M4.07.t01
+    stage: technical
+    question: What's the difference between certificate inspection and deep inspection?
+    testing: Core concept
+    framework: "What each sees → use case → trade-off"
+    model_answer: |
+      "Certificate inspection only reads the handshake, the SNI and the server certificate, so it's enough for category filtering with no certificate rollout. Deep inspection makes the FortiGate act as the server to the client: it decrypts, inspects with AV, IPS and web filter, and re-encrypts. It sees the content, but needs the CA trusted on devices, exemptions for pinned apps, and more CPU."
+    best_way: "Certificate inspection sees the handshake; deep inspection sees the content, at the cost of a CA rollout and CPU."
+    target: "0:40"
+  - id: M4.07.t02
+    stage: technical
+    question: After enabling deep inspection, users get certificate warnings. How do you troubleshoot?
+    testing: Troubleshooting
+    framework: "Scope → cause → fix"
+    model_answer: |
+      "First, is it every site or some? Every site means the re-signing CA isn't trusted on that device, so I check how the CA was distributed, GPO, MDM, and app stores like Firefox. Some sites only: if their real certificate is untrusted, the FortiGate signs with Fortinet_CA_Untrusted on purpose, and that warning is correct. Never import that CA. Apps that fail without a warning are usually pinned, and need an exemption."
+    best_way: "All sites: CA not trusted on the device. Some sites: untrusted real certificate, working as designed. Apps: pinning, exempt them."
+    target: "0:45"
+  - id: M4.07.t03
+    stage: technical
+    question: How would you plan a deep-inspection rollout for an enterprise?
+    testing: Delivery planning (I did this at Netskope)
+    framework: "Sign-off → CA → pilot → phases"
+    model_answer: |
+      "I've done this with customers at Netskope, rolling out SSL deep inspection with the CA pushed by Group Policy. The plan: privacy and legal sign-off and an exemption list, an inspection certificate from their PKI, distribution per device type, a pilot group, then phases by department with a rollback to certificate inspection. I track broken apps and add narrow exemptions as we go."
+    best_way: "Sign-off, CA from their PKI pushed by GPO and MDM, pilot, phases, narrow exemptions. I did this at Netskope."
+    target: "0:50"
+  - id: M4.07.t04
+    stage: technical
+    question: How do you inspect HTTPS going to a customer's own web server?
+    testing: Inbound design
+    framework: "Method → requirement"
+    model_answer: |
+      "With a Protecting SSL Server profile: import the server's certificate and private key into the FortiGate and use the profile on the inbound VIP policy. The FortiGate presents the real certificate, decrypts and inspects with IPS, and WAF in proxy mode. You don't use the outbound deep-inspection CA, because internet clients wouldn't trust it."
+    best_way: "Import the server's own certificate and key and use Protecting SSL Server on the inbound policy."
+    target: "0:30"
+  - id: M4.07.h01
+    stage: hm
+    question: How do you handle a customer who wants something done fast that you think is risky?
+    testing: Judgement and influence
+    framework: "Agree goal → risk → faster safe path → decision in writing"
+    model_answer: |
+      "I agree with the goal first, then show the risk in their terms, and offer a path that's nearly as fast but safe. For example, a CISO who wants deep inspection for everyone on Monday: I'd propose a one-week phased rollout that gets them protection quickly without breaking apps. If they still want the risky route, I make sure the decision and risk are written down."
+    best_way: "Agree the goal, show the risk, offer a fast safe path, and get decisions in writing."
+    target: "0:45"
+
+field_reports:
+  - id: M4.07.fr1
+    title: Ransomware is everywhere
+    body: |
+      Ransomware featured in **48 %** of breaches in the 2026 DBIR, and **69 %** of victims didn't pay. Payloads and command-and-control travel over TLS; deep inspection is what lets AV and IPS see them.
+    source: Verizon 2026 DBIR
+  - id: M4.07.fr2
+    title: Phishing still opens the door
+    body: |
+      Phishing (**16 %**) and pretexting (**6 %**) remain common in the 2026 DBIR, and the human element was involved in **62 %** of breaches. Inspecting the HTTPS a phishing link leads to gives web filter and sandboxing a chance to stop the second step.
+    source: Verizon 2026 DBIR

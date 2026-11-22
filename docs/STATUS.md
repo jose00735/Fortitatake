@@ -43,6 +43,11 @@
 - Three modules: M4.09 IPsec VPN, M4.10 HA, M8.03 SD-WAN (FortiOS 8.0.2 guide, printed pages; in these chapters PDF page = printed page).
 - Windows exe and window now carry the shield icon (`assets/fortitatake.ico`, `rsrc_windows_amd64.syso`, IconId 1).
 
+### v0.2.2
+
+- Two modules: M4.07 Certificates and SSL inspection (pp. 3048–3060, 4411–4436), M4.08 Security profiles (pp. 2480–2850, 3034, 3125).
+- Labs that need FortiGuard category IDs say so: confirm IDs on the unit.
+
 ### P2 gaps
 
 - First real-device run pending; if the engine fails to start, the app shows its output on screen.
@@ -62,7 +67,7 @@
 
 ## Content
 
-Sprint order: the first six sorties (about 24 hours) come first; v0.2.1 adds three more (about 12 hours).
+Sprint order: the first six sorties (about 24 hours) come first; v0.2.1 and v0.2.2 add five more (about 20 hours).
 
 | # | Module | Cards | Quiz | Labs | Situations | Interview items |
 |---|---|---|---|---|---|---|
@@ -75,19 +80,20 @@ Sprint order: the first six sorties (about 24 hours) come first; v0.2.1 adds thr
 | 7 | M4.09 IPsec VPN: build, verify and troubleshoot | 19 | 14 | 2 | 3 | 5 |
 | 8 | M4.10 High availability: FGCP clusters, failover and upgrades | 20 | 15 | 2 | 3 | 5 |
 | 9 | M8.03 SD-WAN: members, health checks, rules and troubleshooting | 20 | 14 | 2 | 3 | 5 |
-| | **Total** | **174** | **148** | **18** | **27** | **66** |
+| 10 | M4.07 Certificates and SSL inspection | 19 | 13 | 2 | 3 | 5 |
+| 11 | M4.08 Security profiles: AV, web and DNS filter, application control, IPS | 19 | 13 | 2 | 3 | 5 |
+| | **Total** | **212** | **174** | **22** | **33** | **76** |
 
-Interview pool by stage: recruiter 17, hiring manager 16, technical 33.
+Interview pool by stage: recruiter 17, hiring manager 18, technical 41.
 
 ### Next in the queue
 
 Ids follow CURRICULUM.md, written with two digits (M4.9 → M4.09).
 
-1. M4.07 Certificates and SSL inspection, then M4.08 Security profiles.
-2. I2 hiring-manager and I3 technical-panel kickoff modules (the STAR bank already lives in M11.01).
-3. S5 FortiManager (ADOMs, policy packages, installs) and S6 FortiAnalyzer.
-4. M8.x deeper SD-WAN: ADVPN and overlays, routing over overlays (BGP).
-5. Fundamentals gaps (M0/M1 remaining modules) if pretest scores show weakness.
+1. I2 hiring-manager and I3 technical-panel kickoff modules (the STAR bank already lives in M11.01).
+2. S5 FortiManager (ADOMs, policy packages, installs) and S6 FortiAnalyzer.
+3. M8.x deeper SD-WAN: ADVPN and overlays, routing over overlays (BGP).
+4. Fundamentals gaps (M0/M1 remaining modules) if pretest scores show weakness.
 
 ## Open decisions
 

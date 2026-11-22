@@ -11,7 +11,7 @@ An intensive, offline study engine for Fortinet Professional Services interviews
 
 **Windows:** unzip the release and double-click `fortitatake.exe`. It opens its own window (WebView2, built into Windows 10/11); if WebView2 is missing it opens your default browser instead. Progress is saved in `%APPDATA%\FortiTatake\events.jsonl`. Back it up from Settings.
 
-**Android:** install `fortitatake-v0.2.1.apk` (allow installs from your browser or file manager). Then on the PC: Settings → Sync → Turn on sync → Pair a phone, and on the phone: Settings → Sync → Scan the QR code.
+**Android:** install `fortitatake-v0.2.2.apk` (allow installs from your browser or file manager). Then on the PC: Settings → Sync → Turn on sync → Pair a phone, and on the phone: Settings → Sync → Scan the QR code.
 
 Flags: `-browser` (use the browser instead of the window), `-data <dir>`, `-port <n>`, `-no-open`, `-version`.
 
@@ -27,7 +27,7 @@ ANDROID_HOME=~/Android/Sdk tools/build_android.sh   # APK into dist/
 
 ## Status
 
-v0.2.1: Windows app, Android app and LAN sync (FTSP/1), plus nine modules (about 36 hours of sorties). Docs:
+v0.2.2: Windows app, Android app and LAN sync (FTSP/1), plus eleven modules (about 44 hours of sorties). Docs:
 
 | Doc | What it covers |
 |---|---|
