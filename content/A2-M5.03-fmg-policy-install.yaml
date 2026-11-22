@@ -1,0 +1,320 @@
+id: M5.03
+title: "FortiManager Policy & Objects and the install process"
+stage: S5
+stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
+order: 122
+est_sessions: 1
+objectives:
+  - Organise policy packages, installation targets, policy blocks and global policies
+  - Use dynamic mapping and normalized interfaces so one package fits many FortiGates
+  - Choose the right install operation and always read the preview
+  - Explain the install sequence from ADOM database to device database to the FortiGate diff
+  - Handle out-of-band changes, conflicts, imports, retrieves and reverts safely
+sources:
+  - "FortiManager 7.6.8 Admin Guide: Key concepts, operations and install sequence (pp. 55–63)"
+  - "FortiManager 7.6.8 Admin Guide: Policy & Objects, policy packages and installs (pp. 382–400)"
+  - "FortiManager 7.6.8 Admin Guide: Policy Blocks (pp. 491–504), dynamic objects (pp. 510–512)"
+
+units:
+  - id: M5.03.u1
+    title: Policy packages that scale
+    tier: 2
+    est_min: 13
+    body: |
+      Inside an ADOM you can have **many policy packages**. A package can target one device, many devices, a VDOM, or all devices; you can clone packages to provision new sites quickly (p. 382).
+
+      ## Building blocks
+
+      - **Installation targets:** which devices or VDOMs a package installs to. Individual policies can also be limited to specific targets (p. 391).
+      - **Global policy packages:** header and footer policies from the global ADOM wrap local policies; each policy package can have **one** global package assigned (p. 383).
+      - **Policy Blocks:** a reusable set of policies appended to packages. Enable them in *Tools > Feature Visibility*. They simplify ADOM upgrades and are an alternative to global policy packages (pp. 384, 491–492).
+      - **Dynamic mapping and normalized interfaces:** one logical object (an address, or an interface name like `LAN`) maps to a different real value per device (p. 510). The same package then works at every branch.
+
+      ## The rule that breaks installs
+
+      When a package installs, referenced objects go to the device, and **a default or per-device mapping must exist, or the installation fails** (p. 391). A new branch with no mapping for the `LAN` normalized interface is the classic first-install error.
+
+      ## Policy theory still applies
+
+      Matching uses type, incoming interface, source, outgoing interface, destination, schedule and service; actions are ACCEPT, DENY or IPSEC; unmatched traffic is dropped, and an explicit DENY is only needed to **log** violations (pp. 382–383).
+
+      :::recall
+      Q: First install to a new branch fails on the 'LAN' interface. Likely cause?
+      A: No default or per-device mapping for the normalized interface on that device.
+      :::
+  - id: M5.03.u2
+    title: Install operations and what really happens
+    tier: 2
+    est_min: 14
+    body: |
+      ## The operations (pp. 55–57)
+
+      | Operation | What it does | Preview |
+      |---|---|---|
+      | Install Wizard: device settings only | Pushes the device database to the FortiGate | Yes, can cancel |
+      | Install Wizard: policy package and device settings | ADOM policies → device database → FortiGate; best for the first install | Yes |
+      | Re-install Policy | For packages already assigned; can do several packages in one workflow | Yes |
+      | Quick Install (Device DB) | Pushes the device database immediately | **No preview, can't cancel** |
+      | Scheduled install | Install at a set date and time | From the wizard |
+
+      ## The sequence (pp. 59–61)
+
+      1. FortiManager copies the related ADOM objects (templates, policies) into the **device database**: the "VDOM copy". Order: system template → CLI template (pre) → threat weight → IPsec → static route → BGP → NSX-T → SD-WAN → AP profile → FortiSwitch → FortiExtender → **policy package** → CLI template (post).
+      2. It retrieves the real FortiGate configuration and **installs only the difference**. A CLI template's lines are not replayed one by one; FortiManager installs the diff.
+
+      ## FGFM recovery (p. 56)
+
+      After each install the FortiGate restarts its FGFM tunnel. If `rollback-allow-reboot` is enabled (`config system dm`, **disabled by default**) and the reconnection fails, the FortiGate reboots to recover its previous configuration.
+
+      :::pitfall
+      Always read the install preview. It shows exactly what will change on the FortiGate, including deletions you didn't expect, like unused objects that FortiManager doesn't keep.
+      :::
+  - id: M5.03.u3
+    title: When the FortiGate and FortiManager disagree
+    tier: 3
+    est_min: 13
+    body: |
+      ## Auto-update and conflicts (p. 58)
+
+      **Auto-update is enabled by default**: a change made locally on a FortiGate is sent to FortiManager. A device-level change leaves the policy status alone; a **policy-level change can put the package into Conflict**. Fortinet's advice: make changes on FortiManager, not on the FortiGate.
+
+      ## Import, retrieve, revert (pp. 57–59)
+
+      - **Import configuration:** copies policies and objects from the device into a new policy package in the ADOM; the FortiGate isn't changed. If an object with the same name exists, you choose: **update** it (all FortiGates using it go out of sync) or **keep** FortiManager's (the next install pushes FortiManager's version). After an import, the first install may delete **unused objects**.
+      - **Retrieve:** refreshes the device database from the FortiGate. The policy package isn't updated, so a policy-level local change will be overwritten at the next package install.
+      - **Revert:** loads an older revision into the device database only. Then **import** to realign the policy package and **re-install**.
+      - **Refresh:** checks the sync status.
+
+      ## A safe routine for a change
+
+      1. Lock (workspace), edit in Policy & Objects.
+      2. Install Wizard → **preview** → download the preview for the change record.
+      3. Install; check the task log.
+      4. Verify on the FortiGate and with the user.
+      5. Revisions are kept in Device Manager: compare and revert if needed.
+
+      :::why
+      Q: Why might the first install after an import delete objects from the FortiGate?
+      A: They're unused by any policy, and FortiManager doesn't keep unused objects. They can be installed back by referencing them in a policy.
+      :::
+
+cards:
+  - { id: M5.03.c01, unit: M5.03.u1, tier: 1, front: "Can an ADOM have several policy packages?", back: "Yes. Each targets devices/VDOMs; packages can be cloned." }
+  - { id: M5.03.c02, unit: M5.03.u1, tier: 2, front: "How many global packages per policy package?", back: "One." }
+  - { id: M5.03.c03, unit: M5.03.u1, tier: 2, front: "What is a Policy Block?", back: "A reusable set of policies appended to packages; enable via Feature Visibility; alternative to global packages." }
+  - { id: M5.03.c04, unit: M5.03.u1, tier: 2, front: "Why normalized interfaces and dynamic mapping?", back: "One logical object maps to a different real value per device, so one package fits many FortiGates." }
+  - { id: M5.03.c05, unit: M5.03.u1, tier: 2, front: "Install fails with missing mapping. Rule?", back: "A default or per-device mapping must exist for referenced objects." }
+  - { id: M5.03.c06, unit: M5.03.u2, tier: 2, front: "Install with no preview and no cancel?", back: "Quick Install (Device DB)." }
+  - { id: M5.03.c07, unit: M5.03.u2, tier: 2, front: "Best operation for a package's first install?", back: "Install Wizard: install policy package and device settings." }
+  - { id: M5.03.c08, unit: M5.03.u2, tier: 3, front: "What does FortiManager actually push to the FortiGate?", back: "Only the diff between the updated device database and the FortiGate's current config." }
+  - { id: M5.03.c09, unit: M5.03.u2, tier: 3, front: "Where is the policy package in the copy order?", back: "After all templates (system … FortiExtender), before the post-VDOM-copy CLI template." }
+  - { id: M5.03.c10, unit: M5.03.u2, tier: 3, front: "rollback-allow-reboot default and effect?", back: "Disabled. If enabled and FGFM can't reconnect after install, the FortiGate reboots to its previous config." }
+  - { id: M5.03.c11, unit: M5.03.u3, tier: 1, front: "Is auto-update on by default?", back: "Yes. Local FortiGate changes are sent to FortiManager." }
+  - { id: M5.03.c12, unit: M5.03.u3, tier: 2, front: "Local policy change on FortiGate leads to…?", back: "Possible Conflict status on the policy package." }
+  - { id: M5.03.c13, unit: M5.03.u3, tier: 2, front: "Import with an existing object of the same name: options?", back: "Update it (referencing FortiGates go out of sync) or keep FortiManager's definition." }
+  - { id: M5.03.c14, unit: M5.03.u3, tier: 2, front: "After a revert, what next?", back: "Import to realign the policy package, then re-install." }
+
+quiz:
+  - id: M5.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Which install operation has no preview and can't be cancelled?
+    options:
+      - { id: a, text: "Quick Install (Device DB)", correct: true }
+      - { id: b, text: "Install Wizard", why_wrong: "It offers a preview." }
+      - { id: c, text: "Re-install Policy", why_wrong: "It offers a preview." }
+      - { id: d, text: "Scheduled install", why_wrong: "Configured from the wizard." }
+    explanation: Use Quick Install only when you know the change.
+    source: FortiManager 7.6.8 Admin Guide p. 56
+  - id: M5.03.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Installing the shared branch package to a new FortiGate fails on normalized interface 'LAN'. Fix?"
+    options:
+      - { id: a, text: "Add a per-device (or default) mapping of 'LAN' to the branch's real interface", correct: true }
+      - { id: b, text: "Use Quick Install", why_wrong: "The mapping is still missing." }
+      - { id: c, text: "Disable auto-update", why_wrong: "Unrelated." }
+      - { id: d, text: "Create a new ADOM", why_wrong: "Overkill; the mapping is the issue." }
+    explanation: Mappings must exist for referenced objects.
+    source: FortiManager 7.6.8 Admin Guide p. 391
+  - id: M5.03.q03
+    type: single
+    tier: 2
+    stem: What does FortiManager push to the FortiGate during an install?
+    options:
+      - { id: a, text: "The difference between the updated device database and the FortiGate's current configuration", correct: true }
+      - { id: b, text: "The whole configuration file", why_wrong: "Only the diff." }
+      - { id: c, text: "The CLI template lines exactly as written", why_wrong: "The guide says the diff is installed, not the template text." }
+      - { id: d, text: "Only new objects", why_wrong: "Changes and deletions too." }
+    explanation: Diff-based install.
+    source: FortiManager 7.6.8 Admin Guide pp. 60–62
+  - id: M5.03.q04
+    type: single
+    tier: 2
+    stem: A local admin adds a firewall policy directly on a managed FortiGate. What may FortiManager show?
+    options:
+      - { id: a, text: "The policy package in Conflict status (auto-update brought the change in)", correct: true }
+      - { id: b, text: "Nothing; FortiManager can't see local changes", why_wrong: "Auto-update reports them." }
+      - { id: c, text: "The device deleted from the ADOM", why_wrong: "No." }
+      - { id: d, text: "A new ADOM", why_wrong: "No." }
+    explanation: Policy-level local changes conflict.
+    source: FortiManager 7.6.8 Admin Guide p. 58
+  - id: M5.03.q05
+    type: order
+    tier: 3
+    stem: Put these in the order FortiManager applies them to the device database during install.
+    items: ["System template", "IPsec tunnel template", "SD-WAN template", "Policy package", "CLI template (post-VDOM copy)"]
+    explanation: Templates first, policy package, then post-copy CLI templates.
+    source: FortiManager 7.6.8 Admin Guide p. 61
+  - id: M5.03.q06
+    type: single
+    tier: 3
+    stem: You reverted a FortiGate to an older revision in Device Manager. What must you do so the policy package matches?
+    options:
+      - { id: a, text: "Import the configuration to realign the package, then re-install", correct: true }
+      - { id: b, text: "Nothing; revert updates the package", why_wrong: "Revert only affects the device database." }
+      - { id: c, text: "Quick install", why_wrong: "The package would still be misaligned." }
+      - { id: d, text: "Delete the package", why_wrong: "Destructive." }
+    explanation: Revert → import → re-install.
+    source: FortiManager 7.6.8 Admin Guide pp. 58–59
+  - id: M5.03.q07
+    type: single
+    tier: 2
+    stem: "During import, an address 'SRV-WEB' already exists in the ADOM with a different IP. You choose 'keep'. Result?"
+    options:
+      - { id: a, text: "FortiManager's definition stays; the next install pushes it to the FortiGate", correct: true }
+      - { id: b, text: "The FortiGate's IP replaces it everywhere", why_wrong: "That's 'update'." }
+      - { id: c, text: "Import fails", why_wrong: "You chose an option." }
+      - { id: d, text: "Two objects with the same name", why_wrong: "Names are unique." }
+    explanation: Keep = FortiManager wins at next install.
+    source: FortiManager 7.6.8 Admin Guide p. 57
+  - id: M5.03.q08
+    type: multi
+    tier: 2
+    stem: Which help one policy package serve many branches? Select all that apply.
+    options:
+      - { id: a, text: "Normalized interfaces with per-device mapping", correct: true }
+      - { id: b, text: "Dynamic address mapping", correct: true }
+      - { id: c, text: "Installation targets including all branches", correct: true }
+      - { id: d, text: "Quick Install", why_wrong: "An install method, not reuse." }
+    explanation: Mapping plus targets.
+  - id: M5.03.q09
+    type: single
+    tier: 2
+    stem: Is an explicit DENY policy at the bottom required to block unmatched traffic?
+    options:
+      - { id: a, text: "No; unmatched traffic is dropped. A DENY is needed to log violations", correct: true }
+      - { id: b, text: "Yes, always", why_wrong: "Implicit drop exists." }
+      - { id: c, text: "Only in FortiManager", why_wrong: "Same behaviour." }
+      - { id: d, text: "Only for IPsec", why_wrong: "No." }
+    explanation: Explicit deny for logging.
+    source: FortiManager 7.6.8 Admin Guide p. 383
+
+labs:
+  - id: M5.03.lab1
+    title: A safe policy change through FortiManager
+    goal: Add an allow rule for a new SaaS app to the Branches package and install it to all branches safely.
+    worked:
+      config: |
+        # 1. Lock the ADOM or the 'Branches' package (workspace mode)
+        # 2. Policy & Objects > Branches > Create New:
+        #    Incoming: LAN (normalized)  Outgoing: WAN-SDWAN (normalized)
+        #    Source: BRANCH-USERS (dynamic mapping)  Destination: ISDB 'SaaS-App'
+        #    Action: ACCEPT, Security profiles: default group, Log all sessions
+        # 3. Save, then Install > Install Wizard > Install Policy Package & Device Settings
+        # 4. Select 'Branches', all targets > Next > Install Preview > Download preview
+        # 5. Install, check the task log, then verify at one branch:
+        diagnose firewall iprope list 100004
+        # 6. Unlock
+      notes:
+        - "The preview file goes in the change record."
+        - "Verify on a real branch, not just in FortiManager."
+        - "If a branch fails, read the task log: usually a missing mapping."
+    faded:
+      template: |
+        # Lock → edit → Install {{Wizard}} → Install {{Preview}} → install → verify → {{unlock}}
+    solo:
+      prompt: "List the five steps of a safe FortiManager policy change, in order, one per line, using these words: lock, edit, preview, install, verify."
+      required: ["lock", "edit", "preview", "install", "verify"]
+      solution: |
+        lock
+        edit
+        preview
+        install
+        verify
+      notes: "Then unlock, and keep the preview with the change record."
+
+scenarios:
+  - id: M5.03.sc1
+    kind: situation
+    tier: 3
+    title: The install that deleted objects
+    situation: |
+      After importing a FortiGate into FortiManager, the first install preview shows dozens of address objects being deleted. The customer is alarmed.
+    ask: Explain and decide.
+    right_thinking:
+      - "Expected behaviour: unused objects aren't kept by FortiManager"
+      - "Check they're truly unused (no policy, route or other reference)"
+      - "If needed, reference them or keep a record; then proceed"
+    what: A calm explanation and a verified decision.
+    why: Previews are where you catch surprises before they hit production.
+    how: ["Download preview", "Check usage", "Explain to customer", "Proceed or adjust"]
+    model_answer: |
+      That's expected after an import: FortiManager doesn't keep objects that no policy uses, so the first install removes them from the FortiGate. Before installing, I'd confirm they're really unused, nothing in routes or other settings referencing them, and keep the preview as a record. If the customer wants to keep some for future rules, we can reference them or recreate them later. The preview did its job: no surprises in production.
+    best_way: "Expected: unused objects aren't kept. Confirm they're unused, keep the preview, then install."
+    rubric: ["correct mechanism", "verification", "reassuring explanation"]
+  - id: M5.03.sc2
+    kind: hypothetical
+    tier: 3
+    title: What if an install breaks management?
+    situation: |
+      A colleague asks what happens if an install changes routing and the FortiGate can no longer reach FortiManager.
+    ask: Explain the recovery behaviour and your precautions.
+    right_thinking:
+      - "FGFM restarts after install; rollback-allow-reboot can reboot to recover (disabled by default)"
+      - "Precautions: preview, console access, change window"
+    what: Accurate behaviour plus practical precautions.
+    why: Management-plane changes are the riskiest installs.
+    how: ["Explain FGFM recovery", "Mention default", "Preview and console"]
+    model_answer: |
+      After each install the FortiGate restarts its FGFM tunnel. If rollback-allow-reboot is enabled on FortiManager, which it isn't by default, and the reconnection fails, the FortiGate reboots to recover its previous configuration. Either way, for changes that touch routing or interfaces on the management path, I'd read the preview carefully, do it in a window, and have console or out-of-band access ready.
+    best_way: "FGFM recovery can roll back if enabled; I still preview, use a window and keep console access."
+    rubric: ["accurate default", "precautions"]
+
+interview:
+  - id: M5.03.t01
+    stage: technical
+    question: Walk me through what happens when you install a policy package.
+    testing: Install mechanics
+    framework: "Copy → diff → push → verify"
+    model_answer: |
+      "FortiManager copies the relevant ADOM objects, templates and the policy package into the device database, in a fixed order, then retrieves the FortiGate's current configuration and installs only the difference. I always read the install preview, because it shows exactly what will change, including deletions."
+    best_way: "ADOM data into the device database, then only the diff to the FortiGate; read the preview."
+    target: "0:35"
+  - id: M5.03.t02
+    stage: technical
+    question: How do you make one policy package work for many branches?
+    testing: Scale design
+    framework: "Mapping → targets → blocks"
+    model_answer: |
+      "Normalized interfaces and dynamic objects with per-device mappings, so 'LAN' and 'BRANCH-USERS' resolve to each branch's real values, installation targets covering the branches, and policy blocks or global header and footer policies for rules everyone must have. The classic first-install failure is a missing mapping on a new branch."
+    best_way: "Per-device mappings, installation targets, and policy blocks for common rules."
+    target: "0:35"
+  - id: M5.03.t03
+    stage: technical
+    question: A FortiGate was changed locally. How do you reconcile it with FortiManager?
+    testing: Real-world operations
+    framework: "Assess → choose → prevent"
+    model_answer: |
+      "Auto-update brings the change in; if it's policy-level the package may show Conflict. I decide with the customer whether to keep it: if yes, import or recreate it in the package; if not, the next install overwrites it. Then I fix the process so changes are made in FortiManager, with access for the local admin and workspace or workflow mode."
+    best_way: "Decide keep or overwrite, bring it into the package if kept, and fix the process."
+    target: "0:40"
+
+field_reports:
+  - id: M5.03.fr1
+    title: Speed matters after a disclosure
+    body: |
+      With only **26 %** of known-exploited vulnerabilities fully remediated in the 2026 DBIR, the ability to push a hardening change or IPS policy to every FortiGate in one reviewed install is a direct risk reducer.
+    source: Verizon 2026 DBIR

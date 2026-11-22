@@ -1,0 +1,379 @@
+id: M5.01
+title: "FortiManager foundations: architecture, ADOMs, devices and provisioning"
+stage: S5
+stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
+order: 120
+est_sessions: 1
+objectives:
+  - Explain FortiManager's layers (global, ADOM and policy, device) and its two databases
+  - Design ADOMs and choose a workspace mode for a multi-admin team
+  - Add devices, use model devices for zero-touch and low-touch provisioning
+  - Pick the right tool for a change: provisioning template, CLI/Jinja/TCL script or direct device edit
+  - Explain to a customer why changes should be made on FortiManager, not on the FortiGate
+sources:
+  - "FortiManager 7.6.8 Admin Guide: Key concepts (pp. 48–65)"
+  - "FortiManager 7.6.8 Admin Guide: scripts (pp. 254–258), provisioning templates (pp. 294–297), firmware templates (pp. 359–361)"
+  - "FortiManager 7.6.8 Admin Guide: ADOMs (pp. 1061–1068), workspace (pp. 1165–1172)"
+
+units:
+  - id: M5.01.u1
+    title: How FortiManager is built
+    tier: 1
+    est_min: 12
+    body: |
+      FortiManager centrally provisions and manages FortiGates (and FortiAPs, FortiSwitches, FortiExtenders), scales to **10,000 or more devices and VDOMs**, and can act as a **local FortiGuard Distribution Server (FDS)**; FortiAnalyzer features can be enabled on it too (p. 48).
+
+      ## Three layers (pp. 53–55)
+
+      - **Global ADOM layer:** a global object database and **header and footer policies** that wrap the policy packages of many ADOMs (for example, a carrier's rules around each customer's policies).
+      - **ADOM and policy layer:** per ADOM, one **object database** shared by Policy & Objects, AP Manager, VPN Manager, FortiSwitch Manager and Extender Manager, plus the **policy packages**.
+      - **Device Manager layer:** one **device database** per managed FortiGate, holding its **entire configuration**, revisions and status.
+
+      ## Two databases, one rule
+
+      Changes in the central modules (policies, objects, VPN Manager, AP Manager…) are **copied into the device database** at the next install, **overwriting** related settings there. Some settings, like the **hostname or an interface IP**, can only be changed by editing the device database directly in Device Manager (p. 51). **Policy package changes overwrite device database changes.**
+
+      ## Protocols
+
+      Device Manager talks to FortiGates with **FGFM** (FortiGate-FortiManager protocol); the FortiGuard module uses the FortiGuard protocol; FortiAnalyzer features use the logging protocol (p. 50).
+
+      :::recall
+      Q: Where does a hostname change for one FortiGate go: policy package or device database?
+      A: The device database, edited directly in Device Manager.
+      :::
+  - id: M5.01.u2
+    title: ADOMs and workspace
+    tier: 2
+    est_min: 14
+    body: |
+      ## ADOMs (pp. 1061–1066)
+
+      - **Disabled by default.** With ADOMs off, only the **root** ADOM (type FortiGate) is visible. Unauthorised devices appear in root.
+      - Each ADOM has a **type** (FortiGate, FortiCarrier, FortiFirewall, FortiProxy, Fabric…) that decides which devices it can hold, and a **firmware version**.
+      - Administrators are tied to one or more ADOMs and only see those devices.
+      - **ADOM device mode:** *Normal* (a whole FortiGate in one ADOM) or *Advanced* (the VDOMs of one FortiGate can be split across ADOMs).
+      - **ADOM mode:** *Normal* (read/write, you manage the devices) or *Backup* (stores configurations only; FortiGates are configured locally and back up to FortiManager).
+
+      Typical designs: one ADOM per customer for an MSSP, one per region or business unit for an enterprise, or one ADOM for everything in a small estate. Remember VPN Manager settings are per ADOM, so don't move devices between ADOMs casually (p. 708).
+
+      ## Workspace modes (pp. 1165–1166)
+
+      `config system global` → `set workspace-mode {disable | normal | workflow}`
+
+      - **disable:** no locking; concurrent edits can collide.
+      - **normal (workspace):** lock an ADOM, a device or a policy package before editing. Green padlock = your lock; red = someone else's.
+      - **workflow:** lock the whole ADOM and start a **workflow session**; changes need **approval** before install.
+
+      For teams of more than one admin, workspace is the minimum; workflow suits regulated customers with change approval.
+
+      :::pitfall
+      An admin who locked a package and went home blocks everyone. Agree a habit: save, unlock, and leave a note.
+      :::
+  - id: M5.01.u3
+    title: Bringing devices in and configuring them at scale
+    tier: 2
+    est_min: 14
+    body: |
+      ## Model devices and provisioning (pp. 52–53)
+
+      A **model device** is a placeholder configured before the real FortiGate exists. When the real unit connects, **auto-link** installs the prepared settings and policies and replaces the model.
+
+      - **Zero-touch (ZTP):** no preconfiguration. Methods: **FortiCloud/FortiDeploy** (the FortiGate learns the FortiManager address from FortiCloud), **DHCP option 240/241** (only works on a FortiGate still at **factory default**, with a DHCP-client interface), or **USB** boot config.
+      - **Low-touch (LTP):** someone sets basic network settings and the FortiManager address on site.
+      - Best practice: install the policy package to the model device **before** the real one comes online, to catch errors early (p. 62).
+
+      ## Provisioning templates (pp. 294–295)
+
+      System, certificate, threat weight, IPsec tunnel, static route, BGP, SD-WAN, AP profile, FortiSwitch, FortiExtender and **CLI templates**. A **template group** assigns them together, and FortiManager installs them in the right order.
+
+      ## Scripts (pp. 254–258)
+
+      | Type | Runs on |
+      |---|---|
+      | CLI script | Device database, policy package/ADOM database, or the remote FortiGate directly |
+      | TCL script | Remote FortiGate directly only |
+      | Jinja script | ADOM database only |
+
+      ## Firmware templates (p. 359)
+
+      Define which firmware FortiGates, FortiAPs, FortiSwitches and FortiExtenders must run; assigned devices show compliance in Device & Groups.
+
+      Remote GUI access to a managed FortiGate goes through FortiManager on port **8082** by default (p. 254).
+
+      :::why
+      Q: Why prefer templates over one-off scripts for a 40-branch rollout?
+      A: Templates are assigned, versioned and re-applied consistently at every install; a script runs once and its result can drift.
+      :::
+
+cards:
+  - { id: M5.01.c01, unit: M5.01.u1, tier: 1, front: "Three FortiManager layers?", back: "Global ADOM, ADOM and policy, Device Manager." }
+  - { id: M5.01.c02, unit: M5.01.u1, tier: 2, front: "What does a device database hold?", back: "The entire configuration of one managed FortiGate (plus revisions and status)." }
+  - { id: M5.01.c03, unit: M5.01.u1, tier: 2, front: "Policy package vs device database: which wins?", back: "Policy package changes overwrite device database changes at install." }
+  - { id: M5.01.c04, unit: M5.01.u1, tier: 2, front: "Settings editable only in the device database?", back: "Per-device items like hostname and interface IPs." }
+  - { id: M5.01.c05, unit: M5.01.u1, tier: 1, front: "Protocol between FortiManager and FortiGate?", back: "FGFM (FortiGate-FortiManager)." }
+  - { id: M5.01.c06, unit: M5.01.u1, tier: 2, front: "What do global header/footer policies do?", back: "Wrap the policy packages of many ADOMs with common rules." }
+  - { id: M5.01.c07, unit: M5.01.u2, tier: 1, front: "Are ADOMs enabled by default?", back: "No. Only root is visible until enabled." }
+  - { id: M5.01.c08, unit: M5.01.u2, tier: 2, front: "ADOM device mode Advanced allows…?", back: "Splitting one FortiGate's VDOMs across ADOMs." }
+  - { id: M5.01.c09, unit: M5.01.u2, tier: 2, front: "ADOM mode Backup means…?", back: "FortiManager stores configurations only; devices are configured locally." }
+  - { id: M5.01.c10, unit: M5.01.u2, tier: 2, front: "Three workspace modes?", back: "disable, normal (lock ADOM/device/package), workflow (lock ADOM, sessions with approval)." }
+  - { id: M5.01.c11, unit: M5.01.u3, tier: 2, front: "What is a model device?", back: "A placeholder configured before the real FortiGate; auto-link installs it when the unit connects." }
+  - { id: M5.01.c12, unit: M5.01.u3, tier: 2, front: "Three ZTP methods?", back: "FortiCloud/FortiDeploy, DHCP option 240/241, USB." }
+  - { id: M5.01.c13, unit: M5.01.u3, tier: 3, front: "DHCP option 240/241 limitation?", back: "Only works on FortiGates at factory default with a DHCP-client interface." }
+  - { id: M5.01.c14, unit: M5.01.u3, tier: 2, front: "Where can Jinja and TCL scripts run?", back: "Jinja: ADOM database only. TCL: remote FortiGate directly only." }
+  - { id: M5.01.c15, unit: M5.01.u3, tier: 2, front: "What does a template group do?", back: "Assigns several provisioning templates together and installs them in the correct order." }
+
+quiz:
+  - id: M5.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: Where is the full configuration of each managed FortiGate stored in FortiManager?
+    options:
+      - { id: a, text: "In its device database (Device Manager layer)", correct: true }
+      - { id: b, text: "In the ADOM object database", why_wrong: "That holds shared objects and policy packages." }
+      - { id: c, text: "Only on the FortiGate", why_wrong: "FortiManager keeps a copy per device." }
+      - { id: d, text: "In the global ADOM", why_wrong: "The global ADOM holds global objects and header/footer policies." }
+    explanation: One device database per FortiGate.
+    source: FortiManager 7.6.8 Admin Guide p. 51
+  - id: M5.01.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: An admin changes an address object in Device Manager's device database, then installs a policy package that also defines it. Result?
+    options:
+      - { id: a, text: "The policy package version overwrites the device database change", correct: true }
+      - { id: b, text: "The device database change wins", why_wrong: "Policy package changes overwrite it." }
+      - { id: c, text: "Install fails", why_wrong: "It doesn't fail; it overwrites." }
+      - { id: d, text: "Both versions are kept", why_wrong: "One object, one definition." }
+    explanation: Make shared changes in Policy & Objects.
+    source: FortiManager 7.6.8 Admin Guide p. 51
+  - id: M5.01.q03
+    type: single
+    tier: 2
+    stem: An MSSP wants each customer's admins to see only their own FortiGates. What do you use?
+    options:
+      - { id: a, text: "ADOMs, with admins assigned per ADOM", correct: true }
+      - { id: b, text: "Workflow mode", why_wrong: "That controls approval, not visibility." }
+      - { id: c, text: "Policy blocks", why_wrong: "They reuse policies; they don't separate admins." }
+      - { id: d, text: "Device groups only", why_wrong: "Groups organise; ADOMs restrict access." }
+    explanation: ADOMs separate administration.
+    source: FortiManager 7.6.8 Admin Guide p. 1061
+  - id: M5.01.q04
+    type: single
+    tier: 2
+    stem: A bank requires every firewall change to be approved before install. Which workspace mode?
+    options:
+      - { id: a, text: "Workflow", correct: true }
+      - { id: b, text: "Normal (workspace)", why_wrong: "Locks but no approval sessions." }
+      - { id: c, text: "Disable", why_wrong: "No control at all." }
+      - { id: d, text: "Backup ADOM mode", why_wrong: "Backup mode doesn't manage changes from FortiManager." }
+    explanation: Workflow sessions need approval.
+    source: FortiManager 7.6.8 Admin Guide p. 1165
+  - id: M5.01.q05
+    type: single
+    tier: 3
+    stem: ZTP with DHCP option 240/241 fails on a FortiGate that a technician already logged into and set a password on. Why?
+    options:
+      - { id: a, text: "Option 240/241 only works on FortiGates at factory default", correct: true }
+      - { id: b, text: "DHCP options need FortiCloud", why_wrong: "They're a separate method." }
+      - { id: c, text: "The model device is missing a firmware template", why_wrong: "Not the cause." }
+      - { id: d, text: "FGFM needs ADOMs enabled", why_wrong: "No such requirement." }
+    explanation: Any modification disables option 240/241 acceptance.
+    source: FortiManager 7.6.8 Admin Guide p. 53
+  - id: M5.01.q06
+    type: multi
+    tier: 2
+    stem: Which are ZTP methods for FortiGates with FortiManager? Select all that apply.
+    options:
+      - { id: a, text: "FortiCloud / FortiDeploy", correct: true }
+      - { id: b, text: "DHCP option 240/241", correct: true }
+      - { id: c, text: "USB boot configuration", correct: true }
+      - { id: d, text: "Typing the FortiManager IP on site", why_wrong: "That's low-touch provisioning." }
+    explanation: Zero-touch needs no on-site configuration.
+    source: FortiManager 7.6.8 Admin Guide pp. 52–53
+  - id: M5.01.q07
+    type: single
+    tier: 2
+    stem: You need a script that uses loops and variables and runs against the ADOM database. Which type?
+    options:
+      - { id: a, text: "Jinja", correct: true }
+      - { id: b, text: "TCL", why_wrong: "TCL runs only on the remote FortiGate directly." }
+      - { id: c, text: "CLI script on the remote FortiGate", why_wrong: "Wrong target." }
+      - { id: d, text: "CLI template", why_wrong: "A template, not a script against the ADOM database." }
+    explanation: Jinja scripts run on the ADOM database.
+    source: FortiManager 7.6.8 Admin Guide p. 258
+  - id: M5.01.q08
+    type: single
+    tier: 3
+    stem: Best practice before a model device's real FortiGate comes online?
+    options:
+      - { id: a, text: "Install the policy package to the model device first, to catch errors before auto-link", correct: true }
+      - { id: b, text: "Delete the model device", why_wrong: "Then nothing auto-links." }
+      - { id: c, text: "Disable ADOMs", why_wrong: "Unrelated." }
+      - { id: d, text: "Run a TCL script on it", why_wrong: "TCL runs only on real devices." }
+    explanation: Validate before the device arrives.
+    source: FortiManager 7.6.8 Admin Guide p. 62
+  - id: M5.01.q09
+    type: single
+    tier: 2
+    stem: What does ADOM device mode 'Advanced' allow?
+    options:
+      - { id: a, text: "VDOMs of one FortiGate in different ADOMs", correct: true }
+      - { id: b, text: "Workflow approvals", why_wrong: "That's workspace mode." }
+      - { id: c, text: "Mixing FortiGate and FortiProxy in one ADOM", why_wrong: "ADOM type decides devices." }
+      - { id: d, text: "Backup-only management", why_wrong: "That's ADOM mode Backup." }
+    explanation: Advanced splits VDOMs.
+    source: FortiManager 7.6.8 Admin Guide pp. 1061, 1066
+
+labs:
+  - id: M5.01.lab1
+    title: Enable ADOMs and workspace locking
+    goal: Prepare a FortiManager for a team of admins working on separate regions.
+    worked:
+      config: |
+        config system global
+            set adom-status enable
+            set workspace-mode normal
+        end
+      notes:
+        - "Enabling ADOMs logs administrators out; plan it."
+        - "Then create ADOMs per region (System Settings > ADOMs) and assign admins to them."
+        - "Use workflow instead of normal if changes need approval."
+    faded:
+      template: |
+        config system global
+            set {{adom-status}} enable
+            set {{workspace-mode}} normal
+        end
+    solo:
+      prompt: "Switch the FortiManager to workflow mode for change approval."
+      required: ["config system global", "set workspace-mode workflow"]
+      solution: |
+        config system global
+            set workspace-mode workflow
+        end
+      notes: "In workflow mode, admins lock the ADOM, start a session, and submit changes for approval."
+  - id: M5.01.lab2
+    title: A CLI template for every branch
+    goal: Push the same NTP and admin timeout settings to all branch FortiGates through a CLI template assigned to the branch device group.
+    worked:
+      config: |
+        # Device Manager > Provisioning Templates > CLI Templates > Create New
+        # Name: branch-baseline   Type: CLI script
+        config system ntp
+            set ntpsync enable
+            set type custom
+            config ntpserver
+                edit 1
+                    set server "ntp.corp.example"
+                next
+            end
+        end
+        config system global
+            set admintimeout 15
+        end
+        # Assign to device group "Branches", then install device settings
+      notes:
+        - "Templates are re-applied at each install, so settings don't drift."
+        - "Preview the install before pushing to 40 branches."
+    faded:
+      template: |
+        config system {{ntp}}
+            set {{ntpsync}} enable
+        end
+        config system global
+            set {{admintimeout}} 15
+        end
+    solo:
+      prompt: "Write a CLI template body that enables strong-crypto and sets the admin idle timeout to 10 minutes."
+      required: ["config system global", "set strong-crypto enable", "set admintimeout 10"]
+      solution: |
+        config system global
+            set strong-crypto enable
+            set admintimeout 10
+        end
+      notes: "Preview the install: FortiManager pushes only the difference."
+
+scenarios:
+  - id: M5.01.sc1
+    kind: situation
+    tier: 3
+    title: '"Someone changed the firewall directly"'
+    situation: |
+      A customer's local admin keeps making quick changes directly on branch FortiGates. FortiManager shows conflicts, and an install last week removed one of his changes.
+    ask: Explain what happened and fix the process.
+    right_thinking:
+      - "Auto-update brings local changes back to FortiManager, but policy-level changes can conflict"
+      - "Installs push FortiManager's version, overwriting local policy changes"
+      - "Agree the rule: change on FortiManager; give the local admin the right access there"
+    what: A clear explanation and a working process.
+    why: Two sources of truth guarantee lost changes.
+    how: ["Show the conflict and revision history", "Explain overwrite behaviour", "Admin profile and ADOM access for the local admin", "Optional: workflow approvals"]
+    model_answer: |
+      FortiManager keeps the source of truth. When he changes a FortiGate directly, auto-update sends it back, but policy-level changes can conflict with the policy package, and the next install pushes FortiManager's version, which is why his change disappeared. The fix is the process, not him: give him an account on FortiManager with access to his ADOM or devices, so changes are made there, and if they want control, workflow approvals. The guide says it plainly: modify settings on FortiManager, not on the FortiGate.
+    best_way: "FortiManager is the source of truth; installs overwrite local policy changes. Give him FortiManager access and make changes there."
+    rubric: ["accurate mechanism", "non-blaming", "process fix"]
+  - id: M5.01.sc2
+    kind: situation
+    tier: 2
+    title: ADOM design for a growing customer
+    situation: |
+      A retailer with 120 stores in three countries, two data centres and separate network teams per country asks how to organise FortiManager.
+    ask: Propose an ADOM and workspace design.
+    right_thinking:
+      - "ADOMs per country team (access separation), or one ADOM with device groups if one team"
+      - "Shared standards: global header/footer or policy blocks"
+      - "Workspace mode for concurrent admins"
+      - "Consider VPN Manager per-ADOM scope for the DC hubs"
+    what: A design with reasons.
+    why: ADOM choices are hard to change later.
+    how: ["Ask about team structure and policy differences", "ADOMs per country", "Global header/footer for common rules", "Workspace normal or workflow"]
+    model_answer: |
+      With separate teams per country, I'd create an ADOM per country so each team only sees its stores, and keep the data-centre hubs where the VPN design lives, since VPN Manager settings are per ADOM. Common rules every store must have go in global header and footer policies, or policy blocks. Workspace mode on, so admins lock what they edit, and workflow if they need approvals. If it turns out to be one team after all, one ADOM with device groups per country is simpler.
+    best_way: "ADOM per country team, common rules as global header/footer or policy blocks, workspace locking on."
+    rubric: ["asks structure", "access separation", "common standards", "locking"]
+
+interview:
+  - id: M5.01.t01
+    stage: technical
+    question: Explain how FortiManager stores and pushes configuration.
+    testing: Core architecture
+    framework: "Layers → databases → install"
+    model_answer: |
+      "Each ADOM has an object database and policy packages, and each managed FortiGate has a device database with its full configuration. At install, FortiManager copies the relevant ADOM objects and policies into the device database, overwriting related settings, then compares it with the real FortiGate and installs only the difference. Per-device items like the hostname or interface IPs are edited in the device database directly."
+    best_way: "ADOM database plus a device database per FortiGate; install copies ADOM data in and pushes the diff."
+    target: "0:45"
+  - id: M5.01.t02
+    stage: technical
+    question: How would you deploy 100 branch FortiGates with FortiManager?
+    testing: Scale provisioning
+    framework: "Model devices → templates → ZTP → install"
+    model_answer: |
+      "Create model devices with their serial numbers, assign a template group, system, SD-WAN, IPsec and BGP templates, and the policy package, and install to the model devices first to catch errors. Then zero-touch: FortiDeploy or DHCP option 240/241 for factory-default units, so each FortiGate finds FortiManager, auto-links and gets its configuration. Firmware templates keep versions compliant."
+    best_way: "Model devices, template groups and the policy package, pre-install, then ZTP and auto-link."
+    target: "0:50"
+  - id: M5.01.t03
+    stage: technical
+    question: What are ADOMs and workspace mode for?
+    testing: Multi-admin governance
+    framework: "Two definitions"
+    model_answer: |
+      "ADOMs separate devices and objects into administrative domains, so admins only see what they're assigned, per customer or region. Workspace mode prevents collisions: admins lock an ADOM, device or package before editing, and workflow mode adds approval sessions before install."
+    best_way: "ADOMs separate who sees what; workspace locks prevent collisions; workflow adds approvals."
+    target: "0:30"
+  - id: M5.01.h01
+    stage: hm
+    question: Have you worked with FortiManager?
+    testing: Honest experience
+    framework: "Honest scope → specifics → refresh"
+    model_answer: |
+      "Yes, in Fortinet support cases, customer deployments and labs, and I was NSE 5 FortiManager certified. That certification expired, and I'm re-studying it now on 7.6: ADOMs, the device and ADOM databases, installs and templates."
+    best_way: "Support cases, deployments and labs; NSE 5 FortiManager, now refreshing on 7.6."
+    target: "0:25"
+
+field_reports:
+  - id: M5.01.fr1
+    title: Consistency is a security control
+    body: |
+      Exploitation was the top way in for attackers in the 2026 DBIR (**31 %**). Central management turns "patch and harden every branch" from 120 manual jobs into one template and one install, with revision history to prove it.
+    source: Verizon 2026 DBIR

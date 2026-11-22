@@ -1,0 +1,291 @@
+id: M5.04
+title: "FortiManager SD-WAN and VPN Manager, FortiGuard, firmware and HA"
+stage: S5
+stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
+order: 124
+est_sessions: 1
+objectives:
+  - Use the SD-WAN overlay orchestration wizard and know what it does and doesn't configure
+  - Plan overlay addressing, loopbacks, BGP AS and branch IDs before running the wizard
+  - Build IPsec VPN communities with VPN Manager and install them through policy packages
+  - Run FortiManager as a local FDS and manage firmware with templates
+  - Design FortiManager HA and explain how failover works
+sources:
+  - "FortiManager 7.6.8 Admin Guide: SD-WAN overlay orchestration (pp. 584–592)"
+  - "FortiManager 7.6.8 Admin Guide: VPN Manager (pp. 708–712)"
+  - "FortiManager 7.6.8 Admin Guide: FortiGuard local FDS (pp. 913–916), firmware templates (pp. 359–361), High Availability (pp. 1217–1222)"
+
+units:
+  - id: M5.04.u1
+    title: SD-WAN overlays at scale
+    tier: 2
+    est_min: 14
+    body: |
+      ## Overlay orchestration (pp. 584–586)
+
+      The **SD-WAN overlay template** (SD-WAN Manager > Overlay Orchestration) is a wizard that builds hub-and-branch overlays with Fortinet's recommended **IPsec and BGP** design. It **generates IPsec, BGP and CLI provisioning templates** and assigns them to the hub and branch devices.
+
+      What it **doesn't** do:
+
+      - It **doesn't provide SD-WAN intelligence**. You still need an **SD-WAN template** (members, zones, health checks, rules).
+      - It assumes the hub and branches **can already reach each other** (static routes, BGP or DHCP-provided routes).
+
+      ## Plan before you click (p. 586)
+
+      - Import the hub and branch FortiGates (or model devices) first.
+      - **Overlay address space:** default **10.10.0.0/16**.
+      - **Loopback address space:** default **172.16.0.0/16**.
+      - **BGP AS** for the region: default **65000**.
+      - **branch_id:** a metadata variable each branch needs, unique per branch; *Automatic Branch ID Assignment* can fill it for a branch device group (p. 585).
+
+      ## Then the SD-WAN template
+
+      Members and zones (Underlay and Overlay), health checks to the hubs and to SaaS, and rules per application, exactly as in M8.03, defined once and assigned to device groups. Template order at install puts the SD-WAN template after IPsec, static route and BGP templates (p. 61).
+
+      :::pitfall
+      Overlapping the wizard's default 10.10.0.0/16 or 172.16.0.0/16 with the customer's existing networks breaks routing later. Check their IP plan first.
+      :::
+
+      :::recall
+      Q: The overlay wizard finished. Why does traffic still not prefer the overlay for the ERP?
+      A: The overlay template has no SD-WAN intelligence; you need an SD-WAN template with rules.
+      :::
+  - id: M5.04.u2
+    title: VPN Manager
+    tier: 2
+    est_min: 10
+    body: |
+      ## How central VPN works (pp. 708–709)
+
+      1. **Enable central VPN management** (VPN Manager > IPsec VPN, or when editing the ADOM).
+      2. Create an **IPsec VPN community** (a topology: for example a star of spokes to a hub, or a full mesh, or dial-up) and add the gateways.
+      3. Use the VPN objects in **policies** in the policy package.
+      4. Add the devices to the package's **installation targets** and **install the policy package**: that's what installs the VPN settings.
+
+      VPN Manager also shows an **IPsec VPN map** (topology or traffic view) and manages **Agentless VPN** settings, portals and monitoring.
+
+      Settings are **per ADOM**: after configuring VPN for FortiGates in an ADOM, don't move them to another ADOM (p. 708).
+
+      ## VPN Manager or overlay templates?
+
+      For SD-WAN hub-and-spoke designs with BGP, the overlay orchestration wizard and provisioning templates are Fortinet's current path; VPN Manager communities suit classic site-to-site topologies and Agentless VPN management. Don't mix both on the same tunnels.
+
+      :::why
+      Q: Why does a VPN community need a policy package install?
+      A: VPN Manager settings are installed through the policy package; without policies using them and an install, nothing reaches the FortiGates.
+      :::
+  - id: M5.04.u3
+    title: FortiGuard, firmware and FortiManager HA
+    tier: 3
+    est_min: 14
+    body: |
+      ## Local FDS (pp. 913–916)
+
+      FortiManager can act as a **local FortiGuard Distribution Server**: it syncs updates (AV, IPS, web filter lookups, firmware) from the FDN and serves your FortiGates, which helps when they **can't reach the internet** and reduces internet load. Prerequisites: devices registered with valid FortiGuard licences, the built-in FDS enabled and configured, and each FortiGate pointed at it.
+
+      ## Firmware templates (pp. 359–360)
+
+      Define the firmware version FortiGates, FortiAPs, FortiSwitches and FortiExtenders must run, assign them to devices, and track compliance in Device & Groups. Upgrade paths still matter: check the Fortinet upgrade path tool.
+
+      ## FortiManager HA (pp. 1217–1219)
+
+      - Protects the **FortiManager database**; up to **five units**: one primary and up to four backups, **same series**.
+      - **FortiAnalyzer features must be disabled** before forming a cluster.
+      - Units can be in **different locations** (geographic redundancy).
+      - Admins and managed devices work with the **primary**; FortiGuard updates can come from primary or secondaries.
+      - Heartbeat and sync use **TCP port 5199** between the configured peer IPs.
+      - Failover: **manual** (you promote a secondary) or **automatic with VRRP**.
+
+      :::tip
+      In a design document, state which failover mode you chose and why: manual is simpler and avoids unwanted role changes; VRRP gives automatic recovery.
+      :::
+
+cards:
+  - { id: M5.04.c01, unit: M5.04.u1, tier: 2, front: "What does the SD-WAN overlay template generate?", back: "IPsec, BGP and CLI provisioning templates for hub and branches." }
+  - { id: M5.04.c02, unit: M5.04.u1, tier: 2, front: "What doesn't the overlay template do?", back: "No SD-WAN intelligence; needs an SD-WAN template. Also assumes hub-branch reachability." }
+  - { id: M5.04.c03, unit: M5.04.u1, tier: 2, front: "Overlay wizard defaults?", back: "Overlay 10.10.0.0/16, loopbacks 172.16.0.0/16, BGP AS 65000." }
+  - { id: M5.04.c04, unit: M5.04.u1, tier: 3, front: "What is branch_id?", back: "A metadata variable, unique per branch; can be auto-assigned for a branch device group." }
+  - { id: M5.04.c05, unit: M5.04.u2, tier: 2, front: "Four steps to install a VPN community?", back: "Enable central VPN, create community, use in policies, add targets and install the policy package." }
+  - { id: M5.04.c06, unit: M5.04.u2, tier: 2, front: "Why not move VPN-managed FortiGates between ADOMs?", back: "VPN Manager settings are specific to the ADOM." }
+  - { id: M5.04.c07, unit: M5.04.u3, tier: 2, front: "Why use FortiManager as local FDS?", back: "Serve FortiGuard updates when FortiGates can't reach the internet; less internet load." }
+  - { id: M5.04.c08, unit: M5.04.u3, tier: 2, front: "Max FortiManager HA cluster size?", back: "Five: one primary, up to four backups, same series." }
+  - { id: M5.04.c09, unit: M5.04.u3, tier: 2, front: "What must be disabled before FMG HA?", back: "FortiAnalyzer features." }
+  - { id: M5.04.c10, unit: M5.04.u3, tier: 3, front: "FMG HA heartbeat port?", back: "TCP 5199." }
+  - { id: M5.04.c11, unit: M5.04.u3, tier: 2, front: "FMG HA failover modes?", back: "Manual or automatic (VRRP)." }
+
+quiz:
+  - id: M5.04.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: After running the SD-WAN overlay wizard, what else is required for traffic steering?
+    options:
+      - { id: a, text: "An SD-WAN template with members, zones, health checks and rules", correct: true }
+      - { id: b, text: "Nothing; the overlay includes SD-WAN rules", why_wrong: "The guide states it provides no SD-WAN intelligence." }
+      - { id: c, text: "A VPN Manager community", why_wrong: "The overlay already builds the tunnels." }
+      - { id: d, text: "A firmware template", why_wrong: "Unrelated to steering." }
+    explanation: Overlay = tunnels and BGP; SD-WAN template = intelligence.
+    source: FortiManager 7.6.8 Admin Guide p. 584
+  - id: M5.04.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: What's the default overlay address space used by the overlay template?
+    options:
+      - { id: a, text: "10.10.0.0/16", correct: true }
+      - { id: b, text: "172.16.0.0/16", why_wrong: "That's the loopback default." }
+      - { id: c, text: "192.168.0.0/16", why_wrong: "Not the default." }
+      - { id: d, text: "100.64.0.0/10", why_wrong: "Not the default." }
+    explanation: Check overlaps with the customer's plan.
+    source: FortiManager 7.6.8 Admin Guide p. 586
+  - id: M5.04.q03
+    type: numeric
+    tier: 2
+    stem: What BGP AS number does the overlay template use by default?
+    answer: 65000
+    explanation: Default 65000 for the region.
+    source: FortiManager 7.6.8 Admin Guide p. 586
+  - id: M5.04.q04
+    type: single
+    tier: 2
+    stem: You created a VPN community but nothing appears on the FortiGates. Most likely missing step?
+    options:
+      - { id: a, text: "Policies using the VPN and a policy package install to the targets", correct: true }
+      - { id: b, text: "A reboot of each FortiGate", why_wrong: "Not required." }
+      - { id: c, text: "Enabling ADOMs", why_wrong: "Central VPN works with ADOMs disabled too." }
+      - { id: d, text: "A local FDS", why_wrong: "Unrelated." }
+    explanation: VPN settings are installed with the policy package.
+    source: FortiManager 7.6.8 Admin Guide p. 709
+  - id: M5.04.q05
+    type: single
+    tier: 2
+    stem: Branch FortiGates in a factory network have no internet access but need IPS updates. Best option?
+    options:
+      - { id: a, text: "FortiManager as a local FDS", correct: true }
+      - { id: b, text: "Manual signature uploads forever", why_wrong: "Not scalable." }
+      - { id: c, text: "Disable IPS", why_wrong: "Removes protection." }
+      - { id: d, text: "FortiAnalyzer", why_wrong: "Logs, not updates." }
+    explanation: Local FDS serves updates.
+    source: FortiManager 7.6.8 Admin Guide p. 913
+  - id: M5.04.q06
+    type: multi
+    tier: 2
+    stem: Which are true about FortiManager HA? Select all that apply.
+    options:
+      - { id: a, text: "Up to five units: one primary and up to four backups", correct: true }
+      - { id: b, text: "FortiAnalyzer features must be disabled first", correct: true }
+      - { id: c, text: "Units can be in different locations", correct: true }
+      - { id: d, text: "Managed FortiGates load-balance across all units for configuration pushes", why_wrong: "Devices work with the primary for management." }
+    explanation: Same series, primary for management.
+    source: FortiManager 7.6.8 Admin Guide p. 1217
+  - id: M5.04.q07
+    type: single
+    tier: 3
+    stem: Which port do FortiManager HA heartbeats use?
+    options:
+      - { id: a, text: "TCP 5199", correct: true }
+      - { id: b, text: "TCP/UDP 703", why_wrong: "That's FortiGate FGCP." }
+      - { id: c, text: "UDP 5353", why_wrong: "mDNS." }
+      - { id: d, text: "TCP 443", why_wrong: "Not for heartbeats." }
+    explanation: TCP 5199.
+    source: FortiManager 7.6.8 Admin Guide p. 1219
+  - id: M5.04.q08
+    type: single
+    tier: 3
+    stem: Each branch in an overlay template needs a unique value of which variable?
+    options:
+      - { id: a, text: "branch_id", correct: true }
+      - { id: b, text: "hostname only", why_wrong: "The template uses the branch_id metadata variable." }
+      - { id: c, text: "AS number", why_wrong: "The region shares an AS by default." }
+      - { id: d, text: "Loopback mask", why_wrong: "Not the unique key." }
+    explanation: Unique branch_id, auto-assignable.
+    source: FortiManager 7.6.8 Admin Guide p. 585
+
+labs:
+  - id: M5.04.lab1
+    title: Plan an overlay rollout
+    goal: Write the planning sheet you'd fill in before running the overlay wizard for 2 hubs and 30 branches.
+    worked:
+      config: |
+        # Overlay planning sheet
+        Hubs: HUB-DC1, HUB-DC2 (imported, reachable from branches over ISP links)
+        Branch device group: BRANCHES (30 model devices with serials)
+        Overlay space: 10.200.0.0/16   (default 10.10.0.0/16 overlaps the customer's DC)
+        Loopback space: 172.30.0.0/16  (default 172.16.0.0/16 overlaps the VPN pool)
+        BGP AS: 65010                  (65000 already used by the MPLS provider)
+        branch_id: Automatic Branch ID Assignment on BRANCHES
+        Next: SD-WAN template (Underlay/Overlay zones, health checks, rules) assigned to BRANCHES
+      notes:
+        - "Every default was checked against the customer's IP and AS plan."
+        - "The overlay wizard builds tunnels and BGP; the SD-WAN template adds intelligence."
+    faded:
+      template: |
+        Overlay space: {{10.200.0.0/16}}
+        Loopback space: {{172.30.0.0/16}}
+        BGP AS: {{65010}}
+        branch_id: {{Automatic}} Branch ID Assignment
+    solo:
+      prompt: "List the four values you must check against the customer's network before running the overlay wizard (one per line): overlay space, loopback space, BGP AS, branch IDs."
+      required: ["overlay", "loopback", "bgp as", "branch"]
+      solution: |
+        overlay space
+        loopback space
+        BGP AS
+        branch IDs
+      notes: "And confirm hub-branch reachability first."
+
+scenarios:
+  - id: M5.04.sc1
+    kind: situation
+    tier: 3
+    title: The overlay that routes nowhere
+    situation: |
+      After the overlay wizard and install, tunnels are up but some branches can't reach a data-centre subnet 172.16.40.0/24.
+    ask: What's your hypothesis and fix?
+    right_thinking:
+      - "Default loopback space 172.16.0.0/16 overlaps the DC subnet"
+      - "BGP advertises loopbacks; routing conflict"
+      - "Re-plan loopback space and reinstall in a window"
+    what: Root cause and a planned correction.
+    why: Defaults that overlap real networks are a classic rollout trap.
+    how: ["Check routing table at a branch for 172.16.40.0", "Compare with loopback allocation", "Change loopback range in template", "Reinstall in a window"]
+    model_answer: |
+      My first suspect is the default loopback range: the overlay template uses 172.16.0.0/16, which overlaps the customer's 172.16.40.0/24. The branches may be routing it towards a loopback instead of the DC. I'd confirm with the routing table at a branch, then change the template's loopback space to an unused range and reinstall in a window. And I'd add "check every default against the IP plan" to our checklist.
+    best_way: "The default 172.16.0.0/16 loopbacks overlap the DC subnet; re-plan and reinstall."
+    rubric: ["correct hypothesis", "proof", "planned fix", "prevention"]
+
+interview:
+  - id: M5.04.t01
+    stage: technical
+    question: How would you roll out SD-WAN to many branches with FortiManager?
+    testing: Central SD-WAN deployment
+    framework: "Plan → overlay → SD-WAN template → install"
+    model_answer: |
+      "Plan the overlay and loopback ranges, BGP AS and branch IDs against the customer's IP plan. Run the overlay orchestration wizard, which generates the IPsec, BGP and CLI templates for hubs and branches. Then an SD-WAN template with zones, health checks and rules, because the overlay itself has no SD-WAN intelligence. Assign everything to device groups, pre-install to model devices, then zero-touch the branches."
+    best_way: "Plan addressing, overlay wizard for tunnels and BGP, SD-WAN template for intelligence, then ZTP."
+    target: "0:50"
+  - id: M5.04.t02
+    stage: technical
+    question: How does FortiManager HA work?
+    testing: Platform resilience
+    framework: "Facts"
+    model_answer: |
+      "Up to five units of the same series, one primary and up to four backups, possibly in different locations. The primary's database is synchronised to the backups over TCP 5199. Admins and FortiGates use the primary. Failover is manual or automatic with VRRP. FortiAnalyzer features must be off to form the cluster."
+    best_way: "Primary plus up to four backups, sync on 5199, manual or VRRP failover."
+    target: "0:35"
+  - id: M5.04.t03
+    stage: technical
+    question: When would you use FortiManager as a local FortiGuard server?
+    testing: Practical use case
+    framework: "Use case → prerequisites"
+    model_answer: |
+      "When FortiGates can't reach the internet, like OT or air-gapped sites, or to cut internet load. FortiManager syncs updates from FortiGuard and serves them. The devices still need valid licences, the built-in FDS must be enabled, and each FortiGate pointed at it."
+    best_way: "Isolated networks or lower internet load; licences, FDS enabled and devices pointed at it."
+    target: "0:30"
+
+field_reports:
+  - id: M5.04.fr1
+    title: Isolated networks still need fresh signatures
+    body: |
+      With exploitation the top initial access vector (**31 %**, 2026 DBIR), OT and isolated sites can't wait for manual updates. A local FDS keeps IPS and AV current without opening them to the internet.
+    source: Verizon 2026 DBIR
