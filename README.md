@@ -9,7 +9,7 @@ An intensive, offline study engine for Fortinet Professional Services interviews
 
 ## Run it
 
-**Windows:** unzip the release and double-click `fortitatake.exe`. It opens its own window (WebView2, built into Windows 10/11); if WebView2 is missing it opens your default browser instead. Progress is saved in `%APPDATA%\FortiTatake\events.jsonl`. Back it up from Settings.
+**Windows:** unzip `fortitatake-vX.Y.Z-windows-setup.zip` and run `FortiTatake-Setup-vX.Y.Z.exe`. It installs for your user only (no administrator rights) into `%LOCALAPPDATA%\Programs\FortiTatake`, with Start menu and optional desktop shortcuts and an entry in *Settings > Apps* for uninstalling. SmartScreen may warn because the installer isn't code-signed: *More info > Run anyway*. To update, run the new installer over the old one. The app opens its own window (WebView2, built into Windows 10/11), or your default browser if WebView2 is missing. Progress is saved in `%APPDATA%\FortiTatake\events.jsonl` and is kept across updates and uninstalls (unless you choose to delete it). Back it up from Settings.
 
 **Android:** install `fortitatake-v0.3.0.apk` (allow installs from your browser or file manager). Then on the PC: Settings → Sync → Turn on sync → Pair a phone, and on the phone: Settings → Sync → Scan the QR code.
 
@@ -19,7 +19,7 @@ Flags: `-browser` (use the browser instead of the window), `-data <dir>`, `-port
 
 ```
 python3 tools/build_content.py          # lint content/*.yaml and write web/content/bundle.json
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H windowsgui -s -w" -o dist/fortitatake.exe .
+tools/build_windows.sh                  # exe + NSIS installer + dist/fortitatake-vX.Y.Z-windows-setup.zip (needs makensis)
 go run . -browser                       # any OS, opens in your browser
 go test ./internal/...                  # sync protocol tests
 ANDROID_HOME=~/Android/Sdk tools/build_android.sh   # APK into dist/

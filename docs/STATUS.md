@@ -62,6 +62,11 @@
 - The device token lives in the app's private storage, not Android Keystore.
 - Backup restore (import) and `/v1/blobs` are not built yet.
 
+### Release convention (standing)
+
+- **Windows is always delivered as a zip containing an installer:** `fortitatake-vX.Y.Z-windows-setup.zip` with `FortiTatake-Setup-vX.Y.Z.exe` (NSIS, per-user, no admin) and `INSTALL.txt`. Build with `tools/build_windows.sh`; the script is `installer/fortitatake.nsi`.
+- Android is delivered as `fortitatake-vX.Y.Z.apk` from `tools/build_android.sh`.
+
 ## Amendments to the blueprint
 
 1. **All learning logic lives in the shared web JS** (FSRS, projections, planner, XP, medals, mastery). The Go core only stores events, serves content, opens the window and, later, syncs. Android will reuse the same `web/` folder unchanged.
