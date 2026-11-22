@@ -48,6 +48,13 @@
 - Two modules: M4.07 Certificates and SSL inspection (pp. 3048–3060, 4411–4436), M4.08 Security profiles (pp. 2480–2850, 3034, 3125).
 - Labs that need FortiGuard category IDs say so: confirm IDs on the unit.
 
+### v0.3.0
+
+- Four stages: interview track (I2 hiring manager, I3 technical panel), S11 (M11.02 implementation and migrations, M11.04 design and customer handling), S5 FortiManager (M5.01, M5.03, M5.04), S6 FortiAnalyzer (M6.01, M6.03, M6.04).
+- Merges: M11.2+M11.3 → M11.02; M11.4+M11.5 → M11.04; FMG M5.1+M5.2 → M5.01, M5.3 → M5.03, M5.4+M5.5 → M5.04; FAZ M6.1+M6.2 → M6.01, M6.3 → M6.03, M6.4+M6.5 → M6.04.
+- Sources: FortiManager 7.6.8 and FortiAnalyzer 8.0.2 Admin Guides (printed page = PDF page in the chapters used); super-cv evidence for interview stories.
+- Interview modules I2/I3 sort right after I1 (order 12, 14).
+
 ### P2 gaps
 
 - First real-device run pending; if the engine fails to start, the app shows its output on screen.
@@ -67,33 +74,45 @@
 
 ## Content
 
-Sprint order: the first six sorties (about 24 hours) come first; v0.2.1 and v0.2.2 add five more (about 20 hours).
+Sprint order follows the `order` field: interview track first (I1–I3), then foundations, FortiGate core, SD-WAN, PS mastery, FortiManager, FortiAnalyzer.
 
 | # | Module | Cards | Quiz | Labs | Situations | Interview items |
 |---|---|---|---|---|---|---|
 | 1 | I1 Kickoff: recruiter screen and why you're a strong PS asset | 15 | 12 | 0 | 3 | 18 |
-| 2 | M1.03 Transport, state and NAT theory | 20 | 20 | 2 | 3 | 5 |
-| 3 | M1.04 Routing fundamentals and the FortiGate route lookup | 20 | 19 | 2 | 3 | 5 |
-| 4 | M4.03 FortiGate firewall policies, objects and NAT | 22 | 21 | 3 | 3 | 6 |
-| 5 | M4.12 FortiGate diagnostics: debug flow, sniffer and sessions | 20 | 19 | 3 | 3 | 5 |
-| 6 | M11.01 PS delivery: kickoff to handover, plus the STAR bank | 18 | 14 | 2 | 3 | 12 |
-| 7 | M4.09 IPsec VPN: build, verify and troubleshoot | 19 | 14 | 2 | 3 | 5 |
-| 8 | M4.10 High availability: FGCP clusters, failover and upgrades | 20 | 15 | 2 | 3 | 5 |
-| 9 | M8.03 SD-WAN: members, health checks, rules and troubleshooting | 20 | 14 | 2 | 3 | 5 |
-| 10 | M4.07 Certificates and SSL inspection | 19 | 13 | 2 | 3 | 5 |
-| 11 | M4.08 Security profiles: AV, web and DNS filter, application control, IPS | 19 | 13 | 2 | 3 | 5 |
-| | **Total** | **212** | **174** | **22** | **33** | **76** |
+| 2 | I2 Hiring manager: prove you can deliver, own customers and ramp fast | 14 | 10 | 0 | 3 | 15 |
+| 3 | I3 Technical panel: whiteboard designs and live troubleshooting | 12 | 10 | 0 | 3 | 12 |
+| 4 | M1.03 Transport, state and NAT theory | 20 | 20 | 2 | 3 | 5 |
+| 5 | M1.04 Routing fundamentals and the FortiGate route lookup | 20 | 19 | 2 | 3 | 5 |
+| 6 | M4.03 FortiGate firewall policies, objects and NAT | 22 | 21 | 3 | 3 | 6 |
+| 7 | M4.12 FortiGate diagnostics: debug flow, sniffer and sessions | 20 | 19 | 3 | 3 | 5 |
+| 8 | M11.01 PS delivery: from kickoff to handover, plus your STAR bank | 18 | 14 | 2 | 3 | 12 |
+| 9 | M11.02 Implementation craft and migrations: MOPs, cutovers and vendor conversions | 13 | 10 | 2 | 2 | 4 |
+| 10 | M11.04 Design documents and customer handling: HLD, LLD, status, scope and escalations | 12 | 8 | 0 | 2 | 5 |
+| 11 | M4.09 IPsec VPN on FortiGate: build, verify and troubleshoot | 19 | 14 | 2 | 3 | 5 |
+| 12 | M4.10 High availability: FGCP clusters, failover and upgrades | 20 | 15 | 2 | 3 | 5 |
+| 13 | M8.03 SD-WAN: members, health checks, rules and troubleshooting | 20 | 14 | 2 | 3 | 5 |
+| 14 | M4.07 Certificates and SSL inspection: see inside encrypted traffic, safely | 19 | 13 | 2 | 3 | 5 |
+| 15 | M4.08 Security profiles: AV, web and DNS filter, application control, IPS | 19 | 13 | 2 | 3 | 5 |
+| 16 | M5.01 FortiManager foundations: architecture, ADOMs, devices and provisioning | 15 | 9 | 2 | 2 | 4 |
+| 17 | M5.03 FortiManager Policy & Objects and the install process | 14 | 9 | 1 | 2 | 3 |
+| 18 | M5.04 FortiManager SD-WAN and VPN Manager, FortiGuard, firmware and HA | 11 | 8 | 1 | 1 | 3 |
+| 19 | M6.01 FortiAnalyzer foundations: modes, logs, storage, forwarding and HA | 14 | 9 | 2 | 1 | 3 |
+| 20 | M6.03 FortiAnalyzer FortiView, Log View and Fabric View: investigating with logs | 11 | 7 | 1 | 1 | 2 |
+| 21 | M6.04 FortiAnalyzer incidents, alerts, automation and reports | 11 | 7 | 2 | 1 | 2 |
+| | **Total (21 modules)** | **339** | **261** | **33** | **51** | **129** |
 
-Interview pool by stage: recruiter 17, hiring manager 18, technical 41.
+Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 ### Next in the queue
 
 Ids follow CURRICULUM.md, written with two digits (M4.9 → M4.09).
 
-1. I2 hiring-manager and I3 technical-panel kickoff modules (the STAR bank already lives in M11.01).
-2. S5 FortiManager (ADOMs, policy packages, installs) and S6 FortiAnalyzer.
-3. M8.x deeper SD-WAN: ADVPN and overlays, routing over overlays (BGP).
-4. Fundamentals gaps (M0/M1 remaining modules) if pretest scores show weakness.
+1. S12 Capstone: M12.3 mock interview gauntlet, M12.1 full design case, M12.2 exam simulations.
+2. S8 Enterprise Firewall: Security Fabric, OSPF/BGP on FortiGate, threat prevention at scale, VDOMs and advanced HA, FMG+FAZ together, troubleshooting master.
+3. S4 remaining: M4.01 administration, M4.02 interfaces, M4.05 routing (partly in M1.04), M4.06 authentication, M4.11 logging.
+4. S2 routing (OSPF, BGP, WAN concepts) and S3 security theory.
+5. S7 FortiSwitch, S9 FortiSIEM, S10 FortiEDR.
+6. S0 full diagnostic and S1 M1.01–M1.02.
 
 ## Open decisions
 
