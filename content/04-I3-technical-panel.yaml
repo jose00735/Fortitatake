@@ -1,0 +1,390 @@
+id: I3
+title: "Technical panel: whiteboard designs and live troubleshooting"
+kind: interview
+stage: INT
+stage_title: "Interview track"
+order: 14
+est_sessions: 1
+objectives:
+  - Run a whiteboard design the way a consultant does: clarify, draw, justify, risk
+  - Walk through a live troubleshooting case with a method the panel can follow
+  - Explain the FortiGate packet flow and use it to locate any problem
+  - Answer rapid-fire technical questions concisely, and say "I'd verify" when unsure
+  - Connect every answer to a real customer outcome
+sources:
+  - "FortiTatake modules M1.03, M1.04, M4.03, M4.07–M4.12, M8.03 (FortiOS 8.0.2 Admin Guide, cited there)"
+  - "Your evidence: super-cv technical achievements (TAC P3 escalations, SD-WAN design, HA recovery, NAT, routing)"
+  - "Packet flow: Fortinet's 'Parallel Path Processing' (life of a packet) documentation; the debug flow order in FortiOS 8.0.2 Admin Guide pp. 5577–5581"
+
+units:
+  - id: I3.u1
+    title: How a technical panel works
+    tier: 1
+    est_min: 10
+    body: |
+      A PS technical panel usually has three parts: **rapid-fire questions** (concepts and commands), a **whiteboard design** (draw a solution for a scenario) and a **troubleshooting walk-through** (here's a symptom, find the cause). They're testing three things at once: **knowledge**, **method** and **how you'd sound in front of a customer**.
+
+      ## Five habits that score
+
+      1. **Clarify before you draw.** Ask 3–4 questions: users and sites, bandwidth, availability target, compliance, what exists today. Panels often hide a requirement to see if you ask.
+      2. **Think out loud.** Silence reads as stuck. Narrate: "First I'd confirm… then…".
+      3. **State assumptions.** "I'll assume two ISPs per branch and a hub in each data centre."
+      4. **Justify and give trade-offs.** "A-P rather than A-A because it's simpler to operate and the throughput fits."
+      5. **Say what you'd verify.** "I believe the default is X; I'd confirm in the release notes before the change." Honest beats confident and wrong.
+
+      ## Your edge
+
+      You've seen how these designs fail from TAC: asymmetric routing with SD-WAN, NAT order, HA split brain, MTU over VPN. Mention the failure mode you'd design out: it's what separates a consultant from someone who memorised the guide.
+
+      :::recall
+      Q: First thing to do when given a whiteboard scenario?
+      A: Ask clarifying questions and state assumptions before drawing.
+      :::
+  - id: I3.u2
+    title: The packet flow, your troubleshooting map
+    tier: 2
+    est_min: 14
+    body: |
+      Explain the life of a packet in a FortiGate at a high level, then use it to place any problem:
+
+      1. **Ingress** on an interface (with DoS policy checks if configured)
+      2. **IPsec decryption** if it arrives on a tunnel
+      3. **Destination NAT** (VIP)
+      4. **Routing** decision (policy routes, SD-WAN rules, then the routing table)
+      5. **Firewall policy** lookup and session creation
+      6. **Security profiles** (flow or proxy inspection)
+      7. **Source NAT**
+      8. **IPsec encryption** if leaving through a tunnel
+      9. **Egress**
+
+      `diagnose debug flow` shows the same story: *received a packet* → *allocate a new session* → *find a route* → *DNAT/SNAT* → *Allowed by Policy-N* or *Denied by forward policy check*.
+
+      ## A method you can say in one breath
+
+      **Define → isolate → prove → fix → verify → document.**
+
+      - **Define:** who, what, since when, what changed, one or all users.
+      - **Isolate** with the layers: is the packet arriving (sniffer)? Is it allowed and routed (debug flow)? Is the session there and offloaded (session list)? Is the reply coming back?
+      - **Prove** with output, not opinion.
+      - **Fix** in a window with a rollback; **verify** with the user; **document** the cause.
+
+      :::pitfall
+      Debug flow shows only the first packets of a session that's offloaded to the NPU. If you need to see the whole flow in a lab, disable offload on that policy temporarily, and say so to the panel.
+      :::
+  - id: I3.u3
+    title: Whiteboard patterns to have ready
+    tier: 3
+    est_min: 16
+    body: |
+      ## Branch SD-WAN with a hub
+
+      Two ISPs per branch, IPsec overlays to one or two hubs, **BGP over the overlays**, SD-WAN zones (Underlay, Overlay), health checks to the hub and to SaaS, rules: voice **Best Quality**, business apps **Lowest Cost (SLA)**, backups **Maximize Bandwidth**. Managed from **FortiManager** templates, logs to **FortiAnalyzer**. Risk to mention: asymmetric routing and SLA probes that don't reflect the application path.
+
+      ## Data-centre HA pair
+
+      **FGCP A-P**, two back-to-back heartbeat links, session pickup for long-lived sessions, monitored uplinks, reserved management interfaces, uninterruptible upgrades. Risk: split brain if heartbeats share a switch; override behaviour surprising the customer.
+
+      ## Remote access
+
+      **IPsec dial-up with FortiClient** (IKEv2, EAP, MFA via FortiToken or SAML), split or full tunnel by policy, or **ZTNA** for application-level access with posture checks. Risk: VPN gateways are top targets: patch cadence and restricting IKE exposure.
+
+      ## Security operations stack
+
+      FortiGates with tuned security profiles → **FortiAnalyzer** (logs, reports, incidents) → **FortiSIEM** for multi-vendor correlation, **FortiEDR** on endpoints, automation stitches for response. Risk: logging everything without retention planning.
+
+      ## Answer shape for any design
+
+      **Requirements → diagram → key choices with reasons → failure modes and how you designed them out → operations (management, logging, upgrades) → acceptance tests.**
+
+      :::ps
+      End every design with "and here's how we'd prove it works": the acceptance tests. It's what customers sign, and panels love it.
+      :::
+
+cards:
+  - { id: I3.c01, unit: I3.u1, tier: 1, front: "Three parts of a typical technical panel?", back: "Rapid-fire questions, whiteboard design, troubleshooting walk-through." }
+  - { id: I3.c02, unit: I3.u1, tier: 1, front: "Five habits that score in a panel?", back: "Clarify, think out loud, state assumptions, justify trade-offs, say what you'd verify." }
+  - { id: I3.c03, unit: I3.u2, tier: 2, front: "FortiGate packet flow (high level)?", back: "Ingress → IPsec decrypt → DNAT (VIP) → routing → policy → security profiles → SNAT → IPsec encrypt → egress." }
+  - { id: I3.c04, unit: I3.u2, tier: 2, front: "Routing decision order on FortiGate?", back: "Policy routes, then SD-WAN rules, then the routing table." }
+  - { id: I3.c05, unit: I3.u2, tier: 1, front: "Your troubleshooting method in one breath?", back: "Define → isolate → prove → fix → verify → document." }
+  - { id: I3.c06, unit: I3.u2, tier: 2, front: "Which tool answers 'is the packet arriving'?", back: "The sniffer: diagnose sniffer packet." }
+  - { id: I3.c07, unit: I3.u2, tier: 2, front: "Which tool answers 'allowed and routed'?", back: "diagnose debug flow." }
+  - { id: I3.c08, unit: I3.u2, tier: 3, front: "Why might debug flow show only a few packets?", back: "The session is offloaded to the NPU after the first packets." }
+  - { id: I3.c09, unit: I3.u3, tier: 2, front: "Branch SD-WAN rule strategies by app?", back: "Voice Best Quality, business apps Lowest Cost (SLA), backups Maximize Bandwidth." }
+  - { id: I3.c10, unit: I3.u3, tier: 2, front: "DC HA pair essentials?", back: "FGCP A-P, two back-to-back heartbeats, session pickup, monitored uplinks, reserved mgmt, uninterruptible upgrades." }
+  - { id: I3.c11, unit: I3.u3, tier: 2, front: "Remote access options?", back: "IPsec dial-up with FortiClient (IKEv2, EAP, MFA) or ZTNA with posture checks." }
+  - { id: I3.c12, unit: I3.u3, tier: 2, front: "Answer shape for any design?", back: "Requirements → diagram → choices with reasons → failure modes → operations → acceptance tests." }
+
+quiz:
+  - id: I3.q01
+    type: order
+    tier: 2
+    pretest: true
+    stem: Put the FortiGate packet flow in order (high level).
+    items: ["Ingress", "Destination NAT (VIP)", "Routing decision", "Firewall policy lookup", "Security profiles", "Source NAT", "Egress"]
+    explanation: DNAT happens before routing and policy; SNAT near the end.
+  - id: I3.q02
+    type: single
+    tier: 1
+    pretest: true
+    stem: The panel says "Design SD-WAN for our retail chain." What should you do first?
+    options:
+      - { id: a, text: "Ask clarifying questions: sites, links, apps, availability, management", correct: true }
+      - { id: b, text: "Start drawing a hub and spoke", why_wrong: "You may design for the wrong requirements." }
+      - { id: c, text: "List SD-WAN CLI commands", why_wrong: "Commands come much later." }
+      - { id: d, text: "Ask which version they run and stop there", why_wrong: "One question isn't discovery." }
+    explanation: Clarify, then draw.
+  - id: I3.q03
+    type: single
+    tier: 2
+    stem: "'Users can't reach a server through the FortiGate.' Which first two checks follow the packet-flow method?"
+    options:
+      - { id: a, text: "Sniffer to see if packets arrive and leave, then debug flow to see route and policy decisions", correct: true }
+      - { id: b, text: "Reboot the FortiGate, then check the logs", why_wrong: "Reboots destroy evidence." }
+      - { id: c, text: "Upgrade firmware", why_wrong: "No evidence of a bug." }
+      - { id: d, text: "Disable all security profiles", why_wrong: "Changes without proof." }
+    explanation: Prove where it stops.
+  - id: I3.q04
+    type: single
+    tier: 2
+    stem: "You don't remember a default value during the panel. Best response?"
+    options:
+      - { id: a, text: "Give your best understanding and say you'd verify it in the docs before a change", correct: true }
+      - { id: b, text: "Make up a confident number", why_wrong: "Panels test honesty; wrong and confident is worse." }
+      - { id: c, text: "Say nothing", why_wrong: "Silence reads as stuck." }
+      - { id: d, text: "Ask to skip the question", why_wrong: "Offer what you know first." }
+    explanation: Honest and practical.
+  - id: I3.q05
+    type: single
+    tier: 2
+    stem: Which routing component is evaluated first on FortiGate?
+    options:
+      - { id: a, text: "Policy routes", correct: true }
+      - { id: b, text: "SD-WAN rules", why_wrong: "They come after policy routes." }
+      - { id: c, text: "Static routes", why_wrong: "The routing table comes last." }
+      - { id: d, text: "BGP", why_wrong: "BGP feeds the routing table." }
+    explanation: Policy routes, SD-WAN rules, then the routing table.
+  - id: I3.q06
+    type: multi
+    tier: 3
+    stem: Which failure modes are worth naming in a DC HA design? Select all that apply.
+    options:
+      - { id: a, text: "Split brain if heartbeats share one switch or path", correct: true }
+      - { id: b, text: "Sessions dropping on failover without session pickup", correct: true }
+      - { id: c, text: "Override taking the primary role back after a reboot", correct: true }
+      - { id: d, text: "Web filter categories changing", why_wrong: "Not an HA failure mode." }
+    explanation: Name the failure, then how you designed it out.
+  - id: I3.q07
+    type: single
+    tier: 3
+    stem: Why end a whiteboard design with acceptance tests?
+    options:
+      - { id: a, text: "They define how the customer signs off that the design works, and show delivery thinking", correct: true }
+      - { id: b, text: "To fill time", why_wrong: "They're a deliverable." }
+      - { id: c, text: "Fortinet requires them in the GUI", why_wrong: "No such requirement." }
+      - { id: d, text: "They replace the design document", why_wrong: "They complement it." }
+    explanation: Prove it works; it's what gets signed.
+  - id: I3.q08
+    type: single
+    tier: 2
+    stem: In a debug flow, which line shows the policy decision?
+    options:
+      - { id: a, text: "Allowed by Policy-N (or Denied by forward policy check)", correct: true }
+      - { id: b, text: "allocate a new session", why_wrong: "That's session creation." }
+      - { id: c, text: "find a route", why_wrong: "That's routing." }
+      - { id: d, text: "received a packet", why_wrong: "That's ingress." }
+    explanation: Policy lines name the policy ID.
+  - id: I3.q09
+    type: single
+    tier: 3
+    stem: A panelist asks "Why A-P and not A-A?" for a mid-size DC. Strongest answer?
+    options:
+      - { id: a, text: "A-P is simpler to operate and troubleshoot, and one unit's throughput fits; A-A adds complexity for gains they don't need", correct: true }
+      - { id: b, text: "A-A isn't supported", why_wrong: "It is supported." }
+      - { id: c, text: "A-P is always faster", why_wrong: "Not the point; one unit handles traffic." }
+      - { id: d, text: "Because Fortinet says so", why_wrong: "Give your reasoning." }
+    explanation: Trade-off grounded in requirements.
+  - id: I3.q10
+    type: single
+    tier: 2
+    stem: Which design element addresses the risk that VPN gateways are prime targets?
+    options:
+      - { id: a, text: "Fast patch cadence, MFA, and restricting who can reach IKE with local-in policies", correct: true }
+      - { id: b, text: "Using 3DES for compatibility", why_wrong: "Weakens security." }
+      - { id: c, text: "Disabling DPD", why_wrong: "Unrelated, and hurts recovery." }
+      - { id: d, text: "Publishing the PSK internally", why_wrong: "Never." }
+    explanation: Exposure, identity, patching.
+
+scenarios:
+  - id: I3.sc1
+    kind: situation
+    tier: 3
+    title: "Whiteboard: 40 branches, 2 data centres"
+    situation: |
+      "We have 40 branches with two internet links each, two data centres, Microsoft 365 and an on-prem ERP. Design the network security and WAN."
+    ask: Talk through it as you would at the whiteboard, in 3–4 minutes.
+    right_thinking:
+      - "Clarify: availability, voice, compliance, team skills, existing gear"
+      - "Hub-and-spoke overlays to both DCs, BGP, SD-WAN rules per app"
+      - "HA pairs in the DCs, FortiManager templates, FortiAnalyzer logs"
+      - "Failure modes and acceptance tests"
+    what: A structured design with reasons and risks.
+    why: It's exactly what you'd do in a design workshop.
+    how: ["Questions", "Draw underlay, overlay, hubs", "Rules per app", "Management and logging", "Failure modes", "Acceptance tests"]
+    model_answer: |
+      I'd start with questions: uptime target, voice at branches, compliance like PCI, and who operates it. Assuming two ISPs per branch: each branch FortiGate builds IPsec overlays to both data centres, with BGP over the overlays so the DCs are reachable over either. SD-WAN zones for underlay and overlay; health checks to the hubs and to Microsoft 365; rules: voice on Best Quality, ERP over the overlay with Lowest Cost (SLA), Microsoft 365 straight out locally using the Internet Service Database. In each DC an FGCP active-passive pair with two heartbeat links and session pickup. Everything is templated in FortiManager, logs go to FortiAnalyzer. Failure modes I'd design out: asymmetric routing between the two hubs, probes that don't reflect the app path, and split brain in the DCs. Acceptance tests: pull each ISP at a pilot branch, fail over each hub, and fail the DC primary during a call.
+    best_way: "Clarify, overlays to both DCs with BGP, SD-WAN rules per app, HA pairs, FortiManager and FortiAnalyzer, failure modes, acceptance tests."
+    rubric: ["clarifies", "coherent design", "justified choices", "failure modes", "acceptance tests"]
+  - id: I3.sc2
+    kind: situation
+    tier: 3
+    title: "Live troubleshooting: 'the website is slow only through the VPN'"
+    situation: |
+      "Branch users say the intranet is slow and file uploads fail, but only over the site-to-site VPN. Walk us through it."
+    ask: Narrate your method and commands.
+    right_thinking:
+      - "Define: which apps, since when, what changed"
+      - "Tunnel state and counters"
+      - "Small works, large fails → MTU/MSS"
+      - "Prove, fix, verify"
+    what: A narrated, evidence-based diagnosis.
+    why: Panels judge method and communication as much as the answer.
+    how: ["Questions", "get vpn ipsec tunnel summary / diagnose vpn tunnel list", "Ping with DF at sizes", "Sniffer for retransmissions", "MSS clamp on tunnel policies", "Verify uploads"]
+    model_answer: |
+      First I'd define it: is it all branch users, since when, did anything change, and does browsing small pages work while uploads fail? Then I'd check the tunnel: summary and tunnel list, phase 2 up and counters moving both ways. If small requests work and big transfers fail, I suspect MTU: ESP overhead means full-size packets don't fit, and if ICMP 'fragmentation needed' is blocked, hosts never adjust. I'd prove it with pings with the don't-fragment bit at decreasing sizes and a sniffer showing retransmissions. The fix is clamping TCP MSS on both tunnel policies. Then I'd verify with the users and document it, and add the MSS setting to the VPN template so the next site doesn't repeat it.
+    best_way: "Define it, check the tunnel, small-works-big-fails means MTU, prove with DF pings, clamp MSS, verify, template it."
+    rubric: ["defines first", "evidence", "correct hypothesis", "fix and prevention"]
+  - id: I3.sc3
+    kind: hypothetical
+    tier: 2
+    title: What if the panelist challenges your answer?
+    situation: |
+      You say SD-WAN rules come after policy routes. A panelist says, "Are you sure? I think SD-WAN rules win."
+    ask: How do you respond?
+    right_thinking:
+      - "Stay calm; it may be a test"
+      - "Explain your reasoning and how you'd verify"
+      - "Offer the evidence: the commands that show the decision"
+    what: A confident, respectful correction with evidence.
+    why: Customers will challenge you too.
+    how: ["Acknowledge", "Reason", "Verification commands"]
+    model_answer: |
+      I'd say: "My understanding is that policy routes are checked first, then SD-WAN rules, then the routing table. I've seen it in migrations, where a leftover policy route bypassed a new SD-WAN rule. To confirm on a live unit, diagnose firewall proute list shows the policy routes and SD-WAN rules in the order they're applied, and diagnose ip proute match shows what a given packet would use. Happy to be corrected if a newer version changed it."
+    best_way: "Respectfully hold your position with the reasoning and the command that proves it."
+    rubric: ["calm", "reasoned", "evidence", "open to correction"]
+
+interview:
+  - id: I3.t01
+    stage: technical
+    question: Walk me through what happens to a packet entering a FortiGate.
+    testing: Architecture understanding
+    framework: "Ordered steps → how you use it"
+    model_answer: |
+      "It arrives on an interface, DoS checks apply if configured, it's decrypted if it came through a tunnel, then destination NAT if it matches a VIP. Then the routing decision: policy routes, SD-WAN rules, routing table. Then the firewall policy lookup and session creation, security profiles, source NAT, encryption if it leaves through a tunnel, and egress. I use that order when troubleshooting: debug flow shows exactly where a packet stops."
+    best_way: "Ingress, decrypt, DNAT, route, policy, profiles, SNAT, encrypt, egress, and debug flow shows where it stops."
+    target: "0:50"
+  - id: I3.t02
+    stage: technical
+    question: A user can't reach a server through the FortiGate. Go.
+    testing: Method under pressure
+    framework: "Define → sniffer → debug flow → session → fix"
+    model_answer: |
+      "First the facts: source, destination, port, one user or all, what changed. Then the sniffer on the ingress and egress interfaces to see whether the packet arrives and leaves. If it arrives and doesn't leave, a filtered debug flow tells me the route and the policy decision, or the drop reason. If it leaves and nothing returns, I look downstream and at the return route. Then fix in a window and verify with the user."
+    best_way: "Facts, sniffer, debug flow, then downstream; fix and verify."
+    target: "0:45"
+  - id: I3.t03
+    stage: technical
+    question: How does FortiGate choose between policy routes, SD-WAN rules and the routing table?
+    testing: Routing precision
+    framework: "Order → gotcha"
+    model_answer: |
+      "Policy routes first, then SD-WAN rules, then the routing table. And by default an SD-WAN rule is only consulted if the best route for the destination points to an SD-WAN member. In migrations, leftover policy routes or more specific static routes are the classic reason a new SD-WAN rule seems to be ignored."
+    best_way: "Policy routes, SD-WAN rules, routing table, with the FIB check for SD-WAN."
+    target: "0:35"
+  - id: I3.t04
+    stage: technical
+    question: Explain the order of NAT and policy matching with a VIP.
+    testing: NAT depth (your strongest area)
+    framework: "Order → consequence"
+    model_answer: |
+      "Destination NAT happens before routing and the policy lookup, so the policy for a VIP matches the VIP object or the mapped address depending on configuration, and VIP policies take priority. Source NAT is applied after the policy. I was my TAC team's go-to for NAT, and the common customer mistake was writing the policy against the public IP instead of the VIP."
+    best_way: "DNAT before routing and policy, SNAT after; most errors are policies written against the wrong address."
+    target: "0:40"
+  - id: I3.t05
+    stage: technical
+    question: Design remote access for 500 users with MFA.
+    testing: Design and current options
+    framework: "Options → choice → reasons"
+    model_answer: |
+      "Two options: IPsec dial-up with FortiClient, IKEv2 with EAP and MFA via FortiToken or SAML to their identity provider, or ZTNA if they want per-application access with device posture. For 500 users I'd usually start with IPsec dial-up for full-tunnel needs and plan ZTNA for sensitive apps. Either way: patch the gateway fast, limit who can reach IKE, and log to FortiAnalyzer."
+    best_way: "IPsec dial-up with IKEv2 and MFA now, ZTNA for sensitive apps, and harden the gateway."
+    target: "0:45"
+  - id: I3.t06
+    stage: technical
+    question: How would you migrate a customer from another firewall vendor to FortiGate?
+    testing: Migration thinking
+    framework: "Discover → convert → clean → test → cut over"
+    model_answer: |
+      "Discover the current config and what's actually used, convert with FortiConverter or a scripted approach, then clean up: unused objects, shadowed and overly broad rules, NAT semantics that differ between vendors. Test in a lab, write a MOP with a rollback, cut over in a window, and validate with the customer's application owners. The NAT translation is where most migrations break, so I review it line by line."
+    best_way: "Discover, convert, clean, lab-test, MOP with rollback, cut over, validate. NAT is where they break."
+    target: "0:50"
+  - id: I3.t07
+    stage: technical
+    question: What's the difference between FortiManager and FortiAnalyzer, and why deploy both?
+    testing: Fabric understanding
+    framework: "One line each → together"
+    model_answer: |
+      "FortiManager is central configuration: devices, policy packages, templates, installs and revisions. FortiAnalyzer is central logging and analytics: log storage, FortiView, reports, incidents and automation. Together: you change many FortiGates consistently and you can prove what happened afterwards."
+    best_way: "FortiManager changes things consistently; FortiAnalyzer proves what happened."
+    target: "0:30"
+  - id: I3.t08
+    stage: technical
+    question: A customer's FortiGate is in conserve mode. What does that mean and what do you do?
+    testing: Performance troubleshooting
+    framework: "Meaning → thresholds → actions"
+    model_answer: |
+      "Memory is under pressure: by default it enters red conserve mode at 88 % memory, recovers below 82 %, and extreme at 95 %. Proxy-based inspection may stop accepting new sessions that need it. I'd check memory consumers and sessions, and look at proxy usage. At Fortinet I reduced memory pressure for customers by moving policies from proxy to flow inspection where proxy wasn't needed, which also kept more traffic on the NPU."
+    best_way: "Memory pressure at 88 %. Find the consumers; move proxy policies to flow where proxy isn't needed."
+    target: "0:45"
+  - id: I3.t09
+    stage: technical
+    question: How do you deploy SSL deep inspection without breaking users?
+    testing: Practical rollout
+    framework: "CA → pilot → exemptions → phases"
+    model_answer: |
+      "Use a CA from the customer's PKI, push it by Group Policy and MDM before enabling anything, pilot with IT, exempt banking, health and pinned apps, then roll out by department with a rollback to certificate inspection. I taught customers exactly this, pushing the CA through Group Policy."
+    best_way: "CA first via GPO and MDM, pilot, exemptions, phases."
+    target: "0:35"
+  - id: I3.t10
+    stage: technical
+    question: What do you check after a cluster upgrade?
+    testing: Verification discipline
+    framework: "Checklist"
+    model_answer: |
+      "Both units on the target version, get system ha status showing in sync with heartbeats up, the expected primary, routing and VPN tunnels up, FortiManager and FortiAnalyzer connectivity, and the customer's own application test list. Then a short report. I've guided customers through HA upgrades step by step, including a manual console upgrade when the online one failed, so I always have the backup and console ready."
+    best_way: "Versions, HA in sync, routing and VPNs, FMG/FAZ, the customer's test list, then a report."
+    target: "0:40"
+  - id: I3.t11
+    stage: technical
+    question: Tell us about a Fortinet issue you escalated to development.
+    testing: Depth and collaboration
+    framework: "STAR-L short"
+    model_answer: |
+      "SD-WAN with three ISPs over VPN was duplicating packets. I reproduced it, traced it to specific SLA settings with captures, and worked with development for almost two months with reproductions until the fix. Meanwhile I gave the customer a workaround so they weren't stuck."
+    best_way: "Packet duplication over three ISPs traced to SLA settings; reproductions to development; workaround meanwhile."
+    target: "0:45"
+  - id: I3.t12
+    stage: technical
+    question: Which logs and reports would you set up for a new deployment?
+    testing: Operations thinking
+    framework: "Logs → storage → reports → alerts"
+    model_answer: |
+      "Traffic logs on the policies that matter, all security events, and system events, sent to FortiAnalyzer with retention sized to the customer's compliance needs. Then scheduled reports for the security team and executives, and alerts for critical events. I've turned log data into SOC 2, ISO 27001 and PCI-DSS evidence for boards, so I start from what they need to prove."
+    best_way: "Log what matters to FortiAnalyzer, size retention to compliance, scheduled reports and alerts."
+    target: "0:40"
+
+field_reports:
+  - id: I3.fr1
+    title: The edge is the target
+    body: |
+      Vulnerability exploitation was the top initial access vector in the 2026 DBIR (**31 %**). Panels like candidates who design for that: patchable, segmented, logged, with IPS covering the patch gap.
+    source: Verizon 2026 DBIR

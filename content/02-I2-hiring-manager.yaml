@@ -1,0 +1,427 @@
+id: I2
+title: "Hiring manager: prove you can deliver, own customers and ramp fast"
+kind: interview
+stage: INT
+stage_title: "Interview track"
+order: 12
+est_sessions: 1
+objectives:
+  - Know what a PS hiring manager is deciding and what they worry about
+  - Map every likely competency question to a real, evidenced story
+  - Answer the hard questions (no end-to-end PS projects yet, the Netskope exit, expired certs) honestly and confidently
+  - Present a 30-60-90 day plan for your first months in the role
+  - Ask questions that show you think like a consultant
+sources:
+  - "Your evidence: super-cv achievements (Fortinet TAC P3, Netskope CSM and Scale CSM, SYKES)"
+  - "M11.01 STAR bank (I2.s01–I2.s12) for the core stories"
+  - "Cato cheatsheet: answer frameworks only (behavioural skeleton, 'why us' close); its unverified figures stay out"
+
+units:
+  - id: I2.u1
+    title: What the hiring manager is deciding
+    tier: 1
+    est_min: 10
+    body: |
+      The recruiter checked fit on paper. The **PS manager** decides whether to put you in front of their customers, alone, soon. Under the questions are four worries:
+
+      1. **Can you deliver?** Will a FortiGate, FortiManager or SD-WAN deployment be designed, executed and handed over properly, inside the hours sold?
+      2. **Will customers trust you?** On a kickoff call, in a tense change window, in an escalation.
+      3. **How fast will you ramp?** How much hand-holding before you're billable and independent.
+      4. **Will you make the team better?** Documentation, templates, helping colleagues, honest status.
+
+      ## How PS makes money
+
+      PS sells **hours or fixed-price projects** under a **statement of work (SOW)**. The manager watches **utilization** (billable time), **scope** (what's in the SOW, and what's a **change request**), **milestones** and **customer acceptance** (sign-off). Show you understand that delivering what was sold, on time, with a signed acceptance, is the job; extra work goes through a change request, not a favour.
+
+      ## Your angle
+
+      You are the rare candidate who has seen both sides: **inside Fortinet support** (you know how FortiOS fails and how TAC and development work) and **owning customers** at Netskope (rollouts, health checks, executive reviews, finishing a partner's half-delivered PS project). Your answers should keep connecting those two.
+
+      :::recall
+      Q: Four worries under the hiring manager's questions?
+      A: Can you deliver, will customers trust you, how fast will you ramp, will you make the team better.
+      :::
+
+      :::tip
+      Answer in **STAR-L**: Situation, Task, Action, Result, and one line of Learning. 60–90 seconds. Most of the time goes on Action.
+      :::
+  - id: I2.u2
+    title: Your story bank, mapped to competencies
+    tier: 2
+    est_min: 15
+    body: |
+      Use only evidenced stories. The core twelve are in M11.01; this table tells you which one answers which question.
+
+      | Competency asked | Best story | Proof point |
+      |---|---|---|
+      | Delivery, finishing work | Partner PS project left half done, finished in stages | You acted as the QA layer on partner PS work |
+      | Rollout without disruption | Account below 50 % utilisation | One-month planned rollout, 70 % utilisation, nothing got out of hand |
+      | Hostile customer | Escalation turned into a license exchange | More than USD 900k contract value kept |
+      | New stakeholders | Whole security team replaced | Health check first; over half the seats in use within six weeks |
+      | Value and renewals | Book from red to green | Around 60 % of ~60 named accounts moved to green |
+      | Technical depth | SD-WAN packet duplication over three ISPs | Traced to SLA settings; about two months with development |
+      | Hard recovery | Cloud HA split brain | Recovered by comparing checksums, reachable only via heartbeat; others escalated these |
+      | Test before production | Shared Terraform templates | Reproduced customer scenarios before recommending fixes |
+      | Proactive risk | CVE advisory to every account | The one late adopter contained a small compromise quickly |
+      | Executive communication | QBRs with C-level and VPs | Eased most renewals; in three languages |
+      | Teamwork, mentoring | Onboarded new CSMs; mentored engineers | Without a formal reporting line |
+      | Building tools | Python and AI workflows | Health-check generator, license analysis, activity trackers |
+
+      ## Rules for numbers
+
+      - Say exactly what's in your evidence. "Around 60 %", "more than half within six weeks", "more than 900 thousand dollars".
+      - The telemetry model for 2,000+ accounts was **co-built with your team**: say "with my team".
+      - "Near-zero unsanctioned AI" applies to **a couple of accounts**, not dozens.
+      - Leave out the unverified Cato cheatsheet figures.
+
+      :::pitfall
+      Don't tell three stories in one answer. One story, told well, with a number and a learning, beats a list of achievements.
+      :::
+  - id: I2.u3
+    title: Hard questions, your 30-60-90, and your questions
+    tier: 3
+    est_min: 15
+    body: |
+      ## The three hard questions
+
+      - **"Have you led full Fortinet implementations end to end?"** Honest no, then bridge: you've done every piece (designs from requirements in TAC, rollouts and health checks at Netskope, finishing partner PS work, change-window recoveries), and you're refreshing the current versions. Don't claim projects you haven't run.
+      - **"Why did you leave Netskope?"** The same short, neutral, forward-looking answer as with the recruiter. Keep private details private.
+      - **"Your certifications expired."** They lapsed while you worked on another platform; you're re-studying FortiOS 8.0, FortiManager 7.6 and FortiAnalyzer now, with a re-certification plan.
+
+      ## Bring a 30-60-90 plan
+
+      You built 30-60-90 plans for customers at Netskope. Show one for yourself:
+
+      - **30 days:** onboarding, internal tools and templates, shadow two projects, labs on the current FortiOS, FortiManager and FortiAnalyzer, first re-certification booked.
+      - **60 days:** lead parts of projects with a senior consultant reviewing (design document, MOP, change window); contribute one template improvement.
+      - **90 days:** run smaller projects independently from kickoff to acceptance; customer feedback and utilization on target.
+
+      ## Questions to ask the hiring manager
+
+      - "What does a typical project look like here: size, products, on-site versus remote?"
+      - "How do you measure a consultant in the first six months? Utilization, CSAT, certifications?"
+      - "Where do projects usually go wrong, and what would you want me to do differently?"
+      - "How do PS and TAC work together on escalations during a project?"
+
+      :::recall
+      Q: What does your 90-day milestone promise?
+      A: Running smaller projects independently from kickoff to customer acceptance, with feedback and utilization on target.
+      :::
+
+cards:
+  - { id: I2.c01, unit: I2.u1, tier: 1, front: "The PS manager's four worries?", back: "Can you deliver, will customers trust you, how fast you ramp, will you make the team better." }
+  - { id: I2.c02, unit: I2.u1, tier: 2, front: "What is utilization?", back: "The share of a consultant's time that is billable to customer projects." }
+  - { id: I2.c03, unit: I2.u1, tier: 2, front: "Extra work outside the SOW goes through…?", back: "A change request, not a favour." }
+  - { id: I2.c04, unit: I2.u1, tier: 1, front: "STAR-L?", back: "Situation, Task, Action, Result, Learning. 60–90 seconds, most time on Action." }
+  - { id: I2.c05, unit: I2.u2, tier: 2, front: "Story for 'finishing someone else's work'?", back: "Partner PS project left half done; you finished it in stages, as the QA layer on partner PS work." }
+  - { id: I2.c06, unit: I2.u2, tier: 2, front: "Story for 'new stakeholders'?", back: "Security team replaced; health check first; more than half the seats in use within six weeks." }
+  - { id: I2.c07, unit: I2.u2, tier: 2, front: "Story for 'value and renewals'?", back: "Around 60 % of ~60 named accounts moved from red to green." }
+  - { id: I2.c08, unit: I2.u2, tier: 2, front: "Deepest technical story?", back: "SD-WAN packet duplication across three ISPs over VPN, traced to SLA settings; about two months with development." }
+  - { id: I2.c09, unit: I2.u2, tier: 3, front: "Hard recovery story?", back: "Cloud HA split brain, reachable only via heartbeat; recovered by comparing checksums and re-syncing. Usually escalated by others." }
+  - { id: I2.c10, unit: I2.u2, tier: 2, front: "Story for proactive risk?", back: "CVE remediation steps sent to every account; the one late adopter contained a small compromise quickly." }
+  - { id: I2.c11, unit: I2.u2, tier: 3, front: "How to phrase the telemetry model?", back: "Co-built with my team, for a 2,000+ account book." }
+  - { id: I2.c12, unit: I2.u3, tier: 2, front: "Answer to 'led full implementations end to end?'", back: "Honest no, then the pieces you've done, then how you'll ramp. Never claim projects you haven't run." }
+  - { id: I2.c13, unit: I2.u3, tier: 2, front: "Your 30-day plan?", back: "Onboarding, tools and templates, shadow two projects, labs on current versions, book first re-certification." }
+  - { id: I2.c14, unit: I2.u3, tier: 2, front: "Your 90-day plan?", back: "Run smaller projects independently from kickoff to acceptance; feedback and utilization on target." }
+
+quiz:
+  - id: I2.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "'Tell me about a time you delivered something under pressure.' How should you structure it?"
+    options:
+      - { id: a, text: "One STAR-L story, 60–90 seconds, most time on your actions, with a result and a learning", correct: true }
+      - { id: b, text: "Three short examples to show range", why_wrong: "One story told well beats a list." }
+      - { id: c, text: "Describe your general approach without a story", why_wrong: "Behavioural questions want a real example." }
+      - { id: d, text: "Start with the result and skip the context", why_wrong: "The manager needs the situation to judge the action." }
+    explanation: STAR-L, one story.
+  - id: I2.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A customer asks for an extra VLAN design halfway through a fixed-price project. Best response?"
+    options:
+      - { id: a, text: "Acknowledge it, check the SOW, and raise a change request if it's out of scope", correct: true }
+      - { id: b, text: "Just do it to keep the customer happy", why_wrong: "Unbilled scope creep hurts the project and sets expectations." }
+      - { id: c, text: "Refuse", why_wrong: "Helpful but controlled is better: offer the change request path." }
+      - { id: d, text: "Ask the customer to call sales", why_wrong: "You own the conversation; then involve the PM or sales with a change request." }
+    explanation: Scope is managed, not ignored.
+  - id: I2.q03
+    type: single
+    tier: 2
+    stem: "'Have you led full Fortinet PS implementations end to end?' Which answer is best for you?"
+    options:
+      - { id: a, text: "Not as the PS lead yet; here are the pieces I've done and how I'll ramp", correct: true }
+      - { id: b, text: "Yes, many", why_wrong: "Not true, and easy to test." }
+      - { id: c, text: "No", why_wrong: "Honest but undersells real experience." }
+      - { id: d, text: "Change the subject", why_wrong: "Evasion is a red flag." }
+    explanation: Honest, then bridge with evidence.
+  - id: I2.q04
+    type: multi
+    tier: 2
+    stem: Which of these are evidenced and safe to say? Select all that apply.
+    options:
+      - { id: a, text: "Around 60 % of roughly 60 named accounts moved from red to green", correct: true }
+      - { id: b, text: "Co-built with my team a telemetry model for a 2,000+ account book", correct: true }
+      - { id: c, text: "More than half the seats in use within six weeks after a sponsor change", correct: true }
+      - { id: d, text: "Near-zero unsanctioned AI across dozens of accounts", why_wrong: "Near zero applies to a couple of accounts only." }
+    explanation: Say exactly what the evidence supports.
+  - id: I2.q05
+    type: single
+    tier: 2
+    stem: What does a PS manager mean by utilization?
+    options:
+      - { id: a, text: "The share of your time billed to customer projects", correct: true }
+      - { id: b, text: "CPU usage of the FortiGates you deploy", why_wrong: "Different meaning." }
+      - { id: c, text: "License usage at the customer", why_wrong: "That's adoption, from your CSM world." }
+      - { id: d, text: "Hours spent in training", why_wrong: "That's non-billable time." }
+    explanation: Billable time.
+  - id: I2.q06
+    type: single
+    tier: 3
+    stem: The manager asks how you'd be productive quickly. What's strongest?
+    options:
+      - { id: a, text: "A concrete 30-60-90 plan: shadow, lead with review, then independent projects", correct: true }
+      - { id: b, text: "\"I learn fast\"", why_wrong: "Claim without a plan." }
+      - { id: c, text: "\"After my certifications\"", why_wrong: "Delays value; certs run in parallel." }
+      - { id: d, text: "\"It depends on the training\"", why_wrong: "Puts it on them." }
+    explanation: Show the plan.
+  - id: I2.q07
+    type: single
+    tier: 2
+    stem: Which story best proves you can take over a delivery someone else started?
+    options:
+      - { id: a, text: "Finishing a partner's half-delivered PS project in stages at Netskope", correct: true }
+      - { id: b, text: "Your OSCP lab report", why_wrong: "Shows skill, not taking over delivery." }
+      - { id: c, text: "Your ICFES score", why_wrong: "Not relevant here." }
+      - { id: d, text: "Running QBRs", why_wrong: "Shows executive communication, not delivery takeover." }
+    explanation: Pick the story that matches the competency.
+  - id: I2.q08
+    type: single
+    tier: 3
+    stem: Which question to the hiring manager shows the most consultant thinking?
+    options:
+      - { id: a, text: "Where do projects usually go wrong here, and what would you want me to do differently?", correct: true }
+      - { id: b, text: "How many vacation days are there?", why_wrong: "Fine later; weak here." }
+      - { id: c, text: "Is the work hard?", why_wrong: "Vague." }
+      - { id: d, text: "When will I be promoted?", why_wrong: "Premature." }
+    explanation: Shows you're already thinking about delivery risk.
+  - id: I2.q09
+    type: order
+    tier: 2
+    stem: Put the PS project milestones in order.
+    items: ["SOW signed and handoff from pre-sales", "Kickoff and discovery", "Design (HLD/LLD) approved", "Implementation in change windows", "Acceptance testing and customer sign-off", "Handover and closure"]
+    explanation: Acceptance and sign-off close the delivery.
+  - id: I2.q10
+    type: single
+    tier: 2
+    stem: "'Tell me about a weakness.' Which is best for you?"
+    options:
+      - { id: a, text: "Work used to scatter across tools; you built systems (trackers, automation) and now set up one tracker from day one", correct: true }
+      - { id: b, text: "\"I'm a perfectionist\"", why_wrong: "Cliché." }
+      - { id: c, text: "\"I have no weaknesses\"", why_wrong: "Signals low self-awareness." }
+      - { id: d, text: "A weakness that's core to PS, like 'I don't like customers'", why_wrong: "Disqualifying." }
+    explanation: Real, improving, not core-breaking.
+
+scenarios:
+  - id: I2.sc1
+    kind: situation
+    tier: 3
+    title: '"Walk me through your first week on a project"'
+    situation: |
+      The hiring manager says: "You're assigned a FortiGate HA pair and FortiManager rollout for a bank. Walk me through your first week."
+    ask: Answer in about 90 seconds.
+    right_thinking:
+      - "Start from the SOW and pre-sales handoff, not from the CLI"
+      - "Kickoff: stakeholders, scope, success criteria, change process, access"
+      - "Discovery: current design, constraints, banking change windows and approvals"
+      - "End the week with an agreed plan and design draft"
+    what: A structured first-week plan.
+    why: It shows you think about scope, people and risk before configuration.
+    how: ["Read SOW and handoff", "Kickoff meeting", "Discovery and data collection", "Risks and plan", "Design draft for review"]
+    model_answer: |
+      Day one, I'd read the SOW and the pre-sales handoff so I know exactly what was sold and the success criteria. Then the kickoff: who the stakeholders are, the scope, how changes are approved in a bank, maintenance windows and remote access. The next days are discovery: current topology, policies to migrate, HA and FortiManager requirements, logging and compliance needs. I'd raise risks early, like change-freeze dates. By the end of the week the customer has an agreed plan and a first design draft to review. From TAC I know where these deployments go wrong, so I'd build those checks into the plan.
+    best_way: "SOW and handoff, kickoff, discovery, risks, and an agreed plan with a design draft by Friday."
+    rubric: ["starts from scope", "stakeholders and change process", "discovery", "concrete end-of-week outcome"]
+  - id: I2.sc2
+    kind: situation
+    tier: 3
+    title: '"What would you do if you were behind schedule?"'
+    situation: |
+      The manager asks: "You're two days behind on a fixed-price project because the customer's team didn't provide access. What do you do?"
+    ask: Answer with action and communication.
+    right_thinking:
+      - "Escalate early and in writing, with facts"
+      - "Show impact on dates and hours"
+      - "Propose options; don't absorb unbilled time silently"
+      - "Keep the relationship positive"
+    what: An early, factual escalation with options.
+    why: Surprises at the end hurt both the customer and the PS margin.
+    how: ["Document the dependency and dates", "Tell PM/manager and customer sponsor", "Offer options: replan, parallel tasks, change request", "Confirm the new plan in writing"]
+    model_answer: |
+      I'd raise it the same day, in writing: what access was needed, when we asked, and the impact on the plan. I'd tell my manager or the PM, and the customer's sponsor, with options: work on tasks that don't need the access, move the dates, or if the delay adds hours, a change request. Then I confirm the agreed plan by email. I did this kind of escalation at Netskope with a support backlog before a rollout: going early to the right person with facts got it moving.
+    best_way: "Raise it the same day with facts and options, and confirm the new plan in writing."
+    rubric: ["early", "factual", "options", "protects margin and relationship"]
+  - id: I2.sc3
+    kind: hypothetical
+    tier: 2
+    title: What if the manager pushes on the CSM background?
+    situation: |
+      "Customer success is relationship work. PS is hands-on engineering. Aren't you more of an account manager now?"
+    ask: Respond without being defensive.
+    right_thinking:
+      - "Agree on the distinction"
+      - "Show the hands-on parts of your CSM work and your TAC base"
+      - "End with why PS is the natural next step"
+    what: A confident reframe with evidence.
+    why: It's the core doubt about your profile.
+    how: ["Agree", "Evidence: health checks auditing live config, rollouts, finishing partner PS, TAC escalations", "Forward: PS"]
+    model_answer: |
+      That's a fair distinction. My CSM work was unusually technical: I audited live configurations in dozens of health checks, planned rollouts with partners, and finished a partner's half-done PS project. Before that I spent over two years as a TAC escalation engineer on FortiOS, working from packet captures and debugs. PS is where I combine both: hands-on delivery, with the customer skills to keep the project on track.
+    best_way: "Fair point, but my CSM work was hands-on, and my base is two years of FortiOS escalations. PS combines both."
+    rubric: ["non-defensive", "evidence", "forward-looking"]
+
+interview:
+  - id: I2.h01
+    stage: hm
+    question: Tell me about the most technically complex problem you solved.
+    testing: Depth and persistence
+    framework: "STAR-L"
+    model_answer: |
+      "At Fortinet, a customer had packet duplication across three ISPs over VPN with SD-WAN. Situation: intermittent application problems nobody could pin down. I reproduced it, analysed captures and SD-WAN behaviour, and traced it to specific SLA settings. Because it was a product defect, I worked with development for almost two months with reproductions until the fix. Learning: clean, reproducible evidence is what gets development to move."
+    best_way: "SD-WAN packet duplication over three ISPs, traced to SLA settings, fixed with development."
+    target: "1:30"
+  - id: I2.h02
+    stage: hm
+    question: Tell me about a time you had to win over new stakeholders.
+    testing: Relationship building
+    framework: "STAR-L"
+    model_answer: |
+      "An account's whole security team was replaced. The previous team wanted Netskope out over DLP problems and had gone silent for months. I opened with the new team with a health check of their live configuration, then followed its recommendations with them. Within six weeks more than half the seats were in use. Learning: start with something useful to them, not with a sales conversation."
+    best_way: "New team, health check first, more than half the seats in use within six weeks."
+    target: "1:15"
+  - id: I2.h03
+    stage: hm
+    question: How do you make sure a customer sees value from what they bought?
+    testing: Outcome focus
+    framework: "Approach → example → result"
+    model_answer: |
+      "I tie the platform to their own objectives with a 30-60-90 plan, measure progress, and review it at a regular cadence. At Netskope I did that across about 60 named accounts and moved around 60 % of them from red to green, mostly because customers who had had no contact beyond support finally had someone setting the why and the how."
+    best_way: "Objectives first, a measurable plan, a cadence. Around 60 % of my book went from red to green."
+    target: "1:00"
+  - id: I2.h04
+    stage: hm
+    question: Tell me about a time you prevented a problem before it happened.
+    testing: Proactivity
+    framework: "STAR-L"
+    model_answer: |
+      "When a critical CVE affected our customers' environments, I sent every account the remediation steps proactively instead of waiting for tickets. The one account that adopted late had a couple of endpoints compromised, but contained it quickly because the steps were already in hand. Learning: proactive communication pays off even with the customers who don't act immediately."
+    best_way: "Sent CVE remediation to every account proactively; even the late adopter contained it fast."
+    target: "1:00"
+  - id: I2.h05
+    stage: hm
+    question: How do you test changes before you apply them to production?
+    testing: Delivery discipline
+    framework: "Habit → example"
+    model_answer: |
+      "I reproduce first. At Fortinet I used shared Terraform templates to stand up environments matching the customer's scenario, so the fix I recommended had been validated. In PS I'd do the same with a lab or the customer's test environment, and every change has a MOP with pre-checks and a rollback."
+    best_way: "Reproduce in a lab first, then a MOP with pre-checks and rollback."
+    target: "0:45"
+  - id: I2.h06
+    stage: hm
+    question: Tell me about a recovery under pressure.
+    testing: Composure
+    framework: "STAR-L"
+    model_answer: |
+      "Cloud FortiGate HA clusters in split brain, where the only path in was the heartbeat interface. Others on my team escalated those straight away; I recovered them by comparing configuration checksums and re-syncing manually, step by step with the customer. Learning: a calm method and clear communication matter as much as the commands."
+    best_way: "Recovered cloud HA split-brain clusters via the heartbeat path by comparing checksums and re-syncing."
+    target: "1:00"
+  - id: I2.h07
+    stage: hm
+    question: How do you communicate with executives?
+    testing: Executive presence
+    framework: "Principle → example"
+    model_answer: |
+      "In their terms: where they're heading, risk and value, not features. I ran QBRs with C-level and VPs at Netskope, in English, Spanish and Portuguese, built around their roadmap, and that eased most renewals. I also turned log data into compliance evidence for SOC 2, ISO 27001 and PCI-DSS that a board could read."
+    best_way: "Their roadmap, risk and value; QBRs with C-level in three languages."
+    target: "0:45"
+  - id: I2.h08
+    stage: hm
+    question: How do you work with partners?
+    testing: Ecosystem awareness (Fortinet sells through partners)
+    framework: "Approach → example"
+    model_answer: |
+      "As a second customer layer, usually more technical. At Netskope I planned technical initiatives and health-check proposals with partners like Cloudrise, AccessIT Group, CDW and Deloitte across NAM and LATAM, and when a partner's PS project was left half done, I finished it in stages. At Fortinet PS I'd expect to deliver alongside partners, so I'd agree roles and quality checks up front."
+    best_way: "Partners are a second, more technical customer: agree roles and quality checks up front."
+    target: "0:50"
+  - id: I2.h09
+    stage: hm
+    question: What do you do when you don't know the answer in front of a customer?
+    testing: Honesty, resourcefulness
+    framework: "Admit → commit → follow through"
+    model_answer: |
+      "I say so, tell them when they'll have the answer, and follow through. Then I use the right resources: documentation, a lab, colleagues, or TAC. Customers trust a consultant who says 'I'll confirm that by tomorrow' far more than one who guesses."
+    best_way: "Admit it, commit to a time, and follow through."
+    target: "0:30"
+  - id: I2.h10
+    stage: hm
+    question: How do you organise your work across several projects?
+    testing: Self-management
+    framework: "System → example"
+    model_answer: |
+      "One tracker, a weekly status, and automation for the repetitive parts. At Netskope I built Python and AI workflows: a health-check report generator, a license-analysis tool and an activity tracker that summarised every account touched in a week. In PS I'd keep one view of milestones, risks and hours per project."
+    best_way: "One tracker, weekly status, automation; I built my own tools for it."
+    target: "0:40"
+  - id: I2.h11
+    stage: hm
+    question: Tell me about a time you used data to change a decision.
+    testing: Analytical influence
+    framework: "STAR-L"
+    model_answer: |
+      "A customer planned to cut half their web gateway licences for budget reasons. After a value QBR showing what they were actually using and what they needed next, they kept the budget and moved it into ZTNA instead of dropping it. With my team, I also co-built the telemetry model that decided which of 2,000+ accounts needed hands-on time."
+    best_way: "A value QBR turned a budget cut into a licence exchange into ZTNA."
+    target: "1:00"
+  - id: I2.h12
+    stage: hm
+    question: Why should I hire you over someone with more PS years?
+    testing: Self-positioning
+    framework: "Three reasons → close"
+    model_answer: |
+      "Three reasons. I know FortiOS from the inside, as a former TAC escalation engineer, so I'll prevent the problems I used to fix. I've owned customers and finished delivery work others left half done, so the customer side won't need coaching. And I build tools and templates that make a team faster. Add three languages and full travel availability, and I think the ramp-up is short and the upside is high."
+    best_way: "Inside FortiOS knowledge, proven customer ownership, and I make teams faster."
+    target: "0:50"
+  - id: I2.h13
+    stage: hm
+    question: What would your first 90 days look like?
+    testing: Planning, realism
+    framework: "30-60-90"
+    model_answer: |
+      "First 30 days: onboarding, your templates and tools, shadowing two projects, labs on the current FortiOS, FortiManager and FortiAnalyzer, and my first re-certification booked. By 60: leading parts of projects with a senior consultant reviewing my designs and MOPs. By 90: running smaller projects from kickoff to acceptance myself. I built plans like this for customers at Netskope; this one's for me."
+    best_way: "Shadow, then lead with review, then independent projects by day 90."
+    target: "0:50"
+  - id: I2.h14
+    stage: hm
+    question: How do you handle feedback that you disagree with?
+    testing: Coachability
+    framework: "Listen → understand → act or discuss with evidence"
+    model_answer: |
+      "I listen first and ask for an example, because I may be missing context. If it's right, I change it and say so. If I still disagree, I bring evidence and discuss it privately, then commit to the decision. That's how I worked with development at Fortinet: evidence, not opinions."
+    best_way: "Listen, ask for an example, act on it, or disagree with evidence and then commit."
+    target: "0:40"
+  - id: I2.h15
+    stage: hm
+    question: What questions do you have for me?
+    testing: Curiosity and consultant mindset
+    framework: "Two or three real questions"
+    model_answer: |
+      "What does a typical project look like here, size, products, on-site versus remote? How will you measure me in the first six months? And where do projects usually go wrong, and what would you want me to do differently?"
+    best_way: "Typical project, how I'm measured, and where projects go wrong."
+    target: "0:30"
+
+field_reports:
+  - id: I2.fr1
+    title: Why customers buy PS now
+    body: |
+      The average breach costs **USD 4.99 million** (IBM 2026), and detection, escalation and lost business are **63 %** of it. A correctly designed and handed-over deployment, with logging and runbooks, shrinks exactly that part. That's the business value you're selling as a consultant.
+    source: IBM Cost of a Data Breach Report 2026
