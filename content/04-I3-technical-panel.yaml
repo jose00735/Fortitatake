@@ -369,8 +369,8 @@ interview:
     testing: Depth and collaboration
     framework: "STAR-L short"
     model_answer: |
-      "SD-WAN with three ISPs over VPN was duplicating packets. I reproduced it, traced it to specific SLA settings with captures, and worked with development for almost two months with reproductions until the fix. Meanwhile I gave the customer a workaround so they weren't stuck."
-    best_way: "Packet duplication over three ISPs traced to SLA settings; reproductions to development; workaround meanwhile."
+      "SD-WAN with three ISPs over VPN was duplicating packets. I reproduced it, traced it to specific SLA settings with captures, and worked with development for almost two months with reproductions until the fix."
+    best_way: "Packet duplication over three ISPs traced to SLA settings; clean reproductions to development."
     target: "0:45"
   - id: I3.t12
     stage: technical

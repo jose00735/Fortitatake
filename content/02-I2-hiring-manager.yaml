@@ -289,7 +289,7 @@ interview:
     testing: Depth and persistence
     framework: "STAR-L"
     model_answer: |
-      "At Fortinet, a customer had packet duplication across three ISPs over VPN with SD-WAN. Situation: intermittent application problems nobody could pin down. I reproduced it, analysed captures and SD-WAN behaviour, and traced it to specific SLA settings. Because it was a product defect, I worked with development for almost two months with reproductions until the fix. Learning: clean, reproducible evidence is what gets development to move."
+      "At Fortinet, a customer had packet duplication across three ISPs over VPN with SD-WAN. Situation: intermittent application problems nobody could pin down. I reproduced it, analysed captures and SD-WAN behaviour, and traced it to specific SLA settings. Because it was a product defect, I worked with development for almost two months with clean reproductions. Learning: clean, reproducible evidence is what gets development to move."
     best_way: "SD-WAN packet duplication over three ISPs, traced to SLA settings, fixed with development."
     target: "1:30"
   - id: I2.h02
