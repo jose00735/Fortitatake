@@ -16,6 +16,7 @@ Lab.prototype.diagnose = function (fg, toks, line) {
   const known = (prefix) => fg.schema.cmds.some((c) => c.startsWith(prefix));
   try {
     const raw = toks.slice(1);
+    if (fg.kind !== "fortigate" && this.mgmtDiag) { const r = this.mgmtDiag(fg, head, rest); if (r !== null && r !== undefined) return r; }
     for (const fn of [this.vpnDiag, this.sdwanDiag]) {
       if (head !== "diagnose" || !fn) continue;
       const r = fn.call(this, fg, rest, raw);
@@ -406,6 +407,13 @@ function hostCurl(lab, h, args) {
     return `curl: (28) Failed to connect to ${host} port ${port} after 21003 ms: Timeout was reached`;
   }
   const fortiAdmin = p.fwd && p.fwd.localAnswer;
+  const path = (m[4] || "/");
+  const cloud = [...lab.devices.values()].find((d) => d.kind === "cloud" && d.hosts.some((x) => x.ip === p.seenDst));
+  const ch = cloud && cloud.hosts.find((x) => x.ip === p.seenDst);
+  const w = lab.webInspect ? lab.webInspect(h.id, p, { scheme, host, path, file: ch && ch.files[path] }) : { verdict: "allowed" };
+  if (w.verdict === "cert-error") return `curl: (60) SSL certificate problem: unable to get local issuer certificate\nMore details here: https://curl.se/docs/sslcerts.html\n(The FortiGate re-signs ${host} with its own CA, which this device doesn't trust.)`;
+  if (w.verdict === "blocked") return head ? `HTTP/1.1 403 Forbidden\nContent-Type: text/html; charset=utf-8` : `HTTP/1.1 403 Forbidden\nContent-Type: text/html; charset=utf-8\n\n${w.body}`;
+  if (ch && ch.files[path] === "eicar" && !head) return `HTTP/1.1 200 OK\nContent-Type: application/octet-stream\nContent-Length: 68\n\nX5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H* (saved ${path.split("/").pop()})`;
   const body = fortiAdmin ? `HTTP/1.1 200 OK\nServer: xxxxxxxx-xxxxx\nContent-Type: text/html\nX-Frame-Options: SAMEORIGIN\n\n<!DOCTYPE html><title>FortiGate</title> ... (FortiGate login page)` : `HTTP/1.1 200 OK\nServer: nginx\nContent-Type: text/html; charset=UTF-8\nContent-Length: 612\n${head ? "" : `\n<html><head><title>${host}</title></head><body>It works: ${host} answered from ${intToIp(p.seenDst)}${p.seenSrc ? ` and saw the client as ${intToIp(p.seenSrc)}` : ""}.</body></html>`}`;
   return head ? body.split("\n\n")[0] : body;
 }

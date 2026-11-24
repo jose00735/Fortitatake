@@ -12,6 +12,7 @@
 | P3 Advanced items (topology, packet diagrams, voice capture) | Not started |
 | L1 Labs engine + tiers 0, 1, 4 | **Built, v0.4.0 (23 Nov 2026).** Emulated FortiOS 8.0.2 CLI, network simulator, grader, 24 labs |
 | L2 Core PS labs: IPsec, SD-WAN, HA | **Built, v0.5.0 (24 Nov 2026).** 14 more labs (38 total, 50 parts) |
+| L3 Profiles, FortiAnalyzer, FortiManager, integration | **Built, v0.6.0 (24 Nov 2026).** 8 more labs (46 total, 64 parts, 229 checks) |
 
 ### What v0.1.0 does
 
@@ -97,6 +98,21 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.6.0 adds (Labs)
+
+- `utm.js`: security profiles on policies. SSL inspection (certificate / deep, wildcard-FQDN, address and regex exemptions; pinned sites and clients that don't trust the FortiGate CA give certificate errors under deep inspection), URL filter tables (simple, wildcard, regex; block, monitor, allow, exempt), antivirus on HTTP (EICAR test file). `curl` on lab hosts shows the block page, the AV alert or the certificate error. Traffic and UTM logs in FortiOS format.
+- `mgmt.js`: FortiAnalyzer and FortiManager appliances with their own 8.0.2 CLI schemas. GUI actions are typed in the console: FAZ `devices`, `authorize`, `logview`, `fortiview`; FMG `devices`, `authorize`, `dbconsole` (edit the device database), `install preview`, `install`, `retrieve`, `revisions`. Logging and FGFM need a path to the appliance (log `source-ip` and `fmg-source-ip` over tunnels). FMG status: synchronized, modified, out of sync, unauthorized; install is blocked after a local change.
+- DNS realism: any public-looking name now resolves (to a generic web host) unless the lab defines it; `.local`, `.lan`, `.internal`, `.corp`, `.home`, `.test` and similar stay NXDOMAIN. Fixes B4.01, where `google.com` failed after the fix.
+- Lists in lab briefs keep wrapped lines in the same item. Appliance icons on the topology; console banner names the product.
+- Schema fix: FAZ/FMG `allowaccess` is a multi-value option and `system route device` takes an interface name (corrected in `extract_cli.py`).
+
+| Track | Labs |
+|---|---|
+| Profiles | P2.01 (2-part web filter + AV), P4.01 guest certificate errors |
+| FortiAnalyzer | A2.01 (2-part logging + authorize), A2.02 RDP investigation, A4.01 no traffic logs ticket |
+| FortiManager | M2.01 (3-part add, change, install), M4.01 branch missing ticket |
+| Multi-product | X3.01 (3-part Security Fabric change window: FMG install, web filter, FAZ evidence) |
+
 ## Amendments to the blueprint
 
 1. **All learning logic lives in the shared web JS** (FSRS, projections, planner, XP, medals, mastery). The Go core only stores events, serves content, opens the window and, later, syncs. Android will reuse the same `web/` folder unchanged.
@@ -140,10 +156,9 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 ### Next in the queue (labs)
 
-1. v0.6.0 security profiles and SSL inspection (URL filter, AV, certificate vs deep inspection, exemptions), users (LDAP/FSSO), integration labs (VPN over SD-WAN, HA + VPN).
-2. v0.6.x FortiManager and FortiAnalyzer devices + GUI panels, FortiSwitch, BGP/OSPF/ADVPN, VDOMs, more break-fix.
-3. v0.7.0 SecOps consoles: FortiAnalyzer SOC, FortiSIEM, FortiEDR, log generator.
-4. v0.8.0 Capstones and multi-product integration labs.
+1. v0.6.x users (LDAP/FSSO), more integration labs (VPN over SD-WAN, HA + VPN), FortiSwitch, BGP/OSPF/ADVPN, VDOMs, more break-fix per technology.
+2. v0.7.0 SecOps consoles: FortiAnalyzer SOC, FortiSIEM, FortiEDR, log generator.
+3. v0.8.0 Capstones and multi-product integration labs.
 
 ### Next in the queue (study content)
 

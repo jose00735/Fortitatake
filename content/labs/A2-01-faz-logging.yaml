@@ -1,0 +1,90 @@
+id: A2.01
+track: fortianalyzer
+tier: 2
+order: 40
+kind: project
+title: "Andes Logistics: centralise logs on FortiAnalyzer"
+customer: Andes Logistics
+par: 45
+skills: [log fortianalyzer setting, device authorization, logtraffic, source-ip over VPN]
+brief: |
+  **SOW 2026-175.** A FortiAnalyzer VM, **FAZ-BOG (10.20.10.80)**, is up in the HQ LAN. Both FortiGates must send their
+  logs in real time, and HQ's Internet traffic must be logged (the auditor wants 90 days of it).
+
+  The FortiAnalyzer console is its real CLI plus the GUI actions typed as commands: `devices`, `authorize <device>`,
+  `logview ...`, `fortiview ...` (type `help` there).
+topology: {use: andes-soc}
+parts:
+  - id: a
+    title: HQ to FortiAnalyzer
+    tasks:
+      - "FGT-BOG: log to 10.20.10.80 in real time."
+      - "FGT-BOG: policy 3 (HQ-Internet) logs all sessions."
+      - "FAZ-BOG: authorize FGT-BOG, generate traffic from HQ-PC, then `logview traffic srcip=10.20.10.50`."
+    checks:
+      - text: "FGT-BOG is authorized on FAZ-BOG"
+        faz: {dev: FAZ-BOG, device: FGT-BOG, authorized: true}
+      - text: "HQ-PC's web sessions reach the FortiAnalyzer"
+        all:
+          - probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443}
+          - faz: {dev: FAZ-BOG, device: FGT-BOG, logs: {type: traffic, srcip: 10.20.10.50, action: accept}}
+    hints:
+      - "`config log fortianalyzer setting` / `set status enable` / `set server 10.20.10.80` / `set upload-option realtime` / `end`."
+      - "Policies log only security events by default (`logtraffic utm`). For session logs: `set logtraffic all`."
+      - "On FAZ-BOG: `devices`, then `authorize FGT-BOG-HQ`."
+    solution:
+      FGT-BOG: |
+        config log fortianalyzer setting
+        set status enable
+        set server 10.20.10.80
+        set upload-option realtime
+        end
+        config firewall policy
+        edit 3
+        set logtraffic all
+        next
+        end
+      FAZ-BOG: |
+        devices
+        authorize FGT-BOG-HQ
+      HQ-PC: |
+        curl https://www.google.com
+    explain: |
+      A FortiGate starts sending as soon as the setting is on, but the FortiAnalyzer stores nothing from an unauthorized device.
+      `logtraffic utm` keeps the volume down; `all` is what auditors usually ask for on Internet policies.
+  - id: b
+    title: Cali over the tunnel
+    tasks:
+      - "FGT-CLO: log to 10.20.10.80 in real time; Cali's policy 3 logs all sessions."
+      - "Make the logs actually cross the tunnel (hint: which source address would they use?)."
+      - "Authorize FGT-CLO on FAZ-BOG."
+    checks:
+      - text: "FGT-CLO is authorized on FAZ-BOG"
+        faz: {dev: FAZ-BOG, device: FGT-CLO, authorized: true}
+      - text: "Cali's sessions reach the FortiAnalyzer"
+        all:
+          - probe: {from: CLO-PC, to: www.google.com, proto: tcp, port: 443}
+          - faz: {dev: FAZ-BOG, device: FGT-CLO, logs: {type: traffic, srcip: 10.30.0.20}}
+    hints:
+      - "FortiGate's own traffic uses the egress interface's IP. The tunnel interface has none, so the packets leave with no usable source."
+      - "`set source-ip 10.30.0.1` in `config log fortianalyzer setting` on FGT-CLO: an address inside the tunnel's selectors."
+    solution:
+      FGT-CLO: |
+        config log fortianalyzer setting
+        set status enable
+        set server 10.20.10.80
+        set source-ip 10.30.0.1
+        set upload-option realtime
+        end
+        config firewall policy
+        edit 3
+        set logtraffic all
+        next
+        end
+      FAZ-BOG: |
+        authorize FGT-CLO-BR
+      CLO-PC: |
+        curl https://www.google.com
+    explain: |
+      Management traffic over a route-based VPN needs a source the tunnel carries: set source-ip (logs, FortiManager, SNMP, RADIUS)
+      or give the tunnel interfaces IPs. This is one of the most common "FortiAnalyzer doesn't see the branch" tickets.

@@ -6,7 +6,7 @@ const STRINGY = new Set(["string", "var-string", "user", "text"]);
 
 // Attributes that point at other objects: used for validation, completion, rename and delete checks.
 export const REFS = {
-  "firewall policy": { srcintf: "intf", dstintf: "intf", srcaddr: "addr", dstaddr: "daddr", service: "svc", schedule: "sched", poolname: "pool" },
+  "firewall policy": { srcintf: "intf", dstintf: "intf", srcaddr: "addr", dstaddr: "daddr", service: "svc", schedule: "sched", poolname: "pool", "ssl-ssh-profile": "sslprof", "av-profile": "avprof", "webfilter-profile": "wfprof" },
   "router static": { device: "intfonly" },
   "router policy": { "input-device": "intfonly", "output-device": "intfonly" },
   "system dhcp server": { interface: "intfonly" },
@@ -86,7 +86,9 @@ export class FortiGate {
     this.rand = rng(hashStr(spec.id) || 7);
     this.diag = null; // set by the simulator: (dev, tokens, line) => output
     this.ports = (spec.ports || []).map((p) => (typeof p === "string" ? { name: p } : p));
-    this.load(factory(this, spec));
+    this.product = schema.product || "fortios";
+    this.gui = null; // FortiManager / FortiAnalyzer GUI actions typed at the console
+    this.load(this.product === "fortios" ? factory(this, spec) : mgmtFactory(this, spec));
     if (spec.config) this.load(spec.config);
     this.history = [];
   }
@@ -136,6 +138,9 @@ export class FortiGate {
       case "sched": return [...names("firewall schedule recurring"), ...names("firewall schedule onetime"), ...names("firewall schedule group")];
       case "pool": return names("firewall ippool");
       case "accprofile": return [...names("system accprofile"), "super_admin", "prof_admin"];
+      case "sslprof": return names("firewall ssl-ssh-profile");
+      case "avprof": return names("antivirus profile");
+      case "wfprof": return names("webfilter profile");
       default: return [];
     }
   }
@@ -193,6 +198,7 @@ export class FortiGate {
 
   top(toks, line) {
     const c = pick(toks[0], ["config", "show", "get", "diagnose", "execute", "exit", "tree", "alias"]);
+    if (!c && this.gui) { const g = this.gui(this, toks, line); if (g !== null && g !== undefined) return g; }
     if (!c) return "Unknown action 0\nCommand fail. Return code -1";
     if (c === "config") {
       const path = this.matchPath(toks.slice(1));
@@ -671,7 +677,8 @@ export class FortiGate {
 
   snapshot() {
     const o = {};
-    for (const [p, n] of this.cfg) o[p] = n instanceof Table ? this.renderTable(p, this.P[p], n, 0, false) : this.renderObject(p, this.P[p], n, 0, false);
+    // nodes created lazily on read (an empty "log setting", say) are not configuration
+    for (const [p, n] of this.cfg) if (n instanceof Table ? n.entries.size : n.attrs.size || n.children.size) o[p] = n instanceof Table ? this.renderTable(p, this.P[p], n, 0, false) : this.renderObject(p, this.P[p], n, 0, false);
     return o;
   }
 }
@@ -727,6 +734,17 @@ const SERVICES = [
   ["SIP", "set udp-portrange 5060"], ["SYSLOG", "set udp-portrange 514"], ["DHCP", "set udp-portrange 67-68"],
   ["TRACEROUTE", "set udp-portrange 33434-33535"], ["IKE", "set udp-portrange 500 4500"],
 ];
+function mgmtFactory(dev, spec) {
+  const lines = ["config system global", `set hostname "${spec.hostname || spec.id}"`, "end", "config system interface"];
+  for (const p of dev.ports) {
+    lines.push(`edit "${p.name}"`);
+    if (p.ip) lines.push(`set ip ${p.ip}`);
+    lines.push(`set allowaccess ${p.allow || "ping https ssh"}`, "next");
+  }
+  lines.push("end");
+  if (spec.gateway) lines.push("config system route", "edit 1", "set dst 0.0.0.0 0.0.0.0", `set gateway ${spec.gateway}`, `set device "${dev.ports[0].name}"`, "next", "end");
+  return lines.join("\n");
+}
 function factory(dev, spec) {
   const host = spec.hostname || spec.id;
   const lines = [`config system global`, `set hostname "${host}"`, `set alias "${spec.model || "FortiGate-VM64"}"`, `end`, `config system interface`];
@@ -741,5 +759,7 @@ function factory(dev, spec) {
   lines.push("end", "config firewall schedule recurring", 'edit "always"', "set day sunday monday tuesday wednesday thursday friday saturday", "next", "end");
   lines.push("config system admin", 'edit "admin"', 'set accprofile "super_admin"', 'set vdom "root"', "next", "end");
   lines.push("config system sdwan", "config zone", 'edit "virtual-wan-link"', "next", "end", "end");
+  lines.push("config firewall ssl-ssh-profile", 'edit "certificate-inspection"', "config https", "set status certificate-inspection", "end", "next", 'edit "deep-inspection"', "config https", "set status deep-inspection", "end", "next", 'edit "no-inspection"', "config https", "set status disable", "end", "next", "end");
+  lines.push("config antivirus profile", 'edit "default"', "config http", "set av-scan block", "end", "next", "end", "config webfilter profile", 'edit "default"', "next", "end");
   return lines.join("\n");
 }

@@ -24,6 +24,9 @@ function one(lab, c, answers) {
   if (c.ha) return haCheck(lab, c.ha);
   if (c.client) return clientCheck(lab, c.client);
   if (c.sdwan) return sdwanCheck(lab, c.sdwan);
+  if (c.web) return webCheck(lab, c.web);
+  if (c.faz) return fazCheck(lab, c.faz);
+  if (c.fmg) return fmgCheck(lab, c.fmg);
   if (c.all) { const r = c.all.map((x) => one(lab, x, answers)); return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail }; }
   return { pass: false, detail: "Unknown check type" };
 }
@@ -209,4 +212,46 @@ function sdwanCheck(lab, c) {
   const alive = lab.memberAlive(fg, cfg, m);
   if (c.alive !== undefined && alive !== c.alive) return { pass: false, detail: `${c.member} is ${alive ? "alive" : "dead"}.` };
   return { pass: true, detail: `${c.member} is an SD-WAN member and ${alive ? "alive" : "dead"}.` };
+}
+
+function webCheck(lab, c) {
+  const { id } = parseFrom(lab, c.from);
+  const m = String(c.url).match(/^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/i);
+  const scheme = m[1].toLowerCase(), host = m[2], port = Number(m[3] || (scheme === "https" ? 443 : 80)), path = m[4] || "/";
+  const r = lab.resolve(id, host);
+  if (r.err) return { pass: false, detail: `${c.from} could not resolve ${host}.` };
+  const p = lab.probe(id, { dst: r.ip, proto: 6, dport: port });
+  let verdict = "unreachable", w = null;
+  if (p.ok) {
+    const cloud = [...lab.devices.values()].find((d) => d.kind === "cloud" && d.hosts.some((x) => x.ip === p.seenDst));
+    const ch = cloud && cloud.hosts.find((x) => x.ip === p.seenDst);
+    w = lab.webInspect(id, p, { scheme, host, path, file: ch && ch.files[path] });
+    verdict = w.verdict;
+  }
+  const want = c.expect || "allowed";
+  const label = `${c.from} → ${c.url}`;
+  if (verdict !== want) return { pass: false, detail: `${label}: ${verdict === "unreachable" ? "the connection itself fails (" + explain(p) + ")" : verdict === "blocked" ? `blocked by ${w.by === "av" ? "antivirus" : "the web filter"}` : verdict === "cert-error" ? "certificate error: " + w.reason : "allowed"}, expected ${want}.` };
+  if (c.by && w && w.by !== c.by) return { pass: false, detail: `${label}: blocked, but by ${w.by === "av" ? "antivirus" : "the web filter"} instead of ${c.by === "av" ? "antivirus" : "the web filter"}.` };
+  return { pass: true, detail: `${label}: ${verdict}${w && w.by ? ` by ${w.by === "av" ? "antivirus" : "the web filter"}` : ""}.` };
+}
+function fazCheck(lab, c) {
+  const faz = getDev(lab, c.dev);
+  const fg = c.device ? getDev(lab, c.device) : null;
+  const m = fg && faz.managed.get(fg.id);
+  if (c.authorized && (!m || !m.authorized)) return { pass: false, detail: `${c.device} is not authorized on ${c.dev}${lab.fazSenders(faz).includes(fg) ? " (it is sending, run devices / authorize)" : " (it isn't sending logs to it yet)"}.` };
+  if (c.logs) {
+    const logs = m ? m.logs : [];
+    const f = c.logs;
+    const hits = logs.filter((r) => Object.entries(f).every(([k, v]) => String(r[k]) === String(v)));
+    if (!hits.length) return { pass: false, detail: `${c.dev} has no ${Object.entries(f).map(([k, v]) => `${k}=${v}`).join(" ")} logs from ${c.device}.` };
+    return { pass: true, detail: `${c.dev} holds ${hits.length} matching log(s) from ${c.device}.` };
+  }
+  return { pass: true, detail: `${c.device} is authorized on ${c.dev}.` };
+}
+function fmgCheck(lab, c) {
+  const fmg = getDev(lab, c.dev);
+  const fg = getDev(lab, c.device);
+  const st = lab.fmgStatus(fmg, fg);
+  if (c.status && !st.startsWith(c.status)) return { pass: false, detail: `${c.device} on ${c.dev}: ${st}.` };
+  return { pass: true, detail: `${c.device} on ${c.dev}: ${st}.` };
 }

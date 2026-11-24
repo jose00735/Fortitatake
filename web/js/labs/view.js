@@ -15,7 +15,7 @@ async function loadCatalog() {
   return catalog;
 }
 async function loadSchemas() {
-  if (!schemas) schemas = fetch("schema/fortios-8.0.2.json").then((r) => r.json()).then((fortios) => ({ fortios }));
+  if (!schemas) schemas = Promise.all(["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json()))).then(([fortios, fortianalyzer, fortimanager]) => ({ fortios, fortianalyzer, fortimanager }));
   return schemas;
 }
 const key = (id) => "ft-lab-" + id;
@@ -74,7 +74,7 @@ function mount(main, run) {
   const firstFgt = devs.find((d) => d instanceof FortiGate) || devs[0];
   const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket" };
   for (const d of devs) { ui.buf[d.id] = []; ui.hist[d.id] = []; }
-  for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`FortiOS v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
+  for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
   else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ISP router. Try: show ip interface brief` : `${d.id} (${d.os}) · type help`, "");
 
   const el = h(`<div class="labrun" data-view="ticket">

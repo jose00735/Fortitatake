@@ -143,6 +143,8 @@ export function md(src) {
       while (i < lines.length && (/^\s*[-*]\s/.test(lines[i]) || /^\s*\d+\.\s/.test(lines[i]))) {
         items.push(lines[i].replace(/^\s*([-*]|\d+\.)\s/, ""));
         i++;
+        // an indented line that isn't a new item continues the item above (wrapped text)
+        while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i])) items[items.length - 1] += " " + lines[i++].trim();
       }
       const tag = ordered ? "ol" : "ul";
       out += `<${tag}>${items.map((t) => `<li>${inline(t)}</li>`).join("")}</${tag}>`;

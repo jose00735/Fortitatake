@@ -39,6 +39,11 @@ clinic:
         - {name: soporte.historiaclinica.co, ip: 45.60.12.7, services: [tcp/443, tcp/8443]}
         - {name: rdp.example.net, ip: 52.10.20.30, services: [tcp/3389, tcp/443]}
         - {name: ftp.example.net, ip: 52.10.20.31, services: [tcp/21]}
+        - {name: www.apuestas-ya.co, ip: 181.78.10.20, services: [tcp/80, tcp/443]}
+        - {name: m.apuestas-ya.co, ip: 181.78.10.21, services: [tcp/80, tcp/443]}
+        - {name: www.casino-caribe.co, ip: 104.21.5.8, services: [tcp/80, tcp/443]}
+        - {name: secure.eicar.org, ip: 89.238.73.97, services: [tcp/80, tcp/443], files: {"/download/eicar.com": eicar, "/download/readme.txt": clean}}
+        - {name: www.bancolombia.com, ip: 200.13.200.10, services: [tcp/443], pinned: true}
   dns:
     citas.clinicasanrafael.co: 203.0.113.2
   segments:
@@ -175,7 +180,7 @@ retail:
     - {id: STAFF-PC, kind: host, os: windows, nic: {ip: dhcp}}
     - {id: POS-01, kind: host, os: windows, hostname: POS-01, nic: {ip: dhcp}}
     - {id: POS-02, kind: host, os: windows, hostname: POS-02, nic: {ip: dhcp}}
-    - {id: GUEST-PHONE, kind: host, os: linux, hostname: guest-phone, nic: {ip: dhcp}}
+    - {id: GUEST-PHONE, kind: host, os: linux, hostname: guest-phone, nic: {ip: dhcp}, trusts_ca: false}
     - {id: CCTV-NVR, kind: server, os: linux, nic: {ip: 10.40.40.20/24, gw: 10.40.40.1}, services: [tcp/443, tcp/554]}
     - id: ISP-TIGO
       kind: router
@@ -298,6 +303,8 @@ andes:
         - {name: dns.google, ip: 8.8.8.8, services: [udp/53]}
         - {name: www.google.com, ip: 142.250.78.4, services: [tcp/80, tcp/443]}
         - {name: login.microsoftonline.com, ip: 20.190.160.1, services: [tcp/443]}
+        - {name: www.apuestas-ya.co, ip: 181.78.10.20, services: [tcp/80, tcp/443]}
+        - {name: secure.eicar.org, ip: 89.238.73.97, services: [tcp/80, tcp/443], files: {"/download/eicar.com": eicar}}
   segments:
     - {id: bog-wan, members: ["FGT-BOG:port1", "ISP-ETB:ge0"]}
     - {id: bog-lan, label: HQ LAN 10.20.10.0/24, members: ["FGT-BOG:port2", ERP-SRV, HQ-PC]}
@@ -846,4 +853,55 @@ pharma-ha-live:
         set override enable
         set priority 100
         set monitor port1 port2
+        end
+
+# Andes with the tunnel up and a FortiAnalyzer and FortiManager in the HQ LAN.
+andes-soc:
+  extends: andes-vpn-live
+  add_devices:
+    - id: FAZ-BOG
+      kind: fortianalyzer
+      model: FortiAnalyzer-VM64
+      hostname: FAZ-BOG
+      serial: FAZ-VMTM26000417
+      ports: [{name: port1, ip: 10.20.10.80/24, allow: "ping https ssh"}]
+      gateway: 10.20.10.1
+    - id: FMG-BOG
+      kind: fortimanager
+      model: FortiManager-VM64
+      hostname: FMG-BOG
+      serial: FMG-VMTM26000921
+      ports: [{name: port1, ip: 10.20.10.81/24, allow: "ping https ssh"}]
+      gateway: 10.20.10.1
+  segment_members: {bog-lan: ["FAZ-BOG:port1", "FMG-BOG:port1"]}
+  layout: {FAZ-BOG: [70, 430], FMG-BOG: [70, 320], seg:bog-lan: [240, 430]}
+
+# Andes SOC with both FortiGates logging to FAZ-BOG and authorized there.
+andes-soc-live:
+  extends: andes-soc
+  devices:
+    FGT-BOG:
+      config: |
+        config log fortianalyzer setting
+        set status enable
+        set server 10.20.10.80
+        set upload-option realtime
+        end
+        config firewall policy
+        edit 3
+        set logtraffic all
+        next
+        end
+    FGT-CLO:
+      config: |
+        config log fortianalyzer setting
+        set status enable
+        set server 10.20.10.80
+        set source-ip 10.30.0.1
+        set upload-option realtime
+        end
+        config firewall policy
+        edit 3
+        set logtraffic all
+        next
         end

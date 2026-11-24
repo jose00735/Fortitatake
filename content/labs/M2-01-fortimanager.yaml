@@ -1,0 +1,110 @@
+id: M2.01
+track: fortimanager
+tier: 2
+order: 45
+kind: project
+title: "Andes Logistics: manage both FortiGates from FortiManager"
+customer: Andes Logistics
+par: 60
+skills: [central-management, authorize and import, device database, install preview, out-of-sync]
+brief: |
+  **SOW 2026-176.** A FortiManager VM, **FMG-BOG (10.20.10.81)**, will manage HQ and Cali. From go-live, changes are made on
+  the FortiManager and installed, never on the FortiGates directly.
+
+  The FortiManager console is its real CLI plus the GUI actions typed as commands: `devices`, `authorize`, `dbconsole`
+  (edit a device's database), `install preview`, `install`, `retrieve`, `revisions` (type `help` there).
+topology: {use: andes-soc}
+parts:
+  - id: a
+    title: Register and authorize
+    tasks:
+      - "Both FortiGates: central management type fortimanager pointing to 10.20.10.81 (Cali's FGFM has to cross the tunnel)."
+      - "FMG-BOG: authorize both devices."
+    checks:
+      - text: "FGT-BOG is managed and synchronized"
+        fmg: {dev: FMG-BOG, device: FGT-BOG, status: synchronized}
+      - text: "FGT-CLO is managed and synchronized"
+        fmg: {dev: FMG-BOG, device: FGT-CLO, status: synchronized}
+    hints:
+      - "`config system central-management` / `set type fortimanager` / `set fmg 10.20.10.81`."
+      - "Cali: add `set fmg-source-ip 10.30.0.1`, or FGFM leaves the tunnel with no usable source."
+    solution:
+      FGT-BOG: |
+        config system central-management
+        set type fortimanager
+        set fmg 10.20.10.81
+        end
+      FGT-CLO: |
+        config system central-management
+        set type fortimanager
+        set fmg 10.20.10.81
+        set fmg-source-ip 10.30.0.1
+        end
+      FMG-BOG: |
+        devices
+        authorize FGT-BOG-HQ
+        authorize FGT-CLO-BR
+    explain: |
+      Authorization imports the running configuration into the device database: from now on the FortiManager holds the
+      intended state and compares it with the device.
+  - id: b
+    title: Make a change the FortiManager way
+    tasks:
+      - "In FGT-CLO's database (dbconsole FGT-CLO-BR): address HQ-ERP = 10.20.10.20/32."
+      - "Run install preview, then install."
+    checks:
+      - text: "HQ-ERP exists on the real FGT-CLO"
+        config: {dev: FGT-CLO, path: firewall address, key: HQ-ERP}
+      - text: "FGT-CLO is synchronized again"
+        fmg: {dev: FMG-BOG, device: FGT-CLO, status: synchronized}
+      - text: "Previewed before installing"
+        ran: {dev: FMG-BOG, cmd: "install preview", fail: "Always run the install preview first, in a real change it's your evidence."}
+    hints:
+      - "`dbconsole FGT-CLO-BR`, then normal FortiOS CLI. `exit` leaves the database."
+      - "`install preview FGT-CLO-BR` shows the exact CLI that will be pushed."
+    solution:
+      FMG-BOG: |
+        dbconsole FGT-CLO-BR
+        config firewall address
+        edit HQ-ERP
+        set subnet 10.20.10.20/32
+        next
+        end
+        exit
+        install preview FGT-CLO-BR
+        install FGT-CLO-BR
+    explain: |
+      The preview is the change record: the CLI it lists is exactly what the FortiManager pushes over FGFM.
+  - id: c
+    title: Someone changed the FortiGate directly
+    brief: |
+      **Next morning.** A Cali technician "quickly" added an any-to-any policy on FGT-CLO to fix a printer, directly on the
+      device. Your scheduled install now refuses to run.
+    events:
+      - {cli: {dev: FGT-CLO, lines: "config firewall policy\nedit 9\nset name TEMP-printer\nset srcintf internal\nset dstintf VPN-BOG\nset srcaddr all\nset dstaddr all\nset action accept\nset schedule always\nset service ALL\nnext\nend"}}
+    tasks:
+      - "Find the device's status in the FortiManager."
+      - "Bring the change into the database (retrieve), remove TEMP-printer there, and install."
+    checks:
+      - text: "TEMP-printer is gone from the real FGT-CLO"
+        config: {dev: FGT-CLO, path: firewall policy, key: "9", exists: false}
+      - text: "FGT-CLO is synchronized"
+        fmg: {dev: FMG-BOG, device: FGT-CLO, status: synchronized}
+      - text: "What status did FortiManager show before you acted?"
+        answer: {accept: ["~out of sync|out-of-sync|modified|conflict"], hint: "Run devices on FMG-BOG.", why: "Out of sync: the device was changed outside the FortiManager."}
+    hints:
+      - "`devices` shows the config status. `retrieve FGT-CLO-BR` makes the device's running config the latest revision."
+      - "Then `dbconsole FGT-CLO-BR` / `config firewall policy` / `delete 9` / `end` / `exit`, and install."
+    solution:
+      FMG-BOG: |
+        devices
+        retrieve FGT-CLO-BR
+        dbconsole FGT-CLO-BR
+        config firewall policy
+        delete 9
+        end
+        exit
+        install FGT-CLO-BR
+    explain: |
+      Retrieving first keeps the history honest: the revision list shows the local change and its removal. Installing over an
+      out-of-sync device would silently undo whatever was changed, sometimes something the business now depends on.

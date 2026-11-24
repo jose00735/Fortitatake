@@ -1,0 +1,48 @@
+id: A4.01
+track: fortianalyzer
+tier: 4
+order: 51
+kind: ticket
+title: "\"FortiAnalyzer shows security events but no traffic logs\""
+customer: Andes Logistics
+par: 20
+skills: [logtraffic, log troubleshooting]
+brief: |
+  **Ticket 5402, priority 3.** The auditor asked for last week's Internet sessions from HQ. FortiAnalyzer receives logs from
+  FGT-BOG (it shows events) but *Log View > Traffic* is empty for HQ-PC. The FortiAnalyzer itself is healthy.
+topology:
+  use: andes-soc-live
+  devices:
+    FGT-BOG:
+      config: |
+        config firewall policy
+        edit 3
+        set logtraffic utm
+        next
+        end
+events:
+  - {cli: {dev: FAZ-BOG, lines: "authorize FGT-BOG-HQ"}}
+tasks:
+  - "Find why HQ sessions never appear, fix it, and prove it with new traffic."
+checks:
+  - text: "HQ-PC's sessions now reach the FortiAnalyzer"
+    all:
+      - probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443}
+      - faz: {dev: FAZ-BOG, device: FGT-BOG, logs: {type: traffic, srcip: 10.20.10.50}}
+  - text: "Root cause"
+    answer: {accept: ["~logtraffic|log all|utm|security events only|logging setting"], hint: "`show firewall policy 3` on FGT-BOG.", why: "Policy 3 logs only security events (logtraffic utm), so allowed sessions were never logged."}
+hints:
+  - "The FortiAnalyzer receives what the FortiGate decides to log, per policy."
+  - "`set logtraffic all` on policy 3."
+solution:
+  FGT-BOG: |
+    config firewall policy
+    edit 3
+    set logtraffic all
+    next
+    end
+  HQ-PC: |
+    curl https://www.google.com
+explain: |
+  Logs can't be recovered for the period they weren't generated: tell the customer plainly and agree the logging standard
+  (which policies log all sessions) as part of the hand-over.

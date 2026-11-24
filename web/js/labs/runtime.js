@@ -4,6 +4,8 @@ import "./diag.js";
 import "./vpn.js";
 import "./sdwan.js";
 import "./ha.js";
+import "./utm.js";
+import "./mgmt.js";
 import { hostRun, routerRun } from "./diag.js";
 import { runChecks } from "./grader.js";
 import { FortiGate } from "./fgt.js";
@@ -39,6 +41,12 @@ export class LabRun {
         for (const sg of this.lab.segments) for (const m of sg.members) if (m.dev === dev && (m.port === port || (!m.port && !port))) { m.down = !!ev.down; changed = true; }
       }
       if (ev.router) { const r = this.lab.dev(ev.router); if (r) { if (ev.quality) r.quality = ev.quality; if (ev.mtu) r.mtu = ev.mtu; changed = true; } }
+      if (ev.cli) { const d = this.lab.dev(ev.cli.dev); if (d && d.load) { d.load(ev.cli.lines); changed = true; } }
+      if (ev.traffic) {
+        if (changed) { this.lab.dirty(); changed = false; }
+        for (const t of ev.traffic) for (let i = 0; i < (t.count || 1); i++) this.lab.probe(t.from, { dst: ipToInt(t.to), proto: { icmp: 1, tcp: 6, udp: 17 }[t.proto || "tcp"], dport: t.port || 0 });
+        for (const d of this.lab.devices.values()) if (d.async) d.async.length = 0;
+      }
       if (ev.dns) { for (const [n, ip] of Object.entries(ev.dns)) this.lab.names.set(n.toLowerCase(), ipToInt(ip)); changed = true; }
     }
     if (changed) this.lab.dirty();
@@ -53,7 +61,8 @@ export class LabRun {
     const d = this.lab.dev(devId);
     let out;
     if (d instanceof FortiGate) {
-      out = d.run(line);
+      const m = this.lab.mgmtExec(d, line);
+      out = m !== null && m !== undefined ? m : d.run(line);
       if (/^\s*(diag|exec|get)/i.test(line)) this.verified++;
     } else if (d.kind === "router") out = routerRun(this.lab, d, line);
     else { out = hostRun(this.lab, d, line); if (/^(ping|curl|tracert|traceroute|nslookup|tnc|nc)/i.test(line.trim())) this.verified++; }
@@ -62,7 +71,7 @@ export class LabRun {
   }
   prompt(devId) {
     const d = this.lab.dev(devId);
-    if (d instanceof FortiGate) return d.prompt();
+    if (d instanceof FortiGate) return this.lab.mgmtPrompt(d) || d.prompt();
     if (d.kind === "router") return `${d.id}> `;
     return d.os === "windows" ? `C:\\Users\\${d.hostname.toLowerCase()}> ` : `${d.hostname.toLowerCase()}@lab:~$ `;
   }

@@ -1,0 +1,50 @@
+id: M4.01
+track: fortimanager
+tier: 4
+order: 52
+kind: ticket
+title: "\"Cali never shows up in FortiManager\""
+customer: Andes Logistics
+par: 20
+skills: [FGFM, fmg-source-ip, management over VPN]
+brief: |
+  **Ticket 5420, priority 3.** HQ registered in FortiManager in minutes. Cali was configured the same way an hour ago and
+  still doesn't appear in *Device Manager*. The tunnel is up and Cali users reach HQ fine.
+topology:
+  use: andes-soc
+  devices:
+    FGT-BOG:
+      config: |
+        config system central-management
+        set type fortimanager
+        set fmg 10.20.10.81
+        end
+    FGT-CLO:
+      config: |
+        config system central-management
+        set type fortimanager
+        set fmg 10.20.10.81
+        end
+events:
+  - {cli: {dev: FMG-BOG, lines: "authorize FGT-BOG-HQ"}}
+tasks:
+  - "Find why FGFM from Cali never arrives, fix it and authorize Cali."
+checks:
+  - text: "FGT-CLO is managed and synchronized"
+    fmg: {dev: FMG-BOG, device: FGT-CLO, status: synchronized}
+  - text: "Root cause"
+    answer: {accept: ["~source|fmg-source-ip|tunnel|interface ip|no ip"], hint: "Which IP does FGT-CLO use for its own traffic towards 10.20.10.81?", why: "FGFM left through the tunnel interface, which has no IP, so it had no usable source; fmg-source-ip 10.30.0.1 fixes it."}
+hints:
+  - "User traffic works because it has 10.30.0.x sources. The FortiGate's own traffic doesn't."
+  - "`set fmg-source-ip 10.30.0.1` in `config system central-management`, then authorize on FMG-BOG."
+solution:
+  FGT-CLO: |
+    config system central-management
+    set fmg-source-ip 10.30.0.1
+    end
+  FMG-BOG: |
+    devices
+    authorize FGT-CLO-BR
+explain: |
+  Same root cause as logs over VPN: locally generated traffic needs a source the tunnel's selectors and the far side's
+  policies accept.

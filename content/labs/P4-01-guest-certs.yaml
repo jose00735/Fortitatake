@@ -1,0 +1,53 @@
+id: P4.01
+track: fortigate
+tier: 4
+order: 50
+kind: ticket
+title: "\"Guests get a certificate warning on every website\""
+customer: Tiendas Macondo
+par: 20
+skills: [SSL inspection, BYOD, guest networks]
+brief: |
+  **Ticket 3401, priority 3.** After yesterday's "security upgrade", customers on the guest Wi-Fi complain that every site
+  shows a certificate warning. Staff PCs (domain-joined) are fine. The change applied the deep-inspection profile to all
+  store policies so the guest network could be web-filtered too.
+topology:
+  use: retail-live
+  devices:
+    FGT-MAC:
+      config: |
+        config firewall policy
+        edit 3
+        set utm-status enable
+        set ssl-ssh-profile deep-inspection
+        next
+        edit 4
+        set utm-status enable
+        set ssl-ssh-profile deep-inspection
+        next
+        end
+tasks:
+  - "Reproduce from GUEST-PHONE: curl https://www.google.com."
+  - "Fix guests without lowering staff inspection; answer why staff weren't affected."
+checks:
+  - text: "Guests browse HTTPS without certificate errors"
+    web: {from: GUEST-PHONE, url: "https://www.google.com/", expect: allowed}
+  - text: "Staff keep deep inspection"
+    config: {dev: FGT-MAC, path: firewall policy, key: "3", attr: ssl-ssh-profile, equals: deep-inspection}
+  - text: "Why didn't staff PCs see the warning?"
+    answer: {accept: ["~ca|certificate authority|trust|domain|gpo|installed"], hint: "Who signs the certificate the browser receives under deep inspection?", why: "Deep inspection re-signs sites with the FortiGate CA; domain PCs trust it (pushed by GPO), guest phones don't."}
+hints:
+  - "Under deep inspection the FortiGate presents its own certificate for every site."
+  - "On the guest policy (4) use certificate-inspection: filtering by host still works without decrypting."
+solution:
+  GUEST-PHONE: |
+    curl https://www.google.com
+  FGT-MAC: |
+    config firewall policy
+    edit 4
+    set ssl-ssh-profile certificate-inspection
+    next
+    end
+explain: |
+  Never deep-inspect devices you don't manage: you can't install your CA on them, and decrypting customers' traffic raises
+  privacy and legal questions. Certificate inspection is the standard for guest networks.

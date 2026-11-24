@@ -1,0 +1,66 @@
+id: A2.02
+track: fortianalyzer
+tier: 2
+order: 41
+kind: investigation
+title: "Who keeps trying remote desktop on the ERP?"
+customer: Andes Logistics
+par: 25
+skills: [Log View filters, FortiView, deny logs, evidence for the customer]
+brief: |
+  **SOC escalation 7711.** The ERP team noticed failed RDP attempts in Windows' event log on **ERP-SRV (10.20.10.20)**
+  overnight. HQ blocks RDP to servers from the branches with a deny policy that logs. Find out who, from where, and which
+  policy blocked it, using only the FortiAnalyzer.
+topology:
+  use: andes-soc-live
+  devices:
+    FGT-BOG:
+      config: |
+        config firewall service custom
+        edit RDP
+        set tcp-portrange 3389
+        next
+        end
+        config firewall address
+        edit ERP-SRV
+        set subnet 10.20.10.20/32
+        next
+        end
+        config firewall policy
+        edit 9
+        set name Block-RDP-to-servers
+        set srcintf VPN-CLO
+        set dstintf port2
+        set srcaddr all
+        set dstaddr ERP-SRV
+        set action deny
+        set schedule always
+        set service RDP
+        set logtraffic all
+        next
+        move 9 before 2
+        end
+events:
+  - {cli: {dev: FAZ-BOG, lines: "authorize FGT-BOG-HQ\nauthorize FGT-CLO-BR"}}
+  - {traffic: [{from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 3389, count: 6}, {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443, count: 2}]}
+tasks:
+  - "On FAZ-BOG, filter the traffic logs for denied sessions to 10.20.10.20 on port 3389."
+  - "Answer the three questions for the incident note."
+checks:
+  - text: "Used Log View on the FortiAnalyzer"
+    ran: {dev: FAZ-BOG, cmd: "logview|fortiview", fail: "Answer from the evidence: `logview traffic action=deny dstip=10.20.10.20`."}
+  - text: "Which internal IP made the attempts?"
+    answer: {accept: ["10.30.0.20"], hint: "srcip in the deny logs.", why: "10.30.0.20, CLO-PC at the Cali branch."}
+  - text: "Which policy ID blocked them?"
+    answer: {accept: ["9", "policy 9"], hint: "policyid in the same logs.", why: "Policy 9, Block-RDP-to-servers."}
+  - text: "How many attempts were logged?"
+    answer: {accept: ["6"], hint: "Count the matching deny logs.", why: "Six denied RDP sessions."}
+hints:
+  - "`logview traffic action=deny dstport=3389` narrows it at once."
+  - "`fortiview sources` gives the top talkers if you don't know where to start."
+solution:
+  FAZ-BOG: |
+    logview traffic action=deny dstport=3389
+explain: |
+  Deny policies only help an investigation if they log. The next step in a real SOC is the endpoint: an internal host trying
+  RDP to a server it never uses is a lateral-movement pattern worth isolating (with FortiEDR in the SecOps labs).

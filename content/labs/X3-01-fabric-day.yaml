@@ -1,0 +1,122 @@
+id: X3.01
+track: integration
+tier: 3
+order: 60
+kind: project
+title: "Security Fabric day: FortiManager, FortiAnalyzer and web filtering for Cali"
+customer: Andes Logistics
+par: 75
+skills: [FortiManager install, web filter, FortiAnalyzer, VPN management traffic]
+brief: |
+  **Change 2026-1203 (one window, three products).** Cali must:
+
+  1. send its logs to FAZ-BOG over the tunnel,
+  2. get a web filter blocking betting sites (*.apuestas-ya.co), **made on the FortiManager and installed**, never on the
+     FortiGate,
+  3. prove it works, with the block found in the FortiAnalyzer for the change record.
+topology: {use: andes-soc}
+parts:
+  - id: a
+    title: Logs and management over the tunnel
+    tasks:
+      - "FGT-CLO: logs to 10.20.10.80 (real time, source 10.30.0.1); authorize it on FAZ-BOG."
+      - "FGT-CLO: central management to 10.20.10.81 (source 10.30.0.1); authorize it on FMG-BOG."
+    checks:
+      - text: "FGT-CLO authorized on FAZ-BOG"
+        faz: {dev: FAZ-BOG, device: FGT-CLO, authorized: true}
+      - text: "FGT-CLO managed and synchronized on FMG-BOG"
+        fmg: {dev: FMG-BOG, device: FGT-CLO, status: synchronized}
+    hints:
+      - "Both need a source address inside the tunnel's selectors."
+      - "`config log fortianalyzer setting` (source-ip) and `config system central-management` (fmg-source-ip)."
+    solution:
+      FGT-CLO: |
+        config log fortianalyzer setting
+        set status enable
+        set server 10.20.10.80
+        set source-ip 10.30.0.1
+        set upload-option realtime
+        end
+        config system central-management
+        set type fortimanager
+        set fmg 10.20.10.81
+        set fmg-source-ip 10.30.0.1
+        end
+      FAZ-BOG: |
+        authorize FGT-CLO-BR
+      FMG-BOG: |
+        authorize FGT-CLO-BR
+    explain: |
+      With management and logging in place first, every later step of the window is controlled (FortiManager) and evidenced (FortiAnalyzer).
+  - id: b
+    title: The web filter, from the FortiManager
+    tasks:
+      - "In FGT-CLO's database: URL filter 1 blocking *.apuestas-ya.co (wildcard), profile WF-CALI, and UTM on policy 3 with certificate inspection."
+      - "Install preview, then install."
+    checks:
+      - text: "CLO-PC is blocked from https://www.apuestas-ya.co"
+        web: {from: CLO-PC, url: "https://www.apuestas-ya.co/", expect: blocked, by: webfilter}
+      - text: "Normal browsing still works"
+        web: {from: CLO-PC, url: "https://www.google.com/", expect: allowed}
+      - text: "The change came from FortiManager: device synchronized"
+        fmg: {dev: FMG-BOG, device: FGT-CLO, status: synchronized}
+    hints:
+      - "`dbconsole FGT-CLO-BR` on FMG-BOG, then the same CLI you'd use on the FortiGate."
+      - "If you change the FortiGate directly, the check on the FortiManager status fails: that's the point."
+    solution:
+      FMG-BOG: |
+        dbconsole FGT-CLO-BR
+        config webfilter urlfilter
+        edit 1
+        set name BETTING
+        config entries
+        edit 1
+        set url *.apuestas-ya.co
+        set type wildcard
+        set action block
+        next
+        end
+        next
+        end
+        config webfilter profile
+        edit WF-CALI
+        config web
+        set urlfilter-table 1
+        end
+        next
+        end
+        config firewall policy
+        edit 3
+        set utm-status enable
+        set webfilter-profile WF-CALI
+        set ssl-ssh-profile certificate-inspection
+        next
+        end
+        exit
+        install preview FGT-CLO-BR
+        install FGT-CLO-BR
+    explain: |
+      Objects and profiles made in the device database travel with the install, so the change record (preview), the device
+      and the FortiManager revision all match.
+  - id: c
+    title: Evidence for the change record
+    tasks:
+      - "From CLO-PC, try https://www.apuestas-ya.co once more."
+      - "Find the block in FAZ-BOG's Log View and answer below."
+    checks:
+      - text: "The block is in the FortiAnalyzer"
+        all:
+          - web: {from: CLO-PC, url: "https://www.apuestas-ya.co/", expect: blocked}
+          - faz: {dev: FAZ-BOG, device: FGT-CLO, logs: {type: utm, subtype: webfilter, action: blocked}}
+      - text: "Which hostname does the log show?"
+        answer: {accept: ["www.apuestas-ya.co"], hint: "`logview utm subtype=webfilter`.", why: "The log shows hostname www.apuestas-ya.co, action blocked, from 10.30.0.20."}
+    hints:
+      - "`logview utm subtype=webfilter` on FAZ-BOG."
+      - "The hostname field is in each UTM log line."
+    solution:
+      CLO-PC: |
+        curl https://www.apuestas-ya.co
+      FAZ-BOG: |
+        logview utm subtype=webfilter
+    explain: |
+      Closing a change with evidence from the FortiAnalyzer (not a screenshot of a browser) is what makes it auditable.

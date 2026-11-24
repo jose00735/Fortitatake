@@ -386,7 +386,9 @@ details summary { cursor: pointer; }
 .tp-fgt { fill: var(--tp-fgt); }
 .tp-fgt-ports rect { fill: rgba(255, 255, 255, .55); }
 .tp-fgt-t { font-size: 13px; font-weight: 700; fill: var(--tp-fgt-ink) !important; letter-spacing: .02em; }
-.tp-mgr { fill: var(--surface-3); stroke: var(--ink-2); }
+.tp-mgr { fill: #33414d; stroke: #1d262e; }
+.tp-mgr-leds circle { fill: #7fd1a8; }
+.tp-mgr-t { font-size: 12px; font-weight: 700; fill: #fff !important; letter-spacing: .02em; }
 .tp-cloud { fill: var(--surface-2); stroke: var(--ink-3); stroke-width: 1.5; }
 .tp-cloud-t { font-size: 16px; font-weight: 600; fill: var(--ink-2) !important; }
 .tp-switch { fill: var(--surface-3); stroke: var(--ink-3); }

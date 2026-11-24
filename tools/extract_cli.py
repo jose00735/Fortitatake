@@ -230,14 +230,90 @@ def clean(nd):
     return nd
 
 
+def fmgfaz(lines):
+    """FortiManager/FortiAnalyzer references show `Syntax` blocks: set <name> {a | b} / <type>. Merge every block."""
+    paths = {}
+    i, n = 0, len(lines)
+    def typ(rest):
+        rest = rest.strip()
+        if rest.startswith("{"):
+            body = rest.strip("{}").strip()
+            if "|" in body:
+                return {"y": "option", "o": [x.strip() for x in body.split("|") if x.strip() and x.strip() != "..."]}
+            return {"y": "option", "m": 1, "o": [x for x in body.split() if x != "..."]}
+        t = rest.strip("<>").lower()
+        if "mask" in t or "ipv4_prefix" in t or t in ("ip_netmask", "ipv4_netmask"):
+            return {"y": "ipv4-classnet-host"}
+        if "ipv4" in t or t in ("ip", "ip_address", "ipv4_address", "address"):
+            return {"y": "ipv4-address"}
+        if "int" in t or "seconds" in t or "minutes" in t or "port" in t or "number" in t:
+            return {"y": "integer"}
+        if "passw" in t:
+            return {"y": "password"}
+        return {"y": "string"}
+    while i < n:
+        line = lines[i].strip()
+        m = re.match(r"^config ([a-z][a-z0-9-]*(?: [a-z0-9][a-z0-9-]*)*)$", line)
+        if m and lines[i].startswith(" "):
+            stack = [paths.setdefault(m.group(1), {"t": "object", "a": {}, "c": {}})]
+            i += 1
+            while i < n and stack:
+                t = lines[i].strip()
+                i += 1
+                if not t or FOOTER.match(lines[i - 1]):
+                    continue
+                if t.startswith("edit "):
+                    stack[-1]["t"] = "table"
+                    stack[-1]["k"] = t[5:].strip("<>").replace(" ", "_")
+                elif t.startswith("config "):
+                    nd = stack[-1]["c"].setdefault(t[7:].strip(), {"t": "object", "a": {}, "c": {}})
+                    stack.append(nd)
+                elif t == "end":
+                    stack.pop()
+                elif t.startswith("set "):
+                    parts = t[4:].split(None, 1)
+                    if re.match(r"^[a-z0-9][a-z0-9_-]*$", parts[0]):
+                        stack[-1]["a"].setdefault(parts[0], typ(parts[1] if len(parts) > 1 else ""))
+                elif t in ("next",) or t.startswith("unset ") or t.startswith("get ") or t.startswith("show "):
+                    continue
+                elif not lines[i - 1].startswith("  "):
+                    break
+            continue
+        i += 1
+    return {p: clean(v) for p, v in paths.items()}
+
+# The FortiManager/FortiAnalyzer references list a few attributes as plain strings that the CLI
+# really parses as multi-value options or interface names; correct those here.
+MGMT_FIXES = {
+    ("system interface", "allowaccess"): {"m": 1, "o": ["fabric", "fgfm", "http", "https", "https-logging", "ping", "snmp", "soc-fabric", "ssh", "webservice"], "y": "option"},
+    ("system route", "device"): {"y": "string"},
+}
+
+
+def mgmt_fix(paths):
+    for (path, attr), sp in MGMT_FIXES.items():
+        if path in paths and attr in paths[path].get("a", {}):
+            paths[path]["a"][attr] = sp
+    return paths
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf")
     ap.add_argument("out")
     ap.add_argument("--product", default="fortios")
+    ap.add_argument("--style", default="")
     ap.add_argument("--version", default="8.0.2")
     a = ap.parse_args()
     lines = text_of(a.pdf)
+    if a.product in ("fortimanager", "fortianalyzer"):
+        paths = mgmt_fix(fmgfaz(lines))
+        cmds = sorted({l.strip().split("  ")[0] for l in lines if re.match(r"^\s{3,8}(diagnose|execute) [a-z]", l) and len(l.strip().split()) <= 8})
+        out = {"product": a.product, "version": a.version, "paths": paths, "cmds": cmds}
+        with open(a.out, "w") as f:
+            json.dump(out, f, separators=(",", ":"), sort_keys=True)
+        print(f"{a.product} {a.version}: {len(paths)} config paths, {len(cmds)} commands -> {a.out} ({os.path.getsize(a.out)//1024} KB)")
+        return
     starts = [i for i, l in enumerate(lines) if TOP.match(l)]
     paths, cmds = {}, set()
     for idx, s in enumerate(starts):

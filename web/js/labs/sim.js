@@ -56,7 +56,7 @@ class Cloud {
   constructor(spec) {
     this.id = spec.id;
     this.kind = "cloud";
-    this.hosts = (spec.hosts || []).map((h) => ({ name: h.name, ip: ipToInt(h.ip), services: new Set([...(h.services || []).map((s) => String(s).toLowerCase()), "icmp"]), dns: !!h.dns }));
+    this.hosts = (spec.hosts || []).map((h) => ({ name: h.name, ip: ipToInt(h.ip), services: new Set([...(h.services || []).map((s) => String(s).toLowerCase()), "icmp"]), dns: !!h.dns, files: h.files || {}, pinned: !!h.pinned }));
     this.history = [];
   }
 }
@@ -73,12 +73,15 @@ export class Lab {
     this.names = new Map(); // DNS name -> ip
     for (const d of def.devices || []) {
       let dev;
-      if (d.kind === "fortigate") {
-        dev = new FortiGate(d, schemas.fortios, {
+      if (d.kind === "fortigate" || d.kind === "fortianalyzer" || d.kind === "fortimanager") {
+        const sch = d.kind === "fortigate" ? schemas.fortios : schemas[d.kind];
+        dev = new FortiGate(d, sch, {
           onCommit: (fg, path, key) => { this.onCommit(fg, path, key); if (this.ready) this.dirty(fg); },
           onDelete: (fg, path, key) => { this.onDelete(fg, path, key); if (this.ready) this.dirty(fg); },
         });
         dev.diag = (fg, toks, line) => this.diagnose(fg, toks, line);
+        dev.kind = d.kind;
+        if (d.kind !== "fortigate") this.mgmtInit(dev);
         dev.sessions = new Map();
         dev.dbg = { enabled: false, flowFilter: {}, flowCount: 0, traceId: 0, sniffer: null, pingSrc: null };
         dev.async = [];
@@ -122,7 +125,8 @@ export class Lab {
       const p = parsePrefix(ipv);
       const parent = type === "vlan" ? fg.one("system interface", e, "interface") : null;
       const vlan = type === "vlan" ? Number(fg.one("system interface", e, "vlanid") || 0) : 0;
-      const admin = fg.one("system interface", e, "status") !== "down";
+      const st = fg.one("system interface", e, "status");
+      const admin = st !== "down" && st !== "disable";
       const seg = type === "loopback" || type === "tunnel" ? null : this.segOf(fg.id, parent || e.key, vlan);
       let parentUp = true;
       if (parent) { const pe = fg.entry("system interface", parent); parentUp = !pe || fg.one("system interface", pe, "status") !== "down"; }
@@ -224,6 +228,11 @@ export class Lab {
       const gw = ipToInt(fg.one("router static", r, "gateway") || "0.0.0.0");
       routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw, dev: bh ? "Null" : devName, distance: Number(fg.one("router static", r, "distance")), priority: Number(fg.one("router static", r, "priority")), blackhole: bh });
     }
+    for (const r of fg.product !== "fortios" ? fg.entries("system route") : []) {
+      const dst = parsePrefix(fg.one("system route", r, "dst") || "0.0.0.0 0.0.0.0");
+      const i = intfs.find((x) => x.name === fg.one("system route", r, "device"));
+      if (dst && i && i.up) routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw: ipToInt(fg.one("system route", r, "gateway") || "0.0.0.0"), dev: i.name, distance: 10, priority: 0 });
+    }
     routes.push(...this.extraRoutes(fg, intfs));
     // RIB: for each prefix keep the lowest distance; FIB = those
     const best = new Map();
@@ -255,7 +264,7 @@ export class Lab {
     if (a) {
       const t = fg.one("firewall address", a, "type");
       if (t === "iprange") return ip >= ipToInt(fg.one("firewall address", a, "start-ip")) && ip <= ipToInt(fg.one("firewall address", a, "end-ip"));
-      if (t === "fqdn") { const r = this.names.get(String(fg.one("firewall address", a, "fqdn")).toLowerCase()); return r === ip; }
+      if (t === "fqdn") { const r = this.lookupName(fg.one("firewall address", a, "fqdn")); return r === ip; }
       if (t === "interface-subnet") { const i = this.fgtIntfs(fg).find((x) => x.name === fg.one("firewall address", a, "interface")); return !!(i && i.prefix && inPrefix(ip, i.prefix)); }
       return inPrefix(ip, parsePrefix(fg.one("firewall address", a, "subnet")));
     }
@@ -500,6 +509,7 @@ export class Lab {
       ev.out = outI.name;
       const key = sessKey(pkt.proto, pkt.dst, pkt.proto === ICMP ? sport : pkt.dport, pkt.src, pkt.proto === ICMP ? sport : pkt.sport);
       fg.sessions.set(key, { local: true, id: ++this.sessSeq, proto: pkt.proto, reply: true, in: outI.name, out: outI.name, origin: pkt });
+      if (outI.type === "tunnel") return this.tunnelForward(fg, outI, pkt, res, [], () => {}, ev);
       return this.forwardOnSeg(outI.seg, nh, pkt, res, fg.id);
     }
 
@@ -552,11 +562,12 @@ export class Lab {
       tl.push(["iprope_dnat_check", 5505, `result: skb_flags-02000000, vid-0, ret-no-match, act-accept, flag-00000000`]);
     }
 
+    if (fg.product !== "fortios" && !this.isLocal(fg, dst)) { done(); res.drop = { dev: fg.id, reason: `${fg.id} doesn't route traffic` }; return null; }
     // local-in (traffic to the FortiGate itself)
     if (!vip && this.isLocal(fg, dst)) {
       tl.push(["__vf_ip_route_input_rcu", 1988, `find a route: flag=84000000 gw-${intToIp(dst)} via root`]);
       const svc = localSvc(pkt, fg);
-      const allowed = svc === "ike" ? this.ikeAccepted(fg, inI.name, pkt.src) : svc && inI.allow.includes(svc) && this.trusted(fg, pkt.src, svc);
+      const allowed = svc === "ike" ? this.ikeAccepted(fg, inI.name, pkt.src) : (svc === "oftp" || svc === "fgfm") && fg.product !== "fortios" ? true : svc && inI.allow.includes(svc) && this.trusted(fg, pkt.src, svc);
       ev.local = true; ev.localSvc = svc;
       if (!allowed) {
         tl.push(["iprope_in_check", 1029, `iprope_in_check() check failed on policy 0, drop`]);
@@ -615,6 +626,7 @@ export class Lab {
       tl.push(["__iprope_tree_check", 524, `gnum-100004, use addr/intf hash, len=2`]);
       tl.push(["fw_forward_handler", 930, `Denied by forward policy check (policy ${id})`]);
       done(); ev.drop = "policy"; ev.policy = id;
+      if (!this.quiet) this.logTraffic(fg, pol ? pol.policy : null, { ...pkt, inIntf: inI.name, outIntf: outI.name, action: "deny", policyid: id });
       res.drop = { dev: fg.id, reason: pol ? `denied by policy ${id}${pol.name ? ` (${pol.name})` : ""}` : "no policy matches: implicit deny (policy 0)", policy: id };
       return null;
     }
@@ -653,6 +665,7 @@ export class Lab {
       res.drop = { dev: fg.id, reason: `packet of ${out.size} bytes with DF set exceeds MTU ${outI.mtu} on ${outI.name}`, mtu: outI.mtu };
       return null;
     }
+    if (!this.quiet && pol.policy) this.logTraffic(fg, pol.policy, { ...pkt, inIntf: inI.name, outIntf: outI.name, action: "accept", policyid: pol.id, transip: snat ? snat.ip : undefined, dnat: vip ? dst : undefined });
     const isTunnel = outI.type === "tunnel";
     if (!isTunnel) done();
     // create the session and remember the reply tuple
@@ -675,6 +688,24 @@ export class Lab {
     for (const a of admins) for (let i = 1; i <= 10; i++) { const t = a.attrs.get("trusthost" + i); if (t) hosts.push(parsePrefix(t[0])); }
     if (!hosts.length) return true;
     return hosts.some((p) => (p.len === 0 && p.ip === 0) || inPrefix(src, p));
+  }
+
+  // DNS answer for a name, as the public Internet would give it: known lab names first (with or without www),
+  // then any other public-looking domain gets a stable address on a generic web server; internal names don't exist.
+  lookupName(name) {
+    const n = String(name || "").toLowerCase().replace(/\.$/, "");
+    const hit = this.names.get(n) ?? this.names.get(n.replace(/^www\./, "")) ?? this.names.get("www." + n);
+    if (hit !== undefined) return hit;
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(n) || /\.(local|lan|internal|corp|home|localdomain|invalid|test)$/.test(n) || /^\d+(\.\d+)+$/.test(n)) return null;
+    const cloud = [...this.devices.values()].find((d) => d instanceof Cloud);
+    if (!cloud) return null;
+    let h = 2166136261;
+    for (const ch of n) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    let ip = ((151 << 24) | (101 << 16) | (h & 0xffff)) >>> 0; // 151.101.x.y, public CDN-like space
+    while (cloud.hosts.some((x) => x.ip === ip)) ip = (ip + 1) >>> 0;
+    cloud.hosts.push({ name: n, ip, services: new Set(["tcp/80", "tcp/443", "icmp"]), dns: false, files: {}, pinned: false });
+    this.names.set(n, ip);
+    return ip;
   }
 
   // ---------- end-to-end probes (used by hosts, FortiGate ping, and the grader) ----------
@@ -748,7 +779,7 @@ export class Lab {
     for (const s of servers) {
       const r = this.probe(fromId, { dst: s, proto: UDP, dport: 53 });
       if (r.ok) {
-        const ip = this.names.get(String(name).toLowerCase());
+        const ip = this.lookupName(name);
         return ip ? { ip, server: s } : { err: `can't find ${name}: Non-existent domain`, server: s };
       }
     }
@@ -766,6 +797,10 @@ Lab.prototype.ikeAccepted = function () { return false; };
 Lab.prototype.haRole = function () { return "standalone"; };
 Lab.prototype.haSync = function () {};
 Lab.prototype.haSyncAll = function () {};
+Lab.prototype.mgmtInit = function () {};
+Lab.prototype.mgmtExec = function () { return null; };
+Lab.prototype.mgmtPrompt = function () { return null; };
+Lab.prototype.logTraffic = function () {};
 Lab.prototype.onCommit = function () {};
 Lab.prototype.postLoad = function () {};
 Lab.prototype.onDelete = function () {};
@@ -783,6 +818,7 @@ function localSvc(pkt, fg) {
     if (pkt.dport === 80) return "http";
     if (pkt.dport === 23) return "telnet";
     if (pkt.dport === 541) return "fgfm";
+    if (pkt.dport === 514) return "oftp";
   }
   if (pkt.proto === UDP && (pkt.dport === 500 || pkt.dport === 4500)) return "ike";
   if (pkt.proto === UDP && pkt.dport === 161) return "snmp";

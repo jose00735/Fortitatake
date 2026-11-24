@@ -18,14 +18,16 @@ function glyph(d, x, y) {
     case "server":
       return `<rect x="${x - 14}" y="${y - 19}" width="28" height="38" rx="3" class="tp-box"/><path d="M${x - 8} ${y - 9}h16M${x - 8} ${y - 2}h16M${x - 8} ${y + 5}h10" class="tp-line-ink"/>`;
     case "fortimanager": case "fortianalyzer": case "fortisiem": case "fortiedr":
-      return `<rect x="${x - 40}" y="${y - 18}" width="80" height="36" rx="5" class="tp-mgr"/><text x="${x}" y="${y + 4}" text-anchor="middle" class="tp-fgt-t">${{ fortimanager: "FortiManager", fortianalyzer: "FortiAnalyzer", fortisiem: "FortiSIEM", fortiedr: "FortiEDR" }[d.kind]}</text>`;
+      return `<rect x="${x - 52}" y="${y - 20}" width="104" height="40" rx="5" class="tp-mgr"/>
+        <g class="tp-mgr-leds">${[0, 1, 2].map((i) => `<circle cx="${x - 40 + i * 8}" cy="${y + 11}" r="2"/>`).join("")}</g>
+        <text x="${x}" y="${y + 1}" text-anchor="middle" class="tp-mgr-t">${{ fortimanager: "FortiManager", fortianalyzer: "FortiAnalyzer", fortisiem: "FortiSIEM", fortiedr: "FortiEDR" }[d.kind]}</text>`;
     default:
       return `<rect x="${x - 18}" y="${y - 16}" width="36" height="24" rx="3" class="tp-box"/><path d="M${x - 6} ${y + 12}h12M${x} ${y + 8}v4" class="tp-line-ink"/>`;
   }
 }
 
 function sub(lab, d) {
-  if (d instanceof FortiGate) return d.model.replace("FortiGate-", "FG-");
+  if (d instanceof FortiGate) return d.model.replace("FortiGate-", "FG-").replace("FortiManager-", "FMG-").replace("FortiAnalyzer-", "FAZ-");
   if (d.kind === "router") return d.label || "";
   if (d.kind === "cloud") return "";
   const a = d.addr && d.addr();

@@ -6,6 +6,7 @@ const SD = "system sdwan";
 
 Lab.prototype.sdwanCfg = function (fg) {
   const root = fg.obj(SD);
+  if (!root) return { on: false, members: [], hcs: [], services: [] };
   const on = fg.one(SD, root, "status") === "enable";
   const kid = (n) => { const t = root.children.get(n); return t ? t.list() : []; };
   const val = (e, a, c) => fg.val(SD, e, a, [c]);

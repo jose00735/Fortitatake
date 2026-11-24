@@ -1,0 +1,127 @@
+id: P2.01
+track: fortigate
+tier: 2
+order: 30
+kind: project
+title: "Clínica San Rafael: web filtering, antivirus and deep inspection"
+customer: Clínica San Rafael
+par: 60
+skills: [URL filter, antivirus, SSL inspection modes, SSL exemptions]
+brief: |
+  **SOW 2026-118, phase 2 (security profiles).** The clinic's acceptable-use policy bans betting and casino sites on clinic
+  PCs, and their insurer requires malware scanning of downloads, including over HTTPS.
+
+  Test sites: **www.apuestas-ya.co**, **m.apuestas-ya.co**, **www.casino-caribe.co** (banned);
+  **secure.eicar.org/download/eicar.com** (the standard antivirus test file). The clinic's bank, **www.bancolombia.com**,
+  pins its certificate.
+topology: {use: clinic-live}
+parts:
+  - id: a
+    title: Block the banned sites
+    tasks:
+      - "URL filter table 1 'BANNED': wildcard *.apuestas-ya.co and simple www.casino-caribe.co, action block."
+      - "Web filter profile WF-CLINIC using that table."
+      - "Enable UTM on Staff-Internet (policy 1) with WF-CLINIC and SSL profile certificate-inspection."
+    checks:
+      - text: "Reception can't open https://www.apuestas-ya.co"
+        web: {from: RECEPCION, url: "https://www.apuestas-ya.co/", expect: blocked, by: webfilter}
+      - text: "…nor the mobile site"
+        web: {from: RECEPCION, url: "https://m.apuestas-ya.co/", expect: blocked}
+      - text: "…nor the casino"
+        web: {from: RECEPCION, url: "http://www.casino-caribe.co/", expect: blocked}
+      - text: "Normal browsing still works"
+        web: {from: RECEPCION, url: "https://www.google.com/", expect: allowed}
+    hints:
+      - "URL filter entries are a table inside the URL filter: `config webfilter urlfilter` / `edit 1` / `set name BANNED` / `config entries` / `edit 1` / `set url *.apuestas-ya.co` / `set type wildcard` / `set action block`."
+      - "The profile points at the table: `config webfilter profile` / `edit WF-CLINIC` / `config web` / `set urlfilter-table 1` / `end`."
+      - "On the policy: `set utm-status enable`, `set webfilter-profile WF-CLINIC`, `set ssl-ssh-profile certificate-inspection`."
+    solution:
+      FGT-SR: |
+        config webfilter urlfilter
+        edit 1
+        set name BANNED
+        config entries
+        edit 1
+        set url *.apuestas-ya.co
+        set type wildcard
+        set action block
+        next
+        edit 2
+        set url www.casino-caribe.co
+        set type simple
+        set action block
+        next
+        end
+        next
+        end
+        config webfilter profile
+        edit WF-CLINIC
+        config web
+        set urlfilter-table 1
+        end
+        next
+        end
+        config firewall policy
+        edit 1
+        set utm-status enable
+        set webfilter-profile WF-CLINIC
+        set ssl-ssh-profile certificate-inspection
+        next
+        end
+      RECEPCION: |
+        curl https://www.apuestas-ya.co/
+    explain: |
+      Certificate inspection reads the server name (SNI and certificate), which is enough to filter by host over HTTPS without
+      decrypting. It can't see paths or file contents.
+  - id: b
+    title: Scan downloads, even over HTTPS
+    tasks:
+      - "Antivirus profile AV-CLINIC: HTTP scanning set to block."
+      - "On policy 1: AV-CLINIC and deep inspection."
+      - "Exempt www.bancolombia.com from deep inspection (it pins its certificate) with a custom SSL profile DEEP-CLINIC."
+    checks:
+      - text: "The EICAR file is blocked over HTTPS"
+        web: {from: RECEPCION, url: "https://secure.eicar.org/download/eicar.com", expect: blocked, by: av}
+      - text: "…and over HTTP"
+        web: {from: CONSULTORIO, url: "http://secure.eicar.org/download/eicar.com", expect: blocked, by: av}
+      - text: "Clean files still download"
+        web: {from: RECEPCION, url: "https://secure.eicar.org/download/readme.txt", expect: allowed}
+      - text: "The bank works (exempt from deep inspection)"
+        web: {from: RECEPCION, url: "https://www.bancolombia.com/", expect: allowed}
+      - text: "Banned sites stay blocked"
+        web: {from: RECEPCION, url: "https://www.apuestas-ya.co/", expect: blocked}
+    hints:
+      - "AV can only see inside HTTPS after decryption: certificate inspection isn't enough for part b."
+      - "Clone the idea of deep-inspection into DEEP-CLINIC: `config https` / `set status deep-inspection`, then `config ssl-exempt` / `edit 1` / `set type wildcard-fqdn` / `set wildcard-fqdn www.bancolombia.com`."
+      - "`config antivirus profile` / `edit AV-CLINIC` / `config http` / `set av-scan block` / `end`."
+    solution:
+      FGT-SR: |
+        config antivirus profile
+        edit AV-CLINIC
+        config http
+        set av-scan block
+        end
+        next
+        end
+        config firewall ssl-ssh-profile
+        edit DEEP-CLINIC
+        config https
+        set status deep-inspection
+        end
+        config ssl-exempt
+        edit 1
+        set type wildcard-fqdn
+        set wildcard-fqdn www.bancolombia.com
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 1
+        set av-profile AV-CLINIC
+        set ssl-ssh-profile DEEP-CLINIC
+        next
+        end
+    explain: |
+      Deep inspection re-signs every site with the FortiGate's CA, so managed PCs must trust that CA, and pinned apps (banks,
+      some health-insurer portals) must be exempted. Exemptions are a security decision: document each one in the hand-over.
