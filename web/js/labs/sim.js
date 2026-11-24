@@ -107,6 +107,7 @@ export class Lab {
     }
     for (const d of def.devices || []) if (d.kind === "cloud") for (const h of d.hosts || []) if (h.name) this.names.set(h.name.toLowerCase(), ipToInt(h.ip));
     for (const [n, ip] of Object.entries(def.dns || {})) this.names.set(n.toLowerCase(), ipToInt(ip));
+    this.labNames = [...this.names.keys()];
     // segments: [{id, members: ["DEV:port" | {at:"DEV:port", vlan:N}], down?}]
     this.segments = (def.segments || []).map((s, i) => ({
       id: s.id || "seg" + i, down: !!s.down, label: s.label || "",
@@ -689,7 +690,7 @@ export class Lab {
       tl.push(["fw_forward_handler", 930, `Denied by forward policy check (policy ${id})`]);
       done(); ev.drop = "policy"; ev.policy = id;
       if (!this.quiet) this.logTraffic(fg, pol ? pol.policy : null, { ...pkt, inIntf: inI.name, outIntf: outI.name, action: "deny", policyid: id });
-      res.drop = { dev: fg.id, reason: pol && pol.action === "auth" ? `authentication required: policy ${id} only allows ${[...pol.groups, ...pol.users].join(", ")}, and ${intToIp(pkt.src)} has no authenticated user that qualifies` : pol ? `denied by policy ${id}${pol.name ? ` (${pol.name})` : ""}` : "no policy matches: implicit deny (policy 0)", policy: id };
+      res.drop = { dev: fg.id, reason: pol && pol.action === "auth" ? `authentication required: policy ${id} only allows ${[...pol.groups, ...pol.users].join(", ")}, and ${intToIp(pkt.src)} has no authenticated user that qualifies` : pol ? `denied by policy ${id}${pol.name ? ` (${pol.name})` : ""}, action ${pol.action || "deny"}` : "no policy matches: implicit deny (policy 0)", policy: id };
       if (pol && pol.action === "auth") res.drop.auth = { fg: fg.id, policy: id, portal: inI.prefix ? inI.prefix.ip : 0 };
       return null;
     }
@@ -760,6 +761,8 @@ export class Lab {
     const hit = this.names.get(n) ?? this.names.get(n.replace(/^www\./, "")) ?? this.names.get("www." + n);
     if (hit !== undefined) return hit;
     if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(n) || /\.(local|lan|internal|corp|home|localdomain|invalid|test)$/.test(n) || /^\d+(\.\d+)+$/.test(n)) return null;
+    // a misspelling of a lab name doesn't exist, so a typo never looks like a working site
+    if ((this.labNames || []).some((k) => k !== n && editDistance(k.replace(/^www\./, ""), n.replace(/^www\./, "")) <= 2)) return null;
     const cloud = [...this.devices.values()].find((d) => d instanceof Cloud);
     if (!cloud) return null;
     let h = 2166136261;
@@ -877,6 +880,16 @@ Lab.prototype.identityOk = function () { return false; };
 Lab.prototype.extraRefs = function () { return []; };
 Lab.prototype.clientTunnel = function (h, pkt, res) { res.drop = { dev: h.id, reason: "VPN not simulated" }; return null; };
 
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
 function maskLen(m) { const n = ipToInt(m); let l = 0; for (let i = 31; i >= 0; i--) if ((n >>> i) & 1) l++; return l; }
 export function sessKey(proto, a, ap, b, bp) { return `${proto}|${a}|${ap}|${b}|${bp}`; }
 function localSvc(pkt, fg) {

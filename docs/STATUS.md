@@ -98,6 +98,11 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.7.1 fixes
+
+- A misspelling of a lab's own domain (edit distance 2 or less) no longer resolves to a generic public web host; it returns NXDOMAIN, so a typo can't look like a working site (found in B4.02).
+- Drops by a deny policy now say so: "denied by policy 1 (name), action deny".
+
 ### What v0.7.0 adds (SecOps)
 
 - `soc.js`: lab stories (`story:` on templates and parts) play timed events: FortiGate logs go through the normal log path (FortiAnalyzer, and FortiSIEM over syslog), Windows events land on hosts, EDR events get sequential ids from 1001 and record the policy mode at event time.
