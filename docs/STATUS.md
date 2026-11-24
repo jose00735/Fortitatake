@@ -206,22 +206,61 @@ Sprint order follows the `order` field: interview track first (I1–I3), then fo
 
 Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
-### Next in the queue (labs)
+## Roadmap
 
-1. v0.6.x users (LDAP/FSSO), more integration labs (VPN over SD-WAN, HA + VPN), FortiSwitch, BGP/OSPF/ADVPN, VDOMs, more break-fix per technology.
-2. v0.7.0 SecOps consoles: FortiAnalyzer SOC, FortiSIEM, FortiEDR, log generator.
-3. v0.8.0 Capstones and multi-product integration labs.
+### v0.8.0: capstones and the last stages
 
-### Next in the queue (study content)
+- Labs: tier 6 capstones with sub-labs (timed, faults injected mid-lab, a customer who changes a requirement), including a cross-tool investigation (FortiSIEM + FortiEDR + FortiGate). MOP and acceptance-test deliverables.
+- Modules: S12 (M12.01 design case, M12.02 exam simulations, M12.03 mock interview gauntlet), S0 (M0.01), S1 (M1.01, M1.02), S3 (M3.01, M3.02, M3.03, M3.05), S11 (M11.03, M11.05).
+- New questions in these modules are written to the v0.9.0 rules below from the start.
+- Small fixes reported from use (output that looks wrong to a FortiOS eye).
 
-Ids follow CURRICULUM.md, written with two digits (M4.9 → M4.09).
+### v0.9.0: question quality overhaul (all existing content)
 
-1. S12 Capstone: M12.3 mock interview gauntlet, M12.1 full design case, M12.2 exam simulations.
-2. S8 Enterprise Firewall: Security Fabric, OSPF/BGP on FortiGate, threat prevention at scale, VDOMs and advanced HA, FMG+FAZ together, troubleshooting master.
-3. S4 remaining: M4.01 administration, M4.02 interfaces, M4.05 routing (partly in M1.04), M4.06 authentication, M4.11 logging.
-4. S2 routing (OSPF, BGP, WAN concepts) and S3 security theory.
-5. S7 FortiSwitch, S9 FortiSIEM, S10 FortiEDR.
-6. S0 full diagnostic and S1 M1.01–M1.02.
+**Problem.** In many questions the right option can be picked without knowing the subject: it is the longest and most specific, it is the only one that hedges, and the wrong options are things no practitioner would choose. Questions must make you think, above all in SecOps and non-fundamental topics.
+
+**Scope.** Every multiple-choice item in the app: all module quizzes (pretests included), so also every Warm-up, Apply and Boss strike drawn from them. Today that is 385 questions in 50 modules (265 single, 48 multi, 28 order, 23 text, 15 numeric, 6 output), plus anything v0.8.0 adds. Text and numeric items are checked for accepted answers that are too loose.
+
+**Rules for every wrong option.** Each one must be one of:
+
+1. A real misconception a mid-level engineer holds (e.g. "a firewall policy to the broadband interface makes guest traffic use broadband": routing picks the egress before policy match).
+2. A true statement that doesn't solve this problem (valid technique, wrong scope or side effect).
+3. A near-miss: the right idea with one wrong detail (wrong strategy, wrong order, wrong default, wrong port).
+
+Its `why_wrong` names the misconception it targets. No option that a practitioner would dismiss on sight.
+
+**Rules for the set of options.**
+
+- Same length and grammatical shape (correct option within about ±20 % of the average length).
+- Hedges, parentheses, examples and qualifiers appear in wrong options as often as in the right one.
+- No absolute words ("always", "never", "only") used only in wrong options.
+- The right option doesn't repeat the stem's wording more than the others do.
+- At least one distractor is "almost right" for tier 2+ questions; at least two for tier 3+.
+- Correct position is random after shuffling (already done at display time).
+
+**New formats** (mix them in, mainly tier 3+ and every Boss):
+
+- Output-based: a debug flow, routing table, IKE debug, FortiSIEM incident or FortiEDR event; pick the cause. Distractors are causes that produce similar output.
+- Best first step: all options are valid actions; only one comes first.
+- Answer plus reason: pick the answer, then pick why; both must be right.
+- Select all that apply without telling how many.
+- "Which would NOT work".
+- Confidence rating on Boss and review items: a confident wrong answer costs more XP and returns sooner in review.
+
+**Tooling.**
+
+- `build_content.py` lint (fails the build): length outlier, hedge or parenthesis only in the right option, absolute words only in wrong options, stem overlap only in the right option, missing or generic `why_wrong` ("No.", "Unrelated."), tier 3+ without enough near-misses.
+- Blind-guess test: a separate agent with no access to the material answers every question from test-taking cues alone. Any item it gets right is rewritten. Target: blind accuracy no better than chance (about 25 % on 4 options).
+- Usage signal: an item answered right in under 5 seconds on 3 reviews in a row is flagged "too easy" and listed for the next content pass.
+
+**Order of work.** S9 FortiSIEM and S10 FortiEDR → S8 Enterprise Firewall → S5 FortiManager and S6 FortiAnalyzer → S11 Professional Services → S2, S4, S7 → S1, S3, S0 fundamentals (recall may stay simpler there, but no throwaway options).
+
+**Done when.**
+
+- Every question passes the lint.
+- The blind-guess test scores at or below chance on every stage.
+- Each module has at least one output-based or best-first-step question at tier 3+.
+- STATUS records the before/after counts and blind-guess scores per stage.
 
 ## Open decisions
 
