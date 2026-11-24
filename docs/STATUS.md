@@ -217,9 +217,9 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 ## Roadmap
 
-### Proposed v0.8.0: Linux lab engine (order pending Jose's decision)
+### Proposed v0.8.0: FortiTatake OS (order pending Jose's decision)
 
-Real Linux under the FortiGate labs, on Windows and Android: the app downloads a vanilla Alpine x86 release (hash and signature checked), adds a FortiTatake overlay (agent, package list) through Alpine's apkovl mechanism, and boots it in QEMU (Windows) or v86 (Android). Each lab device is a network namespace; a compiler turns the FortiOS config into nftables, routes and NAT; diagnostics and grading read real traffic. Phase 0 is a go/no-go spike with measured gates; the JavaScript simulator stays the fallback. Full blueprint: the "FortiTatake Linux Lab Engine — Blueprint" doc. If adopted, capstones move to v0.9.0 and the question overhaul to v0.10.0.
+A purpose-built Linux compiled from source on Jose's workstation by the FortiTatake PC app: minimal kernel (netns, veth, bridges, nftables, conntrack and helpers, XFRM, netem) plus musl, BusyBox and open-source protocol daemons (iproute2, nftables, tcpdump, dnsmasq, lighttpd, Dropbear, FRR, strongSwan, conntrackd), booting straight into the lab agent. Two signed builds from one source: x86_64 for Windows (QEMU with Windows Hypervisor Platform) and ARM64 for Android (QEMU shipped in the APK, emulated CPU), the Android build synced over Wi-Fi. Every lab device is a namespace; the agent compiles FortiOS config into Linux state and adds FortiOS behaviours (SD-WAN, FGCP, auth). Encryption keeps real algorithm names and negotiation with near-free maths underneath. Stages 0–3 are v0.8.0 (stage 0 is a go/no-go spike); one minor version per later stage. Blueprint: the "FortiTatake OS — Blueprint" doc (supersedes the Alpine-based one).
 
 ### v0.8.0: capstones and the last stages
 
