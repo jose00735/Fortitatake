@@ -217,18 +217,18 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 ## Roadmap
 
-### Proposed v0.8.0: FortiTatake OS (order pending Jose's decision)
+### v0.8.0: FortiTatake OS
 
-A purpose-built Linux compiled from source on Jose's workstation by the FortiTatake PC app: minimal kernel (netns, veth, bridges, nftables, conntrack and helpers, XFRM, netem) plus musl, BusyBox and open-source protocol daemons (iproute2, nftables, tcpdump, dnsmasq, lighttpd, Dropbear, FRR, strongSwan, conntrackd), booting straight into the lab agent. Two signed builds from one source: x86_64 for Windows (QEMU with Windows Hypervisor Platform) and ARM64 for Android (QEMU shipped in the APK, emulated CPU), the Android build synced over Wi-Fi. Every lab device is a namespace; the agent compiles FortiOS config into Linux state and adds FortiOS behaviours (SD-WAN, FGCP, auth). Encryption keeps real algorithm names and negotiation with near-free maths underneath. Switches (VLAN-filtering bridges, RSTP, LLDP) and routers (FRR, vtysh console) are Linux namespaces too; no traffic inspection; the real Internet is reachable only for DNS and ICMP, through a relay in the app (not a VM network card); any link can be captured to pcap for Wireshark; estimated lab engine RAM at most ~450 MB on Windows and ~500 MB on Android. Stages 0–3 are v0.8.0 (stage 0 is a go/no-go spike); one minor version per later stage. Blueprint: the "FortiTatake OS — Blueprint" doc (supersedes the Alpine-based one).
+A purpose-built Linux compiled from source on Jose's workstation by the FortiTatake PC app: minimal kernel (netns, veth, bridges, nftables, conntrack and helpers, XFRM, netem) plus musl, BusyBox and open-source protocol daemons (iproute2, nftables, tcpdump, dnsmasq, lighttpd, Dropbear, FRR, strongSwan, conntrackd), booting straight into the lab agent. Two signed builds from one source: x86_64 for Windows (QEMU with Windows Hypervisor Platform) and ARM64 for Android (QEMU shipped in the APK, emulated CPU), the Android build synced over Wi-Fi. Every lab device is a namespace; the agent compiles FortiOS config into Linux state and adds FortiOS behaviours (SD-WAN, FGCP, auth). Encryption keeps real algorithm names and negotiation with near-free maths underneath. Switches (VLAN-filtering bridges, RSTP, LLDP) and routers (FRR, vtysh console) are Linux namespaces too; no traffic inspection; the real Internet is reachable only for DNS and ICMP, through a relay in the app (not a VM network card); any link can be captured to pcap for Wireshark; estimated lab engine RAM at most ~450 MB on Windows and ~500 MB on Android. Stages 0–3 are v0.8.0 (stage 0 is a go/no-go spike). Decided: capstones and remaining modules follow as v0.9.0, the question overhaul as v0.10.0, then stages 4–7 as v0.11.0–v0.14.0. Blueprint: the "FortiTatake OS — Blueprint" doc (supersedes the Alpine-based one).
 
-### v0.8.0: capstones and the last stages
+### v0.9.0: capstones and the last stages
 
 - Labs: tier 6 capstones with sub-labs (timed, faults injected mid-lab, a customer who changes a requirement), including a cross-tool investigation (FortiSIEM + FortiEDR + FortiGate). MOP and acceptance-test deliverables.
 - Modules: S12 (M12.01 design case, M12.02 exam simulations, M12.03 mock interview gauntlet), S0 (M0.01), S1 (M1.01, M1.02), S3 (M3.01, M3.02, M3.03, M3.05), S11 (M11.03, M11.05).
-- New questions in these modules are written to the v0.9.0 rules below from the start.
+- New questions in these modules are written to the v0.10.0 rules below from the start.
 - Small fixes reported from use (output that looks wrong to a FortiOS eye).
 
-### v0.9.0: question quality overhaul (all existing content)
+### v0.10.0: question quality overhaul (all existing content)
 
 **Problem.** In many questions the right option can be picked without knowing the subject: it is the longest and most specific, it is the only one that hedges, and the wrong options are things no practitioner would choose. Questions must make you think, above all in SecOps and non-fundamental topics.
 
