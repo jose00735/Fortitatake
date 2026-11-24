@@ -23,6 +23,7 @@ Lab.prototype.diagnose = function (fg, toks, line) {
       if (r !== null && r !== undefined) return r;
     }
     if (this.haDiag) { const r = this.haDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
+    if (this.switchDiag && fg.kind === "fortigate") { const r = this.switchDiag(fg, rest, head); if (r !== null && r !== undefined) return r; }
     if (this.routingDiag && fg.kind === "fortigate") { const r = this.routingDiag(fg, rest, head); if (r !== null && r !== undefined) return r; }
     if (this.authDiag && fg.kind === "fortigate") { const r = this.authDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
     if (head === "get" && match(rest, ["vpn", "ipsec", "tunnel", "summary"]) && this.vpnSummary) return this.vpnSummary(fg);

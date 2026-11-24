@@ -32,6 +32,7 @@ function one(lab, c, answers) {
   if (c.fsso) return fssoCheck(lab, c.fsso);
   if (c.ospf) return ospfCheck(lab, c.ospf);
   if (c.bgp) return bgpCheck(lab, c.bgp);
+  if (c.fsw) return fswCheck(lab, c.fsw);
   if (c.all) { const r = c.all.map((x) => one(lab, x, answers)); return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail }; }
   return { pass: false, detail: "Unknown check type" };
 }
@@ -109,6 +110,15 @@ function bgpCheck(lab, c) {
   if (s.state !== (c.state || "Established")) return { pass: false, detail: `${c.dev} → ${c.peer} is ${s.state}${s.why ? `: ${s.why}` : ""}.` };
   if (c.received !== undefined) { const n = ((b.adjIn.get(s.n.ip) || {}).routes || new Map()).size; if (n !== c.received) return { pass: false, detail: `${c.dev} receives ${n} prefixes from ${c.peer}, expected ${c.received}.` }; }
   return { pass: true, detail: `${c.dev} → ${c.peer} is Established.` };
+}
+
+function fswCheck(lab, c) {
+  const sw = lab.dev(c.dev);
+  const st = lab.fslState(sw);
+  if (!st.up || !st.up.fg) return { pass: false, detail: `${c.dev} isn't on a FortiLink interface: the FortiGate port it's cabled to needs \`set fortilink enable\` (or membership of the FortiLink aggregate).` };
+  const want = c.state || "authorized";
+  if (want === "authorized" && !st.authorized) return { pass: false, detail: `${c.dev} (${sw.serial}) is ${st.state} on ${st.up.fg.id}: not authorized yet.` };
+  return { pass: true, detail: `${c.dev} is ${st.state} on ${st.up.fl}.` };
 }
 
 function fssoCheck(lab, c) {
@@ -209,6 +219,7 @@ function matchVal(v, want) {
 function dhcpCheck(lab, c) {
   const h = getDev(lab, c.host);
   lab.renew(h);
+  if (c.expect === "fail") return h.lease ? { pass: false, detail: `${c.host} still gets a lease (${intToIp(h.lease.prefix.ip)}).` } : { pass: true, detail: `${c.host} gets no address.` };
   if (!h.lease) return { pass: false, detail: `${c.host} gets no DHCP lease.` };
   const p = parsePrefix(c.in);
   if (p && !inPrefix(h.lease.prefix.ip, p)) return { pass: false, detail: `${c.host} got ${intToIp(h.lease.prefix.ip)}, outside ${c.in}.` };
@@ -290,6 +301,15 @@ function sdwanCheck(lab, c) {
   if (!m) return { pass: false, detail: `${c.member} is not an SD-WAN member.` };
   const alive = lab.memberAlive(fg, cfg, m);
   if (c.alive !== undefined && alive !== c.alive) return { pass: false, detail: `${c.member} is ${alive ? "alive" : "dead"}.` };
+  if (c.hc) {
+    const hc = cfg.hcs.find((h) => h.name === c.hc);
+    if (!hc) return { pass: false, detail: `No health check ${c.hc}.` };
+    if (!hc.members.includes(m.seq)) return { pass: false, detail: `${c.hc} doesn't probe ${c.member}.` };
+    const r = lab.memberHealth(fg, m, hc);
+    if (!r.alive) return { pass: false, detail: `${c.hc} says ${c.member} is dead${r.why ? `: ${r.why}` : ""}.` };
+    if (c.sla && !r.sla[0]) return { pass: false, detail: `${c.member} is alive but misses SLA 1 (latency ${r.latency.toFixed(1)} ms, loss ${r.loss}%).` };
+    return { pass: true, detail: `${c.hc}: ${c.member} alive, latency ${r.latency.toFixed(1)} ms${c.sla ? ", SLA met" : ""}.` };
+  }
   return { pass: true, detail: `${c.member} is an SD-WAN member and ${alive ? "alive" : "dead"}.` };
 }
 

@@ -5,6 +5,8 @@ import { parsePrefix, ipMaskStr, ipToInt, isIp, maskToLen, hex, rng } from "./ne
 const STRINGY = new Set(["string", "var-string", "user", "text"]);
 
 // Attributes that point at other objects: used for validation, completion, rename and delete checks.
+// tables that belong to the global scope in multi-VDOM mode (shared by every VDOM instance)
+export const GLOBAL_PATHS = ["system interface", "system global", "system vdom-link", "system ha", "system admin", "system accprofile", "system dns", "system ntp", "system central-management", "system fortiguard", "log fortianalyzer setting"];
 export const REFS = {
   "firewall policy": { srcintf: "intf", dstintf: "intf", srcaddr: "addr", dstaddr: "daddr", service: "svc", schedule: "sched", poolname: "pool", "ssl-ssh-profile": "sslprof", "av-profile": "avprof", "webfilter-profile": "wfprof", groups: "usergrp", users: "localuser" },
   "user group": { member: "usermember" },
@@ -90,6 +92,13 @@ export class FortiGate {
     this.ports = (spec.ports || []).map((p) => (typeof p === "string" ? { name: p } : p));
     this.product = schema.product || "fortios";
     this.gui = null; // FortiManager / FortiAnalyzer GUI actions typed at the console
+    // VDOMs: the device itself is the root VDOM; other VDOMs are child instances sharing the global tables
+    this.hooks = hooks;
+    this.parent = spec.parent || null;
+    this.vdomName = spec.vdomName || "root";
+    this.physId = this.parent ? this.parent.id : this.id;
+    this.vdoms = new Map();
+    this.vctx = null;
     this.load(this.product === "fortios" ? factory(this, spec) : mgmtFactory(this, spec));
     if (spec.config) this.load(spec.config);
     this.history = [];
@@ -128,7 +137,8 @@ export class FortiGate {
 
   // names usable for a reference kind
   refNames(kind) {
-    const names = (p) => this.entries(p).map((e) => e.key);
+    const scoped = this.multiVdom() && !(this.vctx && this.vctx.global);
+    const names = (p) => this.entries(p).filter((e) => !scoped || p !== "system interface" || (e.attrs.get("vdom") || ["root"])[0] === this.vdomName).map((e) => e.key);
     switch (kind) {
       case "intf": return [...names("system interface"), ...names("system zone"), ...this.sdwanZoneNames(), "any"];
       case "intfonly": return names("system interface");
@@ -160,8 +170,74 @@ export class FortiGate {
 
   // ---------- CLI ----------
   prompt() {
+    if (this.multiVdom() && !this.parent) {
+      const c = this.vctx, h = this.hostname();
+      if (!c) return `${h} # `;
+      if (c.pick) return `${h} (vdom) # `;
+      const inst = c.vdom ? this.vdomInst(c.vdom) : this;
+      const f = inst && inst.frames[inst.frames.length - 1];
+      return f ? `${h} (${f.label}) # ` : `${h} (${c.vdom || "global"}) # `;
+    }
     const f = this.frames[this.frames.length - 1];
     return f ? `${this.hostname()} (${f.label}) # ` : `${this.hostname()} # `;
+  }
+
+  // ---------- VDOMs ----------
+  multiVdom() { const g = this.cfg.get("system global"); return !!g && (g.attrs.get("vdom-mode") || ["no-vdom"])[0] === "multi-vdom"; }
+  vdomInst(name) { return name === "root" ? this : this.vdoms.get(name) || null; }
+  allVdoms() { return [this, ...this.vdoms.values()]; }
+  makeVdom(name) {
+    const child = new FortiGate({ id: `${this.id}[${name}]`, model: this.model, serial: this.serial, ports: [], parent: this, vdomName: name }, this.schema, this.hooks);
+    for (const p of GLOBAL_PATHS) if (this.P[p]) child.cfg.set(p, this.inst(p));
+    this.vdoms.set(name, child);
+    if (this.hooks.onVdom) this.hooks.onVdom(this, child);
+    return child;
+  }
+  isGlobalPath(path) { return GLOBAL_PATHS.some((g) => path === g || path.startsWith(g + " ")); }
+  // console in multi-VDOM mode: top level → config vdom / config global
+  vdomExec(line) {
+    const t = line.trim();
+    if (!t) return "";
+    const err = (w) => `command parse error before '${w}'\nCommand fail. Return code -61`;
+    const c = this.vctx;
+    const toks = tokenize(t);
+    if (!c) {
+      if (/^config\s+vdom$/i.test(t)) { this.vctx = { pick: true }; return ""; }
+      if (/^config\s+global$/i.test(t)) { this.vctx = { global: true }; return ""; }
+      if (/^(get\s+system\s+status|exit)$/i.test(t)) return t === "exit" ? "" : this.exec(line, false);
+      return err(toks[0]);
+    }
+    if (c.pick) {
+      const m = t.match(/^edit\s+"?([^"\s]+)"?$/i);
+      if (m) {
+        let inst = this.vdomInst(m[1]);
+        if (!inst) { if (!/^[A-Za-z0-9_-]{1,31}$/.test(m[1])) return err(m[1]); inst = this.makeVdom(m[1]); }
+        this.vctx = { vdom: m[1] };
+        return `current vf=${m[1]}:${[...this.allVdoms()].indexOf(inst)}`;
+      }
+      const d = t.match(/^delete\s+"?([^"\s]+)"?$/i);
+      if (d) {
+        if (d[1] === "root" || !this.vdoms.has(d[1])) return err(d[1]);
+        if (this.entries("system interface").some((e) => (e.attrs.get("vdom") || ["root"])[0] === d[1])) return `Cannot delete VDOM ${d[1]}: interfaces still reference it.\nCommand fail. Return code -23`;
+        const child = this.vdoms.get(d[1]);
+        this.vdoms.delete(d[1]);
+        if (this.hooks.onVdomDelete) this.hooks.onVdomDelete(this, child);
+        return "";
+      }
+      if (/^(end|exit|abort|next)$/i.test(t)) { this.vctx = null; return ""; }
+      return err(toks[0]);
+    }
+    const inst = c.vdom ? this.vdomInst(c.vdom) : this;
+    if (!inst) { this.vctx = null; return err(c.vdom); }
+    if (!inst.frames.length) {
+      if (/^(end|exit)$/i.test(t)) { this.vctx = null; return ""; }
+      if (/^config\s/i.test(t)) {
+        const path = inst.matchPath(toks.slice(1, 5).filter((x) => !inst.cfg.has(x)));
+        const perVdom = (x) => /^(firewall|router|user|vpn|webfilter|antivirus|ips|application|dnsfilter|switch-controller|system (zone|dhcp|sdwan|settings|virtual-wire|link-monitor)|log setting)\b/.test(x);
+        if (path && (c.global ? perVdom(path) : this.isGlobalPath(path))) return err(toks[1]);
+      }
+    }
+    return inst.exec(line, false);
   }
   load(script) {
     const errs = [];
@@ -179,7 +255,7 @@ export class FortiGate {
   run(line) {
     const h = { line, ts: Date.now(), frame: this.frames.map((f) => f.label).join("/") };
     this.history.push(h);
-    h.out = this.exec(line, false);
+    h.out = this.multiVdom() && !this.parent ? this.vdomExec(line) : this.exec(line, false);
     return h.out;
   }
 

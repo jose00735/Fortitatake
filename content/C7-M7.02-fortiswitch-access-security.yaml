@@ -1,0 +1,196 @@
+id: M7.02
+title: "FortiSwitch access security: 802.1X, MAB, DHCP snooping and friends"
+stage: S7
+stage_title: "S7 · FortiSwitch (FortiSwitch Administrator)"
+order: 162
+est_sessions: 1
+objectives:
+  - Configure port security with 802.1X and MAB and choose VLAN outcomes
+  - Explain DHCP snooping, IP source guard and dynamic ARP inspection and how they build on each other
+  - Use storm control, sticky MAC and LLDP-MED in access designs
+sources:
+  - "FortiSwitchOS 8.0.2 Admin Guide (Standalone): Port security / 802.1X (pp. 201–259), MAC security (p. 260)"
+  - "FortiSwitchOS 8.0.2 Admin Guide (Standalone): DHCP snooping (p. 288), IP source guard, dynamic ARP inspection (pp. 288–340)"
+  - "FortiSwitchOS 8.0.2 Admin Guide (Standalone): Storm control (p. 388), sticky MAC, LLDP-MED (p. 184), deployment scenario (p. 555)"
+
+units:
+  - id: M7.02.u1
+    title: Who may plug in? 802.1X and MAB
+    tier: 2
+    est_min: 13
+    body: |
+      FortiSwitch supports **IEEE 802.1X** port security (p. 201): the port lets nothing but EAP through until a RADIUS
+      server accepts the device.
+
+      - **Port-based** mode authenticates the first device and opens the port; **MAC-based** mode authenticates every
+        MAC on the port separately (phone + PC on one port).
+      - **MAB** (MAC authentication bypass) sends the device's MAC to RADIUS as its identity, for printers, cameras and
+        phones that have no supplicant.
+      - The RADIUS server can return a **VLAN** (dynamic VLAN assignment); a **guest VLAN** catches devices that don't
+        do 802.1X, and an **auth-fail VLAN** catches failed attempts.
+
+      The guide's deployment scenario authenticates a phone with MAB and the PC behind it with EAP on the same port
+      (p. 555).
+
+      :::recall
+      Q: A port has an IP phone with no supplicant and a PC with 802.1X behind it. Which mode and methods?
+      A: MAC-based 802.1X: MAB for the phone, EAP for the PC.
+      :::
+  - id: M7.02.u2
+    title: DHCP snooping, IP source guard, DAI
+    tier: 2
+    est_min: 13
+    body: |
+      These three build on one another:
+
+      1. **DHCP snooping** (p. 288): only **trusted** ports (uplinks to the real DHCP server) may send DHCP offers;
+         offers from untrusted ports (a rogue router a user brought in) are dropped. The switch records a **binding
+         table**: MAC, IP, VLAN, port.
+      2. **IP source guard**: on untrusted ports, only traffic whose source IP/MAC match a binding passes. A user can't
+         just set a static IP.
+      3. **Dynamic ARP inspection (DAI)**: ARP replies must match a binding, which stops ARP spoofing and
+         man-in-the-middle attacks on the LAN.
+
+      :::pitfall
+      Forget to trust the uplink toward the DHCP server, and every client loses its address the moment snooping is
+      enabled.
+      :::
+  - id: M7.02.u3
+    title: Storms, MACs and phones
+    tier: 2
+    est_min: 10
+    body: |
+      - **Storm control** (p. 388): limits broadcast, unknown unicast and multicast per second, so a loop or a flood
+        degrades instead of melting the network. Disabled by default.
+      - **Sticky MAC**: learned MACs on a port become permanent, so a port can be locked to the device that was there
+        when you secured it. **Learning limits** cap how many MACs a port may learn.
+      - **LLDP-MED** (p. 184): the switch advertises the voice VLAN and QoS to IP phones, so phones tag voice traffic
+        without manual configuration.
+
+      :::ps
+      Turning on 802.1X across a site is a project, not a setting: inventory devices, start in monitor mode, build MAB
+      lists for headless devices, then enforce, one floor at a time.
+      :::
+
+cards:
+  - {id: M7.02.c01, unit: M7.02.u1, tier: 2, front: "Port-based vs MAC-based 802.1X", back: "Port-based: first device opens the port. MAC-based: each MAC authenticates separately."}
+  - {id: M7.02.c02, unit: M7.02.u1, tier: 1, front: "MAB", back: "MAC authentication bypass: the MAC is sent to RADIUS as the identity for devices without a supplicant."}
+  - {id: M7.02.c03, unit: M7.02.u1, tier: 2, front: "Guest VLAN vs auth-fail VLAN", back: "Guest: device doesn't do 802.1X. Auth-fail: device tried and failed."}
+  - {id: M7.02.c04, unit: M7.02.u2, tier: 2, front: "DHCP snooping trusted port", back: "The only ports allowed to send DHCP server messages (uplinks to the real server)."}
+  - {id: M7.02.c05, unit: M7.02.u2, tier: 2, front: "IP source guard", back: "On untrusted ports, only traffic matching a DHCP-snooping binding (IP/MAC) passes."}
+  - {id: M7.02.c06, unit: M7.02.u2, tier: 2, front: "Dynamic ARP inspection", back: "Drops ARP packets that don't match the binding table: stops ARP spoofing."}
+  - {id: M7.02.c07, unit: M7.02.u3, tier: 2, front: "Storm control default on FortiSwitch", back: "Disabled."}
+  - {id: M7.02.c08, unit: M7.02.u3, tier: 2, front: "Sticky MAC", back: "Learned MACs on a port are kept permanently, locking the port to them."}
+  - {id: M7.02.c09, unit: M7.02.u3, tier: 2, front: "LLDP-MED for phones", back: "Advertises the voice VLAN and QoS so phones tag voice automatically."}
+
+quiz:
+  - id: M7.02.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A user's home router on a desk port starts handing out addresses. Which feature stops it?"
+    options:
+      - {id: a, text: "DHCP snooping with untrusted access ports", correct: true}
+      - {id: b, text: "Storm control", why_wrong: "Rate-limits floods, not DHCP offers."}
+      - {id: c, text: "LLDP-MED", why_wrong: "Discovery."}
+      - {id: d, text: "Root guard", why_wrong: "STP."}
+    explanation: "Offers from untrusted ports are dropped."
+    source: "FortiSwitchOS 8.0.2 Admin Guide p. 288"
+  - id: M7.02.q02
+    type: order
+    tier: 2
+    stem: "Order these by dependency (each needs the one before)."
+    items: ["DHCP snooping builds bindings", "IP source guard filters by binding", "Dynamic ARP inspection checks ARP against bindings"]
+    explanation: "Both IPSG and DAI rely on the snooping table."
+  - id: M7.02.q03
+    type: single
+    tier: 2
+    stem: "A printer can't do 802.1X. How does it get onto a secured port?"
+    options:
+      - {id: a, text: "MAB", correct: true}
+      - {id: b, text: "EAP-TLS", why_wrong: "Needs a supplicant."}
+      - {id: c, text: "Sticky MAC only", why_wrong: "Doesn't authenticate."}
+      - {id: d, text: "Disable security on that switch", why_wrong: "Opens every port."}
+    explanation: "MAB uses the MAC as identity (pair with a restricted VLAN)."
+  - id: M7.02.q04
+    type: multi
+    tier: 3
+    stem: "Enabling DHCP snooping broke DHCP for everyone. Likely causes? Select all that apply."
+    options:
+      - {id: a, text: "The uplink toward the DHCP server isn't trusted", correct: true}
+      - {id: b, text: "Option 82 inserted and the server rejects it", correct: true}
+      - {id: c, text: "Storm control is disabled", why_wrong: "Unrelated."}
+      - {id: d, text: "LLDP is enabled", why_wrong: "Unrelated."}
+    explanation: "Trust the uplink; check option 82 handling on the server."
+  - id: M7.02.q05
+    type: text
+    tier: 1
+    stem: "Which VLAN catches devices that don't speak 802.1X at all? (one word + 'VLAN')"
+    accept: ["guest vlan", "guest"]
+    explanation: "Guest VLAN."
+
+labs:
+  - id: M7.02.lab1
+    title: Rolling out 802.1X without breaking the floor
+    goal: "Plan the phases for enforcing port security in an office with phones, printers and laptops."
+    worked:
+      config: |
+        # Phase 0  Inventory: laptops (supplicant), phones (MAB), printers/cameras (MAB), unknowns
+        # Phase 1  RADIUS ready: NPS/FortiAuthenticator policies, MAB list, VLAN attributes
+        # Phase 2  Monitor mode on one floor: log who would fail, fix them
+        # Phase 3  Enforce on that floor: guest VLAN for no-supplicant, auth-fail VLAN for failures
+        # Phase 4  DHCP snooping (trust uplinks), then IP source guard and DAI
+        # Phase 5  Repeat per floor; review failures weekly
+      notes:
+        - "Every phase has a rollback: disable enforcement on the affected ports."
+        - "Headless devices are always the long tail."
+    faded:
+      template: |
+        # Start in {{monitor}} mode
+        # Headless devices use {{MAB}}
+        # Trust the {{uplink}} before enabling DHCP snooping
+    solo:
+      prompt: "Write the order you'd enable these, one per line: dhcp snooping, ip source guard, dynamic arp inspection."
+      required: ["dhcp snooping", "ip source guard", "arp inspection"]
+      solution: |
+        dhcp snooping
+        ip source guard
+        dynamic arp inspection
+      notes: "Each relies on the binding table from snooping."
+
+scenarios:
+  - id: M7.02.sc1
+    kind: situation
+    tier: 3
+    title: "\"Just block every unknown device tomorrow\""
+    situation: |
+      After an audit, the CIO wants 802.1X enforced on all 600 ports tomorrow.
+    ask: "How do you answer?"
+    right_thinking:
+      - "Support the goal"
+      - "Explain the risk of a big-bang enforcement (phones, printers, badge readers go dark)"
+      - "Propose phased rollout with monitor mode and a date"
+    what: "Agreement on the goal, a safe plan with dates."
+    why: "Security changes that break operations get rolled back and lose trust."
+    how: ["Agree", "Risk", "Plan", "Date"]
+    model_answer: |
+      "I agree it's the right control. If we enforce on all ports tomorrow, the phones, printers and badge readers
+      without supplicants go offline. I'd run monitor mode this week to find every device that would fail, build
+      the MAB list, and enforce floor by floor starting next Monday, finishing in three weeks, with a rollback per
+      floor."
+    best_way: "Yes, and here's how without an outage."
+    rubric: ["supports the goal", "explains risk", "gives a dated plan"]
+
+interview:
+  - id: M7.02.t01
+    stage: technical
+    question: "How would you stop a rogue DHCP server and ARP spoofing on an access network?"
+    testing: "Layer-2 security"
+    framework: "Snooping → IPSG → DAI"
+    model_answer: |
+      "DHCP snooping with only the uplinks trusted, so offers from user ports are dropped and the switch builds a
+      binding table. Then dynamic ARP inspection checks ARP against those bindings, which stops spoofing, and IP
+      source guard stops users from setting static IPs. I'd enable them in that order and test DHCP right after
+      the first step."
+    best_way: "Three features in dependency order."
+    target: "0:35"

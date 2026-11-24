@@ -1,0 +1,248 @@
+id: M8.05
+title: "VDOMs and advanced HA"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 166
+est_sessions: 1
+objectives:
+  - Design multi-VDOM deployments: global vs per-VDOM, management VDOM, VDOM types and resources
+  - Connect VDOMs with inter-VDOM links and route/NAT between them
+  - Delegate administration with VDOM-scoped admins
+  - Combine HA with VDOMs (virtual clustering) and explain what fails over
+sources:
+  - "FortiOS 8.0.2 Admin Guide: VDOMs: multi-VDOM mode, global and per-VDOM resources, management VDOM, VDOM types, administrator roles (pp. 4284–4325)"
+  - "FortiOS 8.0.2 Admin Guide: HA (pp. 4556–4813)"
+
+units:
+  - id: M8.05.u1
+    title: What a VDOM is
+    tier: 2
+    est_min: 13
+    body: |
+      In **multi-VDOM mode** a FortiGate runs several VDOMs that act as independent firewalls, each with its own routing
+      table, policies, objects, VPNs and logs. When you first enable it, the existing configuration moves into the
+      **root** VDOM, which can't be deleted (p. 4285).
+
+      | Global (outside any VDOM) | Per VDOM |
+      |---|---|
+      | Interfaces and their VDOM assignment, firmware, DNS, HA, admins, some logging | Policies, routes, addresses, VPNs, security profiles, SD-WAN |
+
+      - The **management VDOM** (root by default) sources management traffic: FortiGuard updates, logs to remote
+        servers (p. 4285).
+      - VDOM **types**: Traffic (normal), Admin (management only, no transit traffic, at most one), LAN extension
+        (p. 4286).
+      - **Resources**: by default no per-VDOM limits, so one tenant can starve the others; set maximums for sessions,
+        policies and so on (p. 4285).
+
+      :::cli
+      config system global
+          set vdom-mode multi-vdom
+      end
+      config vdom
+          edit CUST-A
+      end
+      config global
+          config system interface
+              edit "port2"
+                  set vdom "CUST-A"
+              next
+          end
+      end
+      :::
+
+      :::recall
+      Q: Two tenants both use 192.168.10.0/24. Can one FortiGate serve both?
+      A: Yes, in separate VDOMs: each has its own routing table.
+      :::
+  - id: M8.05.u2
+    title: Inter-VDOM links and delegated admins
+    tier: 2
+    est_min: 12
+    body: |
+      An **inter-VDOM link** (`config system vdom-link`) creates a pair of virtual interfaces, `<name>0` and
+      `<name>1`, that you assign to two VDOMs and address like a point-to-point link. Traffic crossing it is
+      inspected by **both** VDOMs' policies.
+
+      Common patterns:
+
+      - **Shared Internet**: root owns the WAN; tenant VDOMs route to root over links; tenants NAT to their link
+        address, root NATs to the public IP (this is what makes overlapping tenant subnets work).
+      - **Segmentation**: separate VDOMs for OT and IT, joined by a link with tight policies.
+
+      ## Administrators
+
+      - A **global** admin with the `super_admin` profile sees and changes everything (p. 4286).
+      - A **VDOM admin** is created in `config global` → `config system admin` with `set vdom <name>` and a profile
+        such as prof_admin: full control inside that VDOM, nothing global.
+
+      :::pitfall
+      Debugging in multi-VDOM mode means choosing the context first: `get router info routing-table all` shows a
+      different table in each VDOM. Half of "it's not in the routing table" cases are the wrong VDOM.
+      :::
+  - id: M8.05.u3
+    title: HA with VDOMs
+    tier: 3
+    est_min: 12
+    body: |
+      FGCP works the same with VDOMs: the cluster synchronizes global and every VDOM's configuration.
+
+      **Virtual clustering** splits the VDOMs into two **virtual clusters** (vcluster1, vcluster2) with different
+      primary units: VDOM A active on unit 1, VDOM B active on unit 2. Both units carry traffic, and each takes over the
+      other's VDOMs on failure. It's active-passive per VDOM, active-active per device.
+
+      Points to check in a design:
+
+      - Interface monitoring is per virtual cluster: a failed monitored port moves only that vcluster's VDOMs.
+      - Session pickup, heartbeat links and management access (an HA reserved management interface) apply as in a
+        single-VDOM cluster.
+      - Firmware upgrades still upgrade the whole device.
+
+      :::ps
+      VDOMs are a tenancy and segmentation tool, not a licence to put everything on one box. Ask about failure domains:
+      one firmware bug or one bad global change affects every tenant on that device.
+      :::
+
+cards:
+  - {id: M8.05.c01, unit: M8.05.u1, tier: 1, front: "Enable multi-VDOM mode", back: "config system global → set vdom-mode multi-vdom."}
+  - {id: M8.05.c02, unit: M8.05.u1, tier: 2, front: "Where do existing settings go when you enable multi-VDOM?", back: "Into the root VDOM (which can't be deleted)."}
+  - {id: M8.05.c03, unit: M8.05.u1, tier: 2, front: "Management VDOM", back: "The VDOM that sources management traffic (FortiGuard, remote logging). root by default."}
+  - {id: M8.05.c04, unit: M8.05.u1, tier: 2, front: "Global vs per-VDOM: interfaces?", back: "Global: interfaces are created and assigned to VDOMs from config global."}
+  - {id: M8.05.c05, unit: M8.05.u1, tier: 3, front: "Default per-VDOM resource limits", back: "None: one VDOM can use the whole device. Set maximums."}
+  - {id: M8.05.c06, unit: M8.05.u2, tier: 2, front: "Inter-VDOM link interfaces", back: "config system vdom-link → creates <name>0 and <name>1; assign each to a VDOM and address them."}
+  - {id: M8.05.c07, unit: M8.05.u2, tier: 2, front: "VDOM admin", back: "Global → system admin with set vdom <name> and a non-super profile."}
+  - {id: M8.05.c08, unit: M8.05.u3, tier: 3, front: "Virtual clustering", back: "Two virtual clusters with different primaries: VDOMs active on both units, each backing up the other."}
+
+quiz:
+  - id: M8.05.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Two customers share a FortiGate and both use 192.168.10.0/24. What makes this work?"
+    options:
+      - {id: a, text: "Separate VDOMs, each with its own routing table", correct: true}
+      - {id: b, text: "Two zones in one VDOM", why_wrong: "One routing table; overlapping subnets conflict."}
+      - {id: c, text: "Policy routes", why_wrong: "Still one routing domain."}
+      - {id: d, text: "Two VLANs with the same IP", why_wrong: "Not in one VDOM."}
+    explanation: "VDOMs separate routing and policy."
+  - id: M8.05.q02
+    type: single
+    tier: 2
+    stem: "Where do you assign port3 to the VDOM CUST-B?"
+    options:
+      - {id: a, text: "config global → config system interface → edit port3 → set vdom CUST-B", correct: true}
+      - {id: b, text: "config vdom → edit CUST-B → config system interface", why_wrong: "Interfaces are global."}
+      - {id: c, text: "config system vdom-link", why_wrong: "That's for links between VDOMs."}
+      - {id: d, text: "It's automatic", why_wrong: "It's explicit."}
+    explanation: "Interfaces are global objects."
+  - id: M8.05.q03
+    type: multi
+    tier: 3
+    stem: "Traffic from tenant VDOM A to the Internet via root crosses an inter-VDOM link. Which apply? Select all that apply."
+    options:
+      - {id: a, text: "A policy in VDOM A and a policy in root must both allow it", correct: true}
+      - {id: b, text: "Each VDOM may NAT it", correct: true}
+      - {id: c, text: "Both VDOMs can log it", correct: true}
+      - {id: d, text: "Only root's policy matters", why_wrong: "Both VDOMs inspect it."}
+    explanation: "Two firewalls in series."
+  - id: M8.05.q04
+    type: single
+    tier: 2
+    stem: "Which admin profile is required for a global admin with full access?"
+    options:
+      - {id: a, text: "super_admin", correct: true}
+      - {id: b, text: "prof_admin", why_wrong: "Not global."}
+      - {id: c, text: "Any profile set in config global", why_wrong: "Must be super_admin."}
+      - {id: d, text: "A VDOM admin with all VDOMs listed", why_wrong: "Still not global."}
+    explanation: "Global, all-VDOM access needs super_admin."
+    source: "FortiOS 8.0.2 Admin Guide p. 4286"
+
+labs:
+  - id: M8.05.lab1
+    title: Tenant onboarding runbook
+    goal: "Write the steps to add a third tenant to a multi-VDOM data-center FortiGate."
+    worked:
+      config: |
+        config vdom
+            edit TENANT-C
+        end
+        config global
+            config system vdom-link
+                edit "vlTC"
+                next
+            end
+            config system interface
+                edit "port4"
+                    set vdom "TENANT-C"
+                    set ip 192.168.10.1 255.255.255.0
+                next
+                edit "vlTC0"
+                    set vdom "root"
+                    set ip 10.255.3.1 255.255.255.252
+                next
+                edit "vlTC1"
+                    set vdom "TENANT-C"
+                    set ip 10.255.3.2 255.255.255.252
+                next
+            end
+            config system admin
+                edit "tenantc-admin"
+                    set vdom "TENANT-C"
+                    set accprofile "prof_admin"
+                next
+            end
+        end
+        # then: TENANT-C default route via 10.255.3.1 + LAN→vlTC1 NAT policy; root vlTC0→WAN NAT policy
+      notes:
+        - "Set resource limits for the new VDOM."
+        - "Test from the tenant, then hand over the admin account."
+    faded:
+      template: |
+        config global
+            config system {{vdom-link}}
+        ...
+                    set {{vdom}} "TENANT-C"
+    solo:
+      prompt: "Name the four objects you create for a new tenant, one per line: the vdom, the link, the interface assignment, the admin."
+      required: ["vdom", "vdom-link", "interface", "admin"]
+      solution: |
+        config vdom → edit TENANT-C
+        config system vdom-link
+        config system interface (set vdom)
+        config system admin (set vdom)
+      notes: "Plus routes and policies in both VDOMs."
+
+scenarios:
+  - id: M8.05.sc1
+    kind: situation
+    tier: 3
+    title: "\"Can we put the OT network in a VDOM on the office firewall?\""
+    situation: |
+      A manufacturer wants to save a firewall by putting the plant (OT) network in a VDOM on the office FortiGate.
+    ask: "What do you advise?"
+    right_thinking:
+      - "VDOMs give separate policies and routing"
+      - "But a shared failure domain: firmware, global config, resource exhaustion, HA"
+      - "Decide by risk: separate device for critical OT, or VDOM with resource limits and strict link policies"
+    what: "A risk-based recommendation, not a yes/no."
+    why: "Senior PS engineers talk about failure domains."
+    how: ["Benefits", "Risks", "Mitigations", "Recommendation"]
+    model_answer: |
+      "A VDOM gives OT its own policies, routing and admins, and an inter-VDOM link with tight rules. But it shares the
+      box: a firmware issue, a global change or the office exhausting sessions affects the plant. If downtime in the
+      plant is expensive, I'd recommend a separate FortiGate for OT. If budget wins, a VDOM with resource limits,
+      separate admins and a change process that treats global changes as plant-impacting."
+    best_way: "Benefit, risk, mitigations, recommendation."
+    rubric: ["explains isolation", "names shared failure domain", "clear recommendation"]
+
+interview:
+  - id: M8.05.t01
+    stage: technical
+    question: "How do you give two tenants Internet access from one FortiGate when their subnets overlap?"
+    testing: "VDOM design"
+    framework: "VDOMs → links → NAT"
+    model_answer: |
+      "A VDOM per tenant and root for the Internet edge. Each tenant connects to root with an inter-VDOM link. The
+      tenant VDOM NATs its LAN to its link address, and root NATs the links to the public IP. Root never sees the
+      overlapping subnets, each tenant has its own policies and logs, and I give each tenant a VDOM-scoped admin."
+    best_way: "Pattern, NAT, admin."
+    target: "0:40"

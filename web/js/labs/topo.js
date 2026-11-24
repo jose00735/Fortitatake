@@ -15,6 +15,10 @@ function glyph(d, x, y) {
     case "cloud":
       return `<path d="M${x - 70} ${y + 18}h140a24 24 0 0 0 0-40a34 34 0 0 0-62-14a28 28 0 0 0-52 10a22 22 0 0 0-26 44z" class="tp-cloud"/>
         <text x="${x}" y="${y + 6}" text-anchor="middle" class="tp-cloud-t">Internet</text>`;
+    case "fortiswitch":
+      return `<rect x="${x - 50}" y="${y - 13}" width="100" height="26" rx="4" class="tp-fsw"/>
+        <g class="tp-fsw-ports">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => `<rect x="${x - 42 + i * 8.6}" y="${y + 3}" width="6" height="5" rx="1"/>`).join("")}</g>
+        <text x="${x}" y="${y - 1}" text-anchor="middle" class="tp-fsw-t">FortiSwitch</text>`;
     case "server":
       return `<rect x="${x - 14}" y="${y - 19}" width="28" height="38" rx="3" class="tp-box"/><path d="M${x - 8} ${y - 9}h16M${x - 8} ${y - 2}h16M${x - 8} ${y + 5}h10" class="tp-line-ink"/>`;
     case "fortimanager": case "fortianalyzer": case "fortisiem": case "fortiedr":
@@ -29,10 +33,11 @@ function glyph(d, x, y) {
 function sub(lab, d) {
   if (d instanceof FortiGate) return d.model.replace("FortiGate-", "FG-").replace("FortiManager-", "FMG-").replace("FortiAnalyzer-", "FAZ-");
   if (d.kind === "router") return d.label || "";
+  if (d.kind === "fortiswitch") return d.model.replace("FortiSwitch-", "FS-");
   if (d.kind === "cloud") return "";
   const a = d.addr && d.addr();
   if (a) return `${intToIp(a.ip)}/${a.len}`;
-  return d.dhcp ? "DHCP: no lease" : "";
+  return d.dhcp ? "no lease" : "";
 }
 
 // returns an SVG string; `sel` is the device whose console is open
@@ -45,12 +50,20 @@ export function drawTopology(run, sel) {
   // parallel links between the same two devices are drawn side by side
   const pairKey = (a, b) => [a, b].sort().join("|");
   const pairTotal = new Map(), pairSeen = new Map();
-  for (const seg of lab.segments) { const mem = seg.members.filter((m) => lab.dev(m.dev)); if (mem.length === 2) { const k = pairKey(mem[0].dev, mem[1].dev); pairTotal.set(k, (pairTotal.get(k) || 0) + 1); } }
-  for (const seg of lab.segments) {
+  const segs = lab.baseSegments || lab.segments;
+  for (const seg of segs) { const mem = seg.members.filter((m) => lab.dev(m.dev)); if (mem.length === 2) { const k = pairKey(mem[0].dev, mem[1].dev); pairTotal.set(k, (pairTotal.get(k) || 0) + 1); } }
+  for (const seg of segs) {
     const mem = seg.members.filter((m) => lab.dev(m.dev));
     const statusOf = (m) => {
       const d = lab.dev(m.dev);
       if (seg.down || m.down) return "down";
+      if (seg.cable) {
+        const sw = mem.map((x) => lab.dev(x.dev)).find((x) => x.kind === "fortiswitch");
+        const st = sw && lab.fslState ? lab.fslState(sw) : null;
+        if (!st || !st.authorized) return "noip";
+        if (d.kind === "fortiswitch" || d instanceof FortiGate) return "up";
+        return d.dhcp && !d.lease ? "noip" : "up";
+      }
       if (d instanceof FortiGate) {
         const i = lab.fgtIntfs(d).find((x) => x.seg === seg);
         if (!i) return "unset";
@@ -80,7 +93,13 @@ export function drawTopology(run, sel) {
       }
       const st = [statusOf(a), statusOf(b)].includes("down") ? "down" : [statusOf(a), statusOf(b)].includes("noip") ? "noip" : "up";
       links.unshift(`<line x1="${pa[0]}" y1="${pa[1]}" x2="${pb[0]}" y2="${pb[1]}" class="tp-link ${st}"/>`);
-      for (const [m, p, q, o] of [[a, pa, pb, b], [b, pb, pa, a]]) if (m.port && lab.dev(m.dev).kind !== "cloud" && m.port !== "eth0") portLabels.push(portLabel(p, q, m.port + (m.vlan ? `.${m.vlan}` : ""), statusOf(m), lab.dev(m.dev).kind, 1, lab.dev(o.dev).kind));
+      for (const [m, p, q, o] of [[a, pa, pb, b], [b, pb, pa, a]]) {
+        if (!m.port || lab.dev(m.dev).kind === "cloud" || m.port === "eth0") continue;
+        const dv = lab.dev(m.dev);
+        // access ports of a switch are labelled at the device end, so a dense switch stays readable
+        if (dv.kind === "fortiswitch" && m.port !== dv.uplink) portLabels.push(portLabel(q, p, m.port, statusOf(m), lab.dev(o.dev).kind, 1, "fortiswitch"));
+        else portLabels.push(portLabel(p, q, m.port + (m.vlan ? `.${m.vlan}` : ""), statusOf(m), dv.kind, 1, lab.dev(o.dev).kind));
+      }
     }
   }
   const nodes = lab.order.map((id) => {
@@ -94,7 +113,10 @@ export function drawTopology(run, sel) {
       ${s ? `<text x="${x}" y="${y + off + 16}" text-anchor="middle" class="tp-sub">${esc(s)}</text>` : ""}
     </g>`;
   });
-  return `<svg viewBox="0 0 960 560" class="topo" role="img" aria-label="Network topology">${links.join("")}${portLabels.join("")}${nodes.join("")}</svg>`;
+  const xs = lab.order.map((id) => pos(id)[0]), ys = lab.order.map((id) => pos(id)[1]);
+  const vx = Math.min(0, Math.min(...xs) - 90), vy = Math.min(0, Math.min(...ys) - 60);
+  const vw = Math.max(960, Math.max(...xs) + 90) - vx, vh = Math.max(560, Math.max(...ys) + 55) - vy;
+  return `<svg viewBox="${vx} ${vy} ${vw} ${vh}" class="topo" role="img" aria-label="Network topology">${links.join("")}${portLabels.join("")}${nodes.join("")}</svg>`;
 }
 function avg(ps) { return [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length]; }
 function extent(kind, dx, dy) {

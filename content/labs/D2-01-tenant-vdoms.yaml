@@ -1,0 +1,220 @@
+id: D2.01
+track: fortigate
+modules: [M8.05, M4.01]
+tier: 2
+order: 50
+kind: project
+title: "Caribe Data Center: two tenants, one FortiGate, the same subnet"
+customer: Caribe Data Center (Barranquilla)
+par: 75
+skills: [multi-VDOM mode, interface assignment, inter-VDOM links, per-VDOM NAT and routing, VDOM admins]
+brief: |
+  **SOW 2026-160.** Caribe DC hosts two tenants behind one FortiGate-600F: **Naviera del Caribe** (port2) and **Salud
+  Total IPS** (port3). Both use **192.168.10.0/24** with gateway .1, and neither will renumber. Each tenant must be
+  isolated, with its own policies, and reach the Internet through the data center's uplink (port1, owned by root).
+
+  Design from the HLD:
+
+  | VDOM | Interfaces | Role |
+  |---|---|---|
+  | root | port1 (203.0.113.2/29), inter-VDOM ends .1 | Internet edge, NAT to the public IP |
+  | NAVIERA | port2 192.168.10.1/24, vlNAV1 10.255.1.2/30 | Tenant A |
+  | SALUD | port3 192.168.10.1/24, vlSAL1 10.255.2.2/30 | Tenant B |
+
+  Inter-VDOM links: **vlNAV** (vlNAV0 = 10.255.1.1/30 in root) and **vlSAL** (vlSAL0 = 10.255.2.1/30 in root).
+topology: {use: dc-tenants}
+parts:
+  - id: a
+    title: Split the FortiGate
+    tasks:
+      - "Enable multi-VDOM mode and create the NAVIERA and SALUD VDOMs."
+      - "From `config global`, move port2 to NAVIERA and port3 to SALUD, both with 192.168.10.1/24 (allow ping)."
+      - "Test from A-PC and B-PC: `ping 192.168.10.1`."
+    checks:
+      - text: "port2 belongs to NAVIERA"
+        config: {dev: FGT-DC, path: system interface, key: port2, attr: vdom, equals: NAVIERA}
+      - text: "port3 belongs to SALUD"
+        config: {dev: FGT-DC, path: system interface, key: port3, attr: vdom, equals: SALUD}
+      - text: "A-PC reaches its gateway"
+        probe: {from: A-PC, to: 192.168.10.1}
+      - text: "B-PC reaches its gateway (same IP, other VDOM)"
+        probe: {from: B-PC, to: 192.168.10.1}
+    hints:
+      - "`config system global` / `set vdom-mode multi-vdom` / `end`. Then `config vdom` / `edit NAVIERA` / `end` creates a VDOM (same for SALUD)."
+      - "`config global` / `config system interface` / `edit port2` / `set vdom NAVIERA` / `set ip 192.168.10.1 255.255.255.0` / `set allowaccess ping` / `next` … / `end` / `end`."
+    solution:
+      FGT-DC: |
+        config system global
+        set vdom-mode multi-vdom
+        end
+        config vdom
+        edit NAVIERA
+        end
+        config vdom
+        edit SALUD
+        end
+        config global
+        config system interface
+        edit port2
+        set vdom NAVIERA
+        set ip 192.168.10.1 255.255.255.0
+        set allowaccess ping
+        next
+        edit port3
+        set vdom SALUD
+        set ip 192.168.10.1 255.255.255.0
+        set allowaccess ping
+        next
+        end
+        end
+    explain: |
+      Each VDOM is an independent firewall with its own routing table, policies and objects, so the same subnet can
+      exist in two VDOMs without conflict. Interfaces are global objects: you assign them to a VDOM from `config
+      global`, and from then on only that VDOM can use them.
+  - id: b
+    title: Internet through root
+    tasks:
+      - "Create the inter-VDOM links vlNAV and vlSAL and address their ends as in the HLD."
+      - "In each tenant VDOM: default route through its link, and a LAN → link policy with NAT."
+      - "In root: routes back to 10.255.1.0/30 and 10.255.2.0/30 are connected; add link → port1 policies with NAT."
+      - "Test: `curl https://www.google.com` from both PCs."
+    checks:
+      - text: "Naviera browses the Internet"
+        probe: {from: A-PC, to: www.google.com, proto: tcp, port: 443}
+      - text: "Salud browses the Internet"
+        probe: {from: B-PC, to: www.google.com, proto: tcp, port: 443}
+      - text: "Naviera leaves with the data center's public IP"
+        probe: {from: A-PC, to: 142.250.78.4, proto: tcp, port: 443, seen_src: 203.0.113.2}
+    hints:
+      - "`config global` / `config system vdom-link` / `edit vlNAV` / `next` / `edit vlSAL` / `end` creates vlNAV0/vlNAV1 and vlSAL0/vlSAL1. Then in `config system interface` set each end's vdom and IP (/30)."
+      - "Tenant side (in `config vdom` / `edit NAVIERA`): `config router static` / `edit 1` / `set device vlNAV1` / `set gateway 10.255.1.1`, and a policy port2 → vlNAV1 with NAT. Root: policies vlNAV0 → port1 and vlSAL0 → port1 with NAT."
+    solution:
+      FGT-DC: |
+        config global
+        config system vdom-link
+        edit vlNAV
+        next
+        edit vlSAL
+        next
+        end
+        config system interface
+        edit vlNAV0
+        set vdom root
+        set ip 10.255.1.1 255.255.255.252
+        next
+        edit vlNAV1
+        set vdom NAVIERA
+        set ip 10.255.1.2 255.255.255.252
+        next
+        edit vlSAL0
+        set vdom root
+        set ip 10.255.2.1 255.255.255.252
+        next
+        edit vlSAL1
+        set vdom SALUD
+        set ip 10.255.2.2 255.255.255.252
+        next
+        end
+        end
+        config vdom
+        edit NAVIERA
+        config router static
+        edit 1
+        set device vlNAV1
+        set gateway 10.255.1.1
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "LAN-Internet"
+        set srcintf port2
+        set dstintf vlNAV1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+        end
+        config vdom
+        edit SALUD
+        config router static
+        edit 1
+        set device vlSAL1
+        set gateway 10.255.2.1
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "LAN-Internet"
+        set srcintf port3
+        set dstintf vlSAL1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+        end
+        config vdom
+        edit root
+        config firewall policy
+        edit 1
+        set name "NAVIERA-out"
+        set srcintf vlNAV0
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        edit 2
+        set name "SALUD-out"
+        set srcintf vlSAL0
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+        end
+    explain: |
+      Traffic crosses two firewalls: the tenant VDOM (its policy, its NAT to the link address) and root (the edge
+      policy, NAT to the public IP). The double NAT is what makes overlapping tenant subnets work: root only ever sees
+      10.255.1.2 and 10.255.2.2. Each VDOM writes its own logs, so each tenant's traffic is auditable separately.
+  - id: c
+    title: A delegated admin per tenant
+    tasks:
+      - "Create the admin `naviera-admin` (password `Nav.Adm1n-26`) with profile prof_admin, limited to the NAVIERA VDOM."
+    checks:
+      - text: "naviera-admin exists and only sees NAVIERA"
+        config: {dev: FGT-DC, path: system admin, key: naviera-admin, attr: vdom, equals: NAVIERA}
+      - text: "…with a non-super profile"
+        config: {dev: FGT-DC, path: system admin, key: naviera-admin, attr: accprofile, equals: prof_admin}
+    hints:
+      - "Admins are global objects: `config global` / `config system admin` / `edit naviera-admin`."
+      - "`set accprofile prof_admin` / `set vdom NAVIERA` / `set password Nav.Adm1n-26`."
+    solution:
+      FGT-DC: |
+        config global
+        config system admin
+        edit naviera-admin
+        set accprofile prof_admin
+        set vdom NAVIERA
+        set password Nav.Adm1n-26
+        next
+        end
+        end
+    explain: |
+      A VDOM-scoped admin with prof_admin can manage everything inside their VDOM and nothing global: they can't
+      see the other tenant, change interfaces or create VDOMs. super_admin is always global, so never give it to a
+      tenant.

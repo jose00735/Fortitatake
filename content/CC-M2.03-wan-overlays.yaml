@@ -1,0 +1,197 @@
+id: M2.03
+title: "WAN, overlays and SD-WAN concepts"
+stage: S2
+stage_title: "S2 · Routing and WAN protocols"
+order: 172
+est_sessions: 1
+objectives:
+  - Compare MPLS, Internet and LTE/5G transports for branch connectivity
+  - Explain overlays (IPsec, GRE, VXLAN) and why SD-WAN runs on top of them
+  - Explain SLA probes, steering modes and ADVPN shortcuts
+  - Design a hub-and-spoke overlay with dynamic routing
+sources:
+  - "FortiOS 8.0.2 Admin Guide: SD-WAN overview and SD-WAN chapter (pp. 1155–1833), ADVPN (p. 3626), Overlay Orchestrator (p. 3669)"
+  - "Protocol knowledge: IPsec (RFC 4301), GRE (RFC 2784), VXLAN (RFC 7348)"
+
+units:
+  - id: M2.03.u1
+    title: Transports and overlays
+    tier: 1
+    est_min: 12
+    body: |
+      | Transport | Strengths | Weaknesses |
+      |---|---|---|
+      | **MPLS** L3VPN | Carrier SLA, low jitter, private | Cost, slow to provision, one carrier |
+      | **Broadband / fiber Internet** | Cheap, fast, everywhere | Best effort, shared |
+      | **LTE / 5G** | Quick to deploy, diverse path | Data caps, variable latency |
+
+      An **overlay** is a logical network built over the transport:
+
+      - **IPsec**: encryption and authentication; the default for SD-WAN over the Internet.
+      - **GRE**: simple encapsulation, no encryption (often inside IPsec for multicast or routing protocols).
+      - **VXLAN**: layer-2 over layer-3 (stretches a LAN segment), can run inside IPsec.
+
+      The overlay gives every site a consistent private network regardless of which ISP carries it, and lets routing
+      protocols (BGP) run between sites.
+
+      :::recall
+      Q: Why run BGP over IPsec tunnels instead of over the raw Internet?
+      A: The tunnels make a private, encrypted network between sites; BGP inside them advertises private subnets that the Internet can't carry.
+      :::
+  - id: M2.03.u2
+    title: How SD-WAN decides
+    tier: 2
+    est_min: 13
+    body: |
+      SD-WAN treats several links (physical or overlay tunnels) as one logical WAN and picks a link **per session**:
+
+      1. **Health checks** (SLA probes) measure latency, jitter and packet loss to a target through each member.
+      2. **Rules** (services) match traffic (destination, application, user…) and choose a member by a strategy:
+         manual order, best quality (lowest latency/jitter/loss), lowest cost that meets an SLA, or load balancing.
+      3. When a member breaks its SLA, **new sessions** move; existing sessions usually stay unless configured to
+         move.
+
+      On FortiOS, SD-WAN rules sit before the routing table (they're policy routes), and dead members are removed from
+      routing (p. 1155+).
+
+      :::why
+      Q: Why probe a server at HQ through each tunnel rather than 8.8.8.8 through each ISP?
+      A: It measures the path the application really uses, tunnel and far-end included.
+      :::
+  - id: M2.03.u3
+    title: Hub-and-spoke and ADVPN
+    tier: 3
+    est_min: 13
+    body: |
+      With many branches, a full mesh of static tunnels doesn't scale. The usual design:
+
+      - **Hub-and-spoke**: each spoke has one tunnel per transport to each hub; hubs use dial-up (dynamic) phase 1 so
+        spokes can be added without hub changes.
+      - **BGP over the overlay**: spokes peer with the hubs (often iBGP with the hub as route reflector, using
+        neighbor ranges), advertise their LANs and learn everything else.
+      - **ADVPN** (Auto-Discovery VPN): when spoke A sends traffic to spoke B through the hub, the hub tells both
+        spokes about each other and they build a **shortcut** tunnel directly. Traffic then goes spoke to spoke, and
+        the shortcut is torn down when idle (p. 3626).
+      - FortiOS 8.0's **Fabric Overlay Orchestrator** automates building such overlays from the Security Fabric
+        (p. 3669); FortiManager's SD-WAN overlay templates do it from central management.
+
+      :::ps
+      In design workshops, ask about traffic patterns first: if 90 % goes to the data center and SaaS, ADVPN shortcuts
+      matter less than good hub capacity and local breakout. Voice and video between branches is where shortcuts pay.
+      :::
+
+cards:
+  - {id: M2.03.c01, unit: M2.03.u1, tier: 1, front: "MPLS strengths vs Internet strengths", back: "MPLS: SLA, low jitter, private. Internet: cheap, fast, everywhere."}
+  - {id: M2.03.c02, unit: M2.03.u1, tier: 2, front: "GRE vs IPsec", back: "GRE: encapsulation, no encryption (carries multicast). IPsec: encryption and authentication."}
+  - {id: M2.03.c03, unit: M2.03.u1, tier: 2, front: "VXLAN", back: "Layer-2 over layer-3 encapsulation (UDP), stretches LAN segments."}
+  - {id: M2.03.c04, unit: M2.03.u2, tier: 1, front: "SD-WAN health check measures…", back: "Latency, jitter and packet loss through each member."}
+  - {id: M2.03.c05, unit: M2.03.u2, tier: 2, front: "When a member breaks SLA, what moves?", back: "New sessions; existing ones usually stay."}
+  - {id: M2.03.c06, unit: M2.03.u2, tier: 2, front: "SD-WAN rules vs routing table", back: "Rules are checked first (policy routes)."}
+  - {id: M2.03.c07, unit: M2.03.u3, tier: 2, front: "ADVPN in one line", back: "Spoke-to-spoke shortcut tunnels built on demand after traffic flows through the hub."}
+  - {id: M2.03.c08, unit: M2.03.u3, tier: 3, front: "Why dial-up phase 1 on hubs?", back: "New spokes can join without changing the hub."}
+
+quiz:
+  - id: M2.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which overlay encrypts traffic by default?"
+    options:
+      - {id: a, text: "IPsec", correct: true}
+      - {id: b, text: "GRE", why_wrong: "No encryption."}
+      - {id: c, text: "VXLAN", why_wrong: "No encryption by itself."}
+      - {id: d, text: "MPLS", why_wrong: "A transport, not encrypted."}
+    explanation: "IPsec provides confidentiality and integrity."
+  - id: M2.03.q02
+    type: single
+    tier: 2
+    stem: "With ADVPN, how does spoke A first reach spoke B?"
+    options:
+      - {id: a, text: "Through the hub, then a shortcut is built", correct: true}
+      - {id: b, text: "Directly from the start, through a static tunnel", why_wrong: "That's a full mesh."}
+      - {id: c, text: "Only through the hub, forever", why_wrong: "That's plain hub-and-spoke."}
+      - {id: d, text: "Over MPLS", why_wrong: "Transport-independent."}
+    explanation: "First packets via hub, then shortcut."
+    source: "FortiOS 8.0.2 Admin Guide p. 3626"
+  - id: M2.03.q03
+    type: multi
+    tier: 2
+    stem: "What does an SD-WAN SLA usually include? Select all that apply."
+    options:
+      - {id: a, text: "Latency threshold", correct: true}
+      - {id: b, text: "Jitter threshold", correct: true}
+      - {id: c, text: "Packet-loss threshold", correct: true}
+      - {id: d, text: "Number of users", why_wrong: "Not a link metric."}
+    explanation: "Link quality metrics."
+  - id: M2.03.q04
+    type: text
+    tier: 2
+    stem: "Protocol most often run inside the overlay to exchange branch routes (three letters)?"
+    accept: ["bgp"]
+    explanation: "iBGP with route reflection on the hubs is the common design."
+
+labs:
+  - id: M2.03.lab1
+    title: Sketch a 40-branch overlay
+    goal: "Write the design decisions for 40 branches with fiber + LTE and two data centers."
+    worked:
+      config: |
+        # Transports: fiber (primary), LTE (backup) at each branch
+        # Overlay: per branch, 2 tunnels per DC (fiber, LTE) = 4 tunnels; DCs use dial-up phase1
+        # Routing: iBGP over tunnels, DC hubs as route reflectors, neighbor-range for spokes
+        # SD-WAN: zone overlay with all tunnels; health check to a DC server per tunnel
+        # Rules: voice → lowest latency meeting SLA; ERP → DC1 preferred; SaaS → local breakout
+        # ADVPN: enabled for branch-to-branch voice/video
+        # Management: FortiManager SD-WAN and overlay templates; FortiAnalyzer SD-WAN monitoring
+      notes:
+        - "Plan IP addressing for tunnel interfaces and loopbacks up front."
+        - "Document how a new branch is added in under an hour."
+    faded:
+      template: |
+        # hubs use {{dial-up}} phase1
+        # routing over tunnels: {{BGP}} with hubs as {{route reflectors}}
+        # branch-to-branch shortcuts: {{ADVPN}}
+    solo:
+      prompt: "Write the three measurements an SD-WAN SLA uses, one per line."
+      required: ["latency", "jitter", "loss"]
+      solution: |
+        latency
+        jitter
+        packet loss
+      notes: "Per member, per health check."
+
+scenarios:
+  - id: M2.03.sc1
+    kind: situation
+    tier: 3
+    title: "\"Do we still need MPLS?\""
+    situation: |
+      A logistics customer with 25 branches pays for MPLS and wants to know if SD-WAN over Internet can replace it.
+    ask: "How do you answer?"
+    right_thinking:
+      - "Ask about applications and their sensitivity (voice, ERP, video)"
+      - "Dual Internet links with SD-WAN often match MPLS for most sites"
+      - "Propose a pilot with measurements; keep MPLS where SLAs are critical during transition"
+    what: "A data-driven recommendation."
+    why: "Customers trust measured pilots over vendor claims."
+    how: ["Requirements", "Options", "Pilot", "Decision"]
+    model_answer: |
+      "Often yes, but it depends on your applications. Two diverse Internet links per branch under SD-WAN, with
+      health checks steering voice and ERP to the best link, usually matches MPLS for most sites at lower cost. I'd
+      pilot five branches for a month, measure latency, jitter and loss per application, and decide site by site,
+      keeping MPLS where the numbers say so."
+    best_way: "Depends, pilot, measure, decide."
+    rubric: ["asks about apps", "proposes pilot", "measurable decision"]
+
+interview:
+  - id: M2.03.t01
+    stage: technical
+    question: "Explain ADVPN to a customer."
+    testing: "Overlay concepts"
+    framework: "Problem → mechanism → benefit"
+    model_answer: |
+      "In hub-and-spoke, branch-to-branch traffic goes through the hub, adding latency. With ADVPN, the first packets
+      still go through the hub, but the hub tells the two branches about each other and they build a direct tunnel on
+      demand. Voice between two branches then takes the short path, without configuring a full mesh."
+    best_way: "Problem first."
+    target: "0:30"

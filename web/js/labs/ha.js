@@ -18,7 +18,7 @@ Lab.prototype.haCfg = function (fg) {
 Lab.prototype.haClusters = function () {
   if (this._ha && this._haVer === this.ver) return this._ha;
   this._haVer = this.ver;
-  const fgs = [...this.devices.values()].filter((d) => d instanceof FortiGate && this.haCfg(d).mode !== "standalone");
+  const fgs = [...this.devices.values()].filter((d) => d instanceof FortiGate && !d.parent && this.haCfg(d).mode !== "standalone");
   const parent = new Map(fgs.map((f) => [f, f]));
   const find = (x) => (parent.get(x) === x ? x : find(parent.get(x)));
   const why = new Map();
@@ -63,6 +63,7 @@ Lab.prototype.haClusters = function () {
 };
 Lab.prototype.haCluster = function (fg) { return this.haClusters().clusters.find((c) => c.members.includes(fg)); };
 Lab.prototype.haRole = function (fg) {
+  if (fg.parent) return this.haRole(fg.parent);
   if (this.haCfg(fg).mode === "standalone") return "standalone";
   if (this._haBusy) return "primary";
   this._haBusy = true;

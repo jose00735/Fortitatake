@@ -11,7 +11,7 @@ Lab.prototype.sdwanCfg = function (fg) {
   const kid = (n) => { const t = root.children.get(n); return t ? t.list() : []; };
   const val = (e, a, c) => fg.val(SD, e, a, [c]);
   const one = (e, a, c) => val(e, a, c)[0];
-  const members = kid("members").map((e) => ({ seq: e.key, intf: one(e, "interface", "members"), gw: ipToInt(one(e, "gateway", "members") || "0.0.0.0"), zone: one(e, "zone", "members") || "virtual-wan-link", priority: Number(one(e, "priority", "members") || 1), cost: Number(one(e, "cost", "members") || 0), status: one(e, "status", "members") !== "disable" }));
+  const members = kid("members").map((e) => ({ seq: e.key, intf: one(e, "interface", "members"), gw: ipToInt(one(e, "gateway", "members") || "0.0.0.0"), zone: one(e, "zone", "members") || "virtual-wan-link", priority: Number(one(e, "priority", "members") || 1), cost: Number(one(e, "cost", "members") || 0), status: one(e, "status", "members") !== "disable", source: ipToInt(one(e, "source", "members") || "0.0.0.0") || 0 }));
   const hcs = kid("health-check").map((e) => {
     const slat = e.children.get("sla");
     return { name: e.key, server: (val(e, "server", "health-check")[0] || "").split(/\s+/)[0], protocol: one(e, "protocol", "health-check") || "ping", members: val(e, "members", "health-check"), updateRoute: one(e, "update-static-route", "health-check") !== "disable",
@@ -32,17 +32,26 @@ Lab.prototype.memberHealth = function (fg, m, hc) {
   const k = `${fg.id}|${m.seq}|${hc.name}`;
   if (!this._hc || this._hcVer !== this.ver) { this._hc = new Map(); this._hcVer = this.ver; }
   if (this._hc.has(k)) return this._hc.get(k);
+  // probing through a member can ask SD-WAN about that member again: assume alive while measuring
+  this._hcBusy = this._hcBusy || new Set();
+  if (this._hcBusy.has(k)) return { alive: true, latency: 0, jitter: 0, loss: 0, why: "", sla: hc.slas.map(() => true) };
+  this._hcBusy.add(k);
+  try { return this.memberHealthInner(fg, m, hc, k); } finally { this._hcBusy.delete(k); }
+};
+Lab.prototype.memberHealthInner = function (fg, m, hc, k) {
   const intf = this.fgtIntfs(fg).find((i) => i.name === m.intf);
   let r = { alive: false, latency: 0, jitter: 0, loss: 100, why: "" };
   const dst = ipToInt(hc.server);
+  const src = m.source || (intf && intf.prefix ? intf.prefix.ip : 0);
   if (!intf || !intf.up) r.why = `${m.intf} is down`;
   else if (dst === null) r.why = "no health-check server";
+  else if (!src) r.why = `no source address: ${m.intf} has no IP, so set the member's source`;
   else {
     const proto = hc.protocol === "http" || hc.protocol === "tcp-connect" || hc.protocol === "https" ? 6 : hc.protocol === "dns" ? 17 : 1;
     const dport = hc.protocol === "http" ? 80 : hc.protocol === "https" ? 443 : hc.protocol === "dns" ? 53 : 0;
     this.quiet = (this.quiet || 0) + 1;
     let p;
-    try { p = this.probe(fg.id, { dst, proto, dport, src: intf.prefix ? intf.prefix.ip : undefined, via: { intf: m.intf, gw: m.gw } }); } finally { this.quiet--; }
+    try { p = this.probe(fg.id, { dst, proto, dport, src, via: { intf: m.intf, gw: m.gw } }); } finally { this.quiet--; }
     const q = (p.fwd && p.fwd.q) || { latency: 0, jitter: 0, loss: 0 };
     if (p.ok) r = { alive: q.loss < 100, latency: 2 + q.latency, jitter: q.jitter, loss: q.loss, why: "" };
     else r.why = p.drop ? p.drop.reason : "no reply";

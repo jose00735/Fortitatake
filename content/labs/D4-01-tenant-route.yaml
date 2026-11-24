@@ -1,0 +1,150 @@
+id: D4.01
+track: fortigate
+modules: [M8.05]
+tier: 4
+order: 50
+kind: ticket
+title: "\"Salud Total lost the Internet after last night's change\""
+customer: Caribe Data Center (Barranquilla)
+par: 25
+skills: [VDOM contexts, per-VDOM routing, inter-VDOM links, debug flow per VDOM]
+brief: |
+  **Ticket 9011, priority 1.** Last night a junior engineer "cloned Naviera's routing into Salud to make them
+  consistent". This morning Salud Total IPS (SALUD VDOM, port3) has no Internet. Naviera is fine.
+
+  The FortiGate is in multi-VDOM mode: root owns port1 and the link ends vlNAV0 / vlSAL0.
+topology:
+  use: dc-tenants
+  devices:
+    FGT-DC:
+      config: |
+        config system global
+        set vdom-mode multi-vdom
+        end
+        config system vdom-link
+        edit vlNAV
+        next
+        edit vlSAL
+        next
+        end
+        config system interface
+        edit port2
+        set vdom NAVIERA
+        set ip 192.168.10.1 255.255.255.0
+        set allowaccess ping
+        next
+        edit port3
+        set vdom SALUD
+        set ip 192.168.10.1 255.255.255.0
+        set allowaccess ping
+        next
+        edit vlNAV0
+        set ip 10.255.1.1 255.255.255.252
+        next
+        edit vlNAV1
+        set vdom NAVIERA
+        set ip 10.255.1.2 255.255.255.252
+        next
+        edit vlSAL0
+        set ip 10.255.2.1 255.255.255.252
+        next
+        edit vlSAL1
+        set vdom SALUD
+        set ip 10.255.2.2 255.255.255.252
+        next
+        end
+      vdoms:
+        root: |
+          config firewall policy
+          edit 1
+          set name "NAVIERA-out"
+          set srcintf vlNAV0
+          set dstintf port1
+          set srcaddr all
+          set dstaddr all
+          set action accept
+          set schedule always
+          set service ALL
+          set nat enable
+          next
+          edit 2
+          set name "SALUD-out"
+          set srcintf vlSAL0
+          set dstintf port1
+          set srcaddr all
+          set dstaddr all
+          set action accept
+          set schedule always
+          set service ALL
+          set nat enable
+          next
+          end
+        NAVIERA: |
+          config router static
+          edit 1
+          set device vlNAV1
+          set gateway 10.255.1.1
+          next
+          end
+          config firewall policy
+          edit 1
+          set name "LAN-Internet"
+          set srcintf port2
+          set dstintf vlNAV1
+          set srcaddr all
+          set dstaddr all
+          set action accept
+          set schedule always
+          set service ALL
+          set nat enable
+          next
+          end
+        SALUD: |
+          config router static
+          edit 1
+          set device vlSAL1
+          set gateway 10.255.1.1
+          next
+          end
+          config firewall policy
+          edit 1
+          set name "LAN-Internet"
+          set srcintf port3
+          set dstintf vlSAL1
+          set srcaddr all
+          set dstaddr all
+          set action accept
+          set schedule always
+          set service ALL
+          set nat enable
+          next
+          end
+tasks:
+  - "Reproduce from B-PC, then look inside the SALUD VDOM (`config vdom` / `edit SALUD`)."
+  - "Fix it in the right VDOM."
+  - "Answer the root cause."
+checks:
+  - text: "Salud browses the Internet"
+    probe: {from: B-PC, to: www.google.com, proto: tcp, port: 443}
+  - text: "Naviera still browses"
+    probe: {from: A-PC, to: www.google.com, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~10\\.255\\.1\\.1|gateway|next hop|static|clon|copied"], sample: "SALUD's default route points to 10.255.1.1 (Naviera's link) instead of 10.255.2.1", hint: "What's the next hop of SALUD's default route, and is it on SALUD's link subnet?", why: "The cloned route kept Naviera's gateway, 10.255.1.1, which isn't on vlSAL1's subnet (10.255.2.0/30). The route can't resolve, so SALUD has no usable default route."}
+hints:
+  - "`config vdom` / `edit SALUD` / `get router info routing-table all`: the default route is missing from the active table. Why? Look at `show router static`."
+  - "In SALUD: `config router static` / `edit 1` / `set gateway 10.255.2.1`."
+solution:
+  FGT-DC: |
+    config vdom
+    edit SALUD
+    show router static
+    config router static
+    edit 1
+    set gateway 10.255.2.1
+    next
+    end
+    end
+explain: |
+  In multi-VDOM mode every command runs in a context: the same `get router info routing-table all` shows a different
+  table in each VDOM. Copying configuration between tenants is fine for structure, but every address on a link is
+  tenant-specific.

@@ -1165,3 +1165,292 @@ andes-bgp:
         set service ALL
         next
         end
+
+# ---------------------------------------------------------------------------
+# Caribe Data Center: one FortiGate-600F for two tenant companies that both use 192.168.10.0/24.
+# The FortiGate starts in no-vdom mode; port1 is the Internet uplink.
+dc-tenants:
+  title: Caribe Data Center · shared FortiGate
+  devices:
+    - id: FGT-DC
+      kind: fortigate
+      model: FortiGate-600F
+      hostname: FGT-DC-BAQ
+      ports: [{name: port1, role: wan}, {name: port2, role: lan}, {name: port3, role: lan}, {name: port4, role: lan}]
+      config: |
+        config system interface
+        edit port1
+        set ip 203.0.113.2 255.255.255.248
+        set allowaccess ping
+        set alias "INTERNET"
+        next
+        end
+        config router static
+        edit 1
+        set gateway 203.0.113.1
+        set device port1
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+    - {id: A-PC, kind: host, os: windows, hostname: NAVIERA-PC01, nic: {ip: 192.168.10.10/24, gw: 192.168.10.1, dns: [8.8.8.8]}}
+    - {id: B-PC, kind: host, os: windows, hostname: SALUD-PC01, nic: {ip: 192.168.10.10/24, gw: 192.168.10.1, dns: [8.8.8.8]}}
+    - id: ISP-DC
+      kind: router
+      label: Transit provider
+      ifaces: [{name: ge0, ip: 203.0.113.1/29}, {name: inet0, ip: 198.51.100.30/30}]
+      routes: [{dst: 0.0.0.0/0, dev: internet}]
+    - id: INTERNET
+      kind: cloud
+      hosts:
+        - {name: dns.google, ip: 8.8.8.8, services: [udp/53]}
+        - {name: www.google.com, ip: 142.250.78.4, services: [tcp/80, tcp/443]}
+  segments:
+    - {id: wan, members: ["FGT-DC:port1", "ISP-DC:ge0"]}
+    - {id: up, members: ["ISP-DC:inet0", INTERNET]}
+    - {id: tenant-a, label: Naviera del Caribe 192.168.10.0/24, members: ["FGT-DC:port2", A-PC]}
+    - {id: tenant-b, label: Salud Total IPS 192.168.10.0/24, members: ["FGT-DC:port3", B-PC]}
+  layout: {INTERNET: [400, 60], ISP-DC: [400, 170], FGT-DC: [400, 300], seg:tenant-a: [250, 420], A-PC: [250, 505], seg:tenant-b: [550, 420], B-PC: [550, 505]}
+
+# ---------------------------------------------------------------------------
+# Andes warehouse: a FortiSwitch on FortiLink (FGT-BOG port6). The switch is discovered, not authorized.
+andes-fsw:
+  extends: andes
+  devices:
+    FGT-BOG:
+      ports: [{name: port1, role: wan}, {name: port2, role: lan}, {name: port3, role: wan}, {name: port4, role: dmz}, {name: port6, role: lan}]
+      config: |
+        config system interface
+        edit fortilink
+        set type aggregate
+        set member port6
+        set fortilink enable
+        set ip 10.255.1.1 255.255.255.0
+        set allowaccess ping fabric
+        next
+        end
+        config system dhcp server
+        edit 1
+        set interface fortilink
+        set default-gateway 10.255.1.1
+        set netmask 255.255.255.0
+        config ip-range
+        edit 1
+        set start-ip 10.255.1.2
+        set end-ip 10.255.1.254
+        next
+        end
+        next
+        end
+        config firewall address
+        edit HQ-LAN
+        set subnet 10.20.10.0 255.255.255.0
+        next
+        edit ERP-SRV
+        set subnet 10.20.10.20 255.255.255.255
+        next
+        end
+  add_devices:
+    - {id: FSW-WH, kind: fortiswitch, model: FortiSwitch-148F-FPOE, serial: S148FFTF26000417, uplink: port48, ports: [port1, port2, port3, port5, port12, port48]}
+    - {id: SCAN-01, kind: host, os: linux, hostname: scanner-01, nic: {ip: dhcp}}
+    - {id: SCAN-02, kind: host, os: linux, hostname: scanner-02, nic: {ip: dhcp}}
+    - {id: SCAN-03, kind: host, os: linux, hostname: scanner-03, nic: {ip: dhcp}}
+    - {id: ROGUE-PC, kind: host, os: windows, hostname: DESKTOP-7Q2K9, nic: {ip: dhcp}}
+  add_segments:
+    - {id: fl, label: "", members: ["FGT-BOG:port6", "FSW-WH:port48"]}
+    - {id: c1, members: ["FSW-WH:port1", SCAN-01]}
+    - {id: c2, members: ["FSW-WH:port2", SCAN-02]}
+    - {id: c3, members: ["FSW-WH:port3", SCAN-03]}
+    - {id: c12, members: ["FSW-WH:port12", ROGUE-PC]}
+  layout: {FSW-WH: [20, 395], SCAN-01: [-150, 505], SCAN-02: [-55, 505], SCAN-03: [40, 505], ROGUE-PC: [135, 505], ERP-SRV: [280, 505], HQ-PC: [390, 505], seg:bog-lan: [335, 430]}
+
+# ---------------------------------------------------------------------------
+# Andes overlay: Cali has two ISPs (Emcali wan1, Movistar wan2) and one IPsec tunnel to HQ over each.
+# Tunnels and HQ side are built; Cali has no routes or policies over the overlay yet.
+andes-overlay:
+  extends: andes
+  remove_devices: [MPLS-PE]
+  remove_segments: [bog-mpls, clo-mpls]
+  devices:
+    ISP-EMCALI: {quality: {latency: 18, jitter: 2, loss: 0}}
+    FGT-CLO:
+      replace_config: |
+        config system interface
+        edit wan1
+        set ip 190.14.8.2/29
+        set allowaccess ping
+        set alias "Emcali-fiber"
+        next
+        edit wan2
+        set ip 181.52.6.2/29
+        set allowaccess ping
+        set alias "Movistar"
+        next
+        edit internal
+        set ip 10.30.0.1/24
+        set allowaccess ping https ssh
+        next
+        end
+        config router static
+        edit 1
+        set gateway 190.14.8.1
+        set device wan1
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+        config vpn ipsec phase1-interface
+        edit HQ-EMC
+        set interface wan1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 200.31.20.2
+        set psksecret Ov3rlay-EMC#26
+        next
+        edit HQ-MOV
+        set interface wan2
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 200.31.20.2
+        set psksecret Ov3rlay-MOV#26
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit HQ-EMC-P2
+        set phase1name HQ-EMC
+        set proposal aes256-sha256
+        set dhgrp 20
+        set auto-negotiate enable
+        next
+        edit HQ-MOV-P2
+        set phase1name HQ-MOV
+        set proposal aes256-sha256
+        set dhgrp 20
+        set auto-negotiate enable
+        next
+        end
+        config firewall address
+        edit HQ-NETS
+        set subnet 10.20.0.0 255.255.0.0
+        next
+        end
+    FGT-BOG:
+      config: |
+        config vpn ipsec phase1-interface
+        edit CLO-EMC
+        set interface port1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 190.14.8.2
+        set psksecret Ov3rlay-EMC#26
+        next
+        edit CLO-MOV
+        set interface port1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 181.52.6.2
+        set psksecret Ov3rlay-MOV#26
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit CLO-EMC-P2
+        set phase1name CLO-EMC
+        set proposal aes256-sha256
+        set dhgrp 20
+        set auto-negotiate enable
+        next
+        edit CLO-MOV-P2
+        set phase1name CLO-MOV
+        set proposal aes256-sha256
+        set dhgrp 20
+        set auto-negotiate enable
+        next
+        end
+        config router static
+        edit 2
+        set dst 10.30.0.0/24
+        set device CLO-EMC
+        next
+        edit 3
+        set dst 10.30.0.0/24
+        set device CLO-MOV
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "HQ-to-CLO-EMC"
+        set srcintf port2
+        set dstintf CLO-EMC
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 2
+        set name "CLO-EMC-to-HQ"
+        set srcintf CLO-EMC
+        set dstintf port2
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 3
+        set name "HQ-to-CLO-MOV"
+        set srcintf port2
+        set dstintf CLO-MOV
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 4
+        set name "CLO-MOV-to-HQ"
+        set srcintf CLO-MOV
+        set dstintf port2
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 5
+        set name "HQ-Internet"
+        set srcintf port2
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+  add_devices:
+    - id: ISP-MOVISTAR
+      kind: router
+      label: Movistar (Cali)
+      quality: {latency: 46, jitter: 7, loss: 0}
+      ifaces: [{name: ge0, ip: 181.52.6.1/29}, {name: inet0, ip: 198.51.100.26/30}]
+      routes: [{dst: 0.0.0.0/0, dev: internet}]
+  add_segments:
+    - {id: clo-wan2, members: ["FGT-CLO:wan2", "ISP-MOVISTAR:ge0"]}
+    - {id: up3, members: ["ISP-MOVISTAR:inet0", INTERNET]}
+  layout: {ISP-MOVISTAR: [900, 170], ISP-EMCALI: [640, 170], FGT-CLO: [760, 300], CLO-PC: [760, 480]}

@@ -1,0 +1,102 @@
+id: W4.01
+track: fortiswitch
+modules: [M7.01, M7.03]
+tier: 4
+order: 10
+kind: ticket
+title: "\"The new scanner gets an address but can't open the ERP\""
+customer: Andes Logistics
+par: 20
+skills: [native VLAN, managed-switch ports, DHCP scopes]
+brief: |
+  **Ticket 9140, priority 3.** The warehouse added a third scanner (SCAN-03) on switch **port3**. It gets an IP, but
+  the ERP never loads. The other two scanners are fine. "Same model, same settings, it must be broken," says the
+  warehouse lead.
+topology:
+  use: andes-fsw
+  devices:
+    FGT-BOG:
+      config: |
+        config switch-controller managed-switch
+        edit S148FFTF26000417
+        set fsw-wan1-peer fortilink
+        set fsw-wan1-admin enable
+        set description FSW-WH
+        next
+        end
+        config system interface
+        edit SCANNERS
+        set interface fortilink
+        set vlanid 60
+        set ip 10.20.60.1 255.255.255.0
+        set allowaccess ping
+        next
+        end
+        config system dhcp server
+        edit 2
+        set interface SCANNERS
+        set default-gateway 10.20.60.1
+        set netmask 255.255.255.0
+        set dns-service specify
+        set dns-server1 8.8.8.8
+        config ip-range
+        edit 1
+        set start-ip 10.20.60.100
+        set end-ip 10.20.60.199
+        next
+        end
+        next
+        end
+        config switch-controller managed-switch
+        edit S148FFTF26000417
+        config ports
+        edit port1
+        set vlan SCANNERS
+        next
+        edit port2
+        set vlan SCANNERS
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "Scanners-ERP"
+        set srcintf SCANNERS
+        set dstintf port2
+        set srcaddr all
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        next
+        end
+tasks:
+  - "Compare SCAN-03 with SCAN-01 (`ipconfig` / `ip a` on each), then look at the switch ports from the FortiGate."
+  - "Fix it."
+  - "Answer the root cause."
+checks:
+  - text: "SCAN-03 gets a scanner address"
+    dhcp: {host: SCAN-03, in: 10.20.60.0/24}
+  - text: "SCAN-03 opens the ERP"
+    probe: {from: SCAN-03, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~vlan|native|port3|fortilink|10\\.255"], sample: "port3 has no VLAN set, so it's in the FortiLink native VLAN and gets a 10.255.1.x management address", hint: "Which subnet is SCAN-03's address in?", why: "Ports without a VLAN stay in the FortiLink native VLAN. SCAN-03 got a management-network address from the FortiLink DHCP scope, where no policy allows the ERP."}
+hints:
+  - "SCAN-03 has a 10.255.1.x address: that's the FortiLink subnet, not SCANNERS."
+  - "`config switch-controller managed-switch` / `edit S148FFTF26000417` / `config ports` / `edit port3` / `set vlan SCANNERS`."
+solution:
+  FGT-BOG: |
+    config switch-controller managed-switch
+    edit S148FFTF26000417
+    config ports
+    edit port3
+    set vlan SCANNERS
+    next
+    end
+    next
+    end
+explain: |
+  "It gets an IP" isn't "it's in the right network". Checking which subnet the address is in, and which DHCP scope
+  answered, finds VLAN mistakes in seconds. Templates for port profiles (or a NAC policy) stop this from happening
+  for each new device.

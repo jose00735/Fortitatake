@@ -1,0 +1,223 @@
+id: M4.01
+title: "FortiOS administration: access, admins, firmware, backups and FortiGuard"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 168
+est_sessions: 1
+objectives:
+  - Harden administrative access (allowaccess, trusted hosts, admin profiles, MFA)
+  - Navigate the CLI config tree confidently (show, get, full-configuration, diff habits)
+  - Back up, restore and upgrade firmware safely
+  - Explain FortiGuard services and API access at a high level
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Getting started (pp. 32–146)"
+  - "FortiOS 8.0.2 Admin Guide: System settings, administrators, profiles (pp. 4139–4330), configuration backups (p. 4530)"
+
+units:
+  - id: M4.01.u1
+    title: Who can manage the FortiGate, from where
+    tier: 1
+    est_min: 12
+    body: |
+      Administrative access has three layers, and all three must say yes:
+
+      1. **Interface `allowaccess`**: which management protocols the interface answers (ping, https, ssh, snmp,
+         fgfm, fabric…). Remove HTTPS/SSH from Internet-facing interfaces unless you have a strong reason.
+      2. **Trusted hosts** on each admin account (`trusthost1`…): the source addresses that admin may log in from.
+         FortiOS checks them before the password.
+      3. **Admin profile** (`accprofile`): what the admin may read or write. `super_admin` is everything;
+         `prof_admin` is full access within its VDOM.
+
+      Add **MFA** (FortiToken) to admin accounts, and use remote authentication (RADIUS/TACACS+/SAML) with a vaulted
+      local break-glass account.
+
+      :::recall
+      Q: HTTPS is allowed on port1, but an admin from 200.1.1.1 can't even get the login page. What's the likely cause?
+      A: Trusted hosts: if no admin account trusts that source, FortiOS refuses the connection before showing the login.
+      :::
+
+      :::pitfall
+      Exposed management interfaces are a recurring entry point in exploited vulnerabilities. A firewall whose admin
+      GUI answers from the Internet is a finding in every audit.
+      :::
+  - id: M4.01.u2
+    title: Reading and changing configuration safely
+    tier: 1
+    est_min: 11
+    body: |
+      | Command | Shows |
+      |---|---|
+      | `show <path>` | Only what differs from defaults |
+      | `show full-configuration <path>` | Everything, defaults included |
+      | `get <path>` | Current values in key: value form |
+      | `get system status` | Model, serial, firmware, VDOM mode, HA mode |
+
+      Editing habits that save outages:
+
+      - `config` / `edit` / `set` / `next` / `end`. Nothing is saved until `end` (or `next` for that entry).
+      - `append` adds to a list without retyping it; `set` replaces the whole list; `unset` returns to the default.
+      - `abort` leaves a config block without saving.
+      - Take a backup before the change: `execute backup config tftp|ftp|usb …` or from the GUI.
+
+      :::why
+      Q: Why use `append member DNS` instead of `set member HTTP HTTPS DNS` on a production service group?
+      A: set replaces the list: one typo and you remove services in use. append only adds.
+      :::
+  - id: M4.01.u3
+    title: Firmware, backups and FortiGuard
+    tier: 2
+    est_min: 11
+    body: |
+      ## Firmware
+
+      - Follow the **upgrade path** (Fortinet's upgrade tool lists the intermediate versions).
+      - Back up the configuration (and keep the old firmware image) first.
+      - In an HA cluster, the upgrade is staged (secondaries first) to keep traffic flowing.
+      - After: check `get system status`, logs, HA sync, VPNs and a few user flows.
+
+      ## Backups and restore
+
+      A restore replaces the whole configuration and reboots. Encrypted backups need their password. Restoring a
+      backup from another model or firmware may need adjustments.
+
+      ## FortiGuard
+
+      FortiGuard delivers the security intelligence behind the profiles: antivirus and IPS signatures, web and DNS
+      filter categories, application signatures, the Internet Service Database, and more. A FortiGate with expired
+      or unreachable FortiGuard keeps running but with stale protection.
+
+      ## API
+
+      FortiOS has a REST API with token-based **API admins** (restricted by trusted hosts and profile), used by
+      automation tools and orchestration.
+
+      :::ps
+      Every PS change starts with "backup taken, version recorded" in the change record. It costs a minute and turns a
+      bad night into a 5-minute rollback.
+      :::
+
+cards:
+  - {id: M4.01.c01, unit: M4.01.u1, tier: 1, front: "Three layers of admin access", back: "Interface allowaccess, admin trusted hosts, admin profile."}
+  - {id: M4.01.c02, unit: M4.01.u1, tier: 2, front: "Trusted hosts are checked…", back: "Before the password: an untrusted source never gets the login."}
+  - {id: M4.01.c03, unit: M4.01.u1, tier: 1, front: "super_admin vs prof_admin", back: "super_admin: everything (global). prof_admin: full access within its VDOM."}
+  - {id: M4.01.c04, unit: M4.01.u2, tier: 1, front: "show vs show full-configuration", back: "show: only non-default settings. full-configuration: everything."}
+  - {id: M4.01.c05, unit: M4.01.u2, tier: 2, front: "set vs append on a list attribute", back: "set replaces the list; append adds to it."}
+  - {id: M4.01.c06, unit: M4.01.u2, tier: 2, front: "Leave a config block without saving", back: "abort"}
+  - {id: M4.01.c07, unit: M4.01.u2, tier: 1, front: "First command on an unknown FortiGate", back: "get system status"}
+  - {id: M4.01.c08, unit: M4.01.u3, tier: 2, front: "Before a firmware upgrade", back: "Check the upgrade path, back up config, keep the old image, plan tests."}
+  - {id: M4.01.c09, unit: M4.01.u3, tier: 2, front: "What does FortiGuard provide?", back: "Signatures and ratings: AV, IPS, web/DNS categories, application control, ISDB…"}
+
+quiz:
+  - id: M4.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which command shows every setting, including defaults, for system interface?"
+    options:
+      - {id: a, text: "show full-configuration system interface", correct: true}
+      - {id: b, text: "show system interface", why_wrong: "Only non-defaults."}
+      - {id: c, text: "get system status", why_wrong: "Device summary."}
+      - {id: d, text: "diagnose sys interface", why_wrong: "Not the config view."}
+    explanation: "full-configuration includes defaults."
+  - id: M4.01.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "You type `set member DNS` on a service group that had HTTP HTTPS. Result?"
+    options:
+      - {id: a, text: "The group now contains only DNS", correct: true}
+      - {id: b, text: "HTTP HTTPS DNS", why_wrong: "That's append."}
+      - {id: c, text: "Error: member exists", why_wrong: "set replaces silently."}
+      - {id: d, text: "Nothing until reboot", why_wrong: "Applied on end/next."}
+    explanation: "set replaces lists."
+  - id: M4.01.q03
+    type: multi
+    tier: 2
+    stem: "Good practices for admin access? Select all that apply."
+    options:
+      - {id: a, text: "No HTTPS/SSH on Internet-facing interfaces", correct: true}
+      - {id: b, text: "Trusted hosts on every admin account", correct: true}
+      - {id: c, text: "MFA for admins", correct: true}
+      - {id: d, text: "One shared super_admin account for the team", why_wrong: "No accountability."}
+    explanation: "Least exposure, named accounts, MFA."
+  - id: M4.01.q04
+    type: text
+    tier: 1
+    stem: "Command to leave a config block without saving changes?"
+    accept: ["abort"]
+    explanation: "abort discards the pending changes in that block."
+
+labs:
+  - id: M4.01.lab1
+    title: Admin hardening in one change
+    goal: "Lock down management access on a new FortiGate."
+    worked:
+      config: |
+        config system interface
+            edit "port1"
+                set allowaccess ping
+            next
+            edit "port2"
+                set allowaccess ping https ssh
+            next
+        end
+        config system admin
+            edit "admin"
+                set trusthost1 10.20.10.0 255.255.255.0
+                set two-factor fortitoken
+            next
+        end
+        execute backup config tftp pre-change.conf 10.20.10.5
+      notes:
+        - "Make sure you can still reach the GUI from the management subnet before closing the session."
+        - "Keep one break-glass account, vaulted, with trusted hosts."
+    faded:
+      template: |
+        # WAN: allowaccess {{ping}} only
+        # admin: set {{trusthost1}} <mgmt subnet>
+        # backup: execute {{backup}} config …
+    solo:
+      prompt: "List the three layers that must all allow an admin login, one per line."
+      required: ["allowaccess", "trusted", "profile"]
+      solution: |
+        interface allowaccess
+        admin trusted hosts
+        admin profile
+      notes: "MFA is the fourth for the password itself."
+
+scenarios:
+  - id: M4.01.sc1
+    kind: situation
+    tier: 2
+    title: The GUI on the Internet
+    situation: |
+      During a health check you find HTTPS management open on a customer's WAN interface, with the default admin
+      account and no trusted hosts.
+    ask: "What do you tell the customer, and what do you change?"
+    right_thinking:
+      - "Flag it as critical, calmly"
+      - "Remove HTTPS/SSH from WAN, add trusted hosts, MFA, rename/disable default admin"
+      - "Check logs for logins from unknown sources"
+    what: "Immediate risk reduction and a check for compromise."
+    why: "Exposed management is a top entry point."
+    how: ["Explain", "Fix", "Check logs", "Document"]
+    model_answer: |
+      "The firewall's management page is reachable from the Internet with the default account, which is one of the
+      most common ways attackers get in. I'd remove HTTPS and SSH from the WAN today, restrict admins to the
+      management subnet with trusted hosts, add MFA, and check the event logs for logins from unknown addresses, so
+      we know it wasn't already used."
+    best_way: "Risk, fix, verify."
+    rubric: ["clear risk statement", "concrete fixes", "checks for compromise"]
+
+interview:
+  - id: M4.01.t01
+    stage: technical
+    question: "How do you harden administrative access on a FortiGate?"
+    testing: "Admin hardening"
+    framework: "Exposure → identity → authorization → monitoring"
+    model_answer: |
+      "Expose management only on internal or dedicated interfaces with allowaccess, restrict each admin with trusted
+      hosts, use named accounts with least-privilege profiles and MFA, ideally through RADIUS or SAML with a vaulted
+      local break-glass account, and send admin login events to FortiAnalyzer or the SIEM with alerts."
+    best_way: "Four layers, in order."
+    target: "0:35"

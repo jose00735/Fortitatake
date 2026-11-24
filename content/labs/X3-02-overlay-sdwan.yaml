@@ -1,0 +1,177 @@
+id: X3.02
+track: integration
+modules: [M8.03, M4.09, M2.03]
+tier: 3
+order: 20
+kind: project
+title: "Cali overlay: two IPsec tunnels under SD-WAN"
+customer: Andes Logistics
+par: 75
+skills: [IPsec as SD-WAN members, overlay zone, health check through tunnels, SLA steering, failover]
+brief: |
+  **SOW 2026-180, MPLS exit.** Andes cancelled the MPLS. Cali now has two Internet links, **Emcali** (wan1, fiber) and
+  **Movistar** (wan2), and one IPsec tunnel to HQ over each: **HQ-EMC** and **HQ-MOV** (already up, HQ side done).
+
+  Design:
+  - Both tunnels are SD-WAN members in a zone **overlay**; HQ (10.20.0.0/16) is reached through the zone.
+  - A health check **HQ-ERP** pings the ERP (10.20.10.20) through each tunnel.
+  - ERP traffic (HTTPS to 10.20.10.20) must use the tunnel that meets an SLA of **latency ≤ 60 ms, packet loss ≤ 2 %**,
+    preferring HQ-EMC.
+  - Cali's Internet stays on wan1 directly (not part of this change).
+topology: {use: andes-overlay}
+parts:
+  - id: a
+    title: The overlay zone and routing
+    tasks:
+      - "SD-WAN on FGT-CLO: zone overlay, members HQ-EMC (seq 1) and HQ-MOV (seq 2)."
+      - "Route 10.20.0.0/16 through the overlay zone; policy internal → overlay (both ways for HQ-initiated traffic)."
+      - "From CLO-PC: `tnc 10.20.10.20 -port 443`."
+    checks:
+      - text: "CLO-PC reaches the ERP through a tunnel"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+      - text: "HQ-PC reaches CLO-PC"
+        probe: {from: HQ-PC, to: 10.30.0.20}
+    hints:
+      - "`config system sdwan` / `set status enable` / `config zone` / `edit overlay` / `end` / `config members` / `edit 1` / `set interface HQ-EMC` / `set zone overlay` / `next` / `edit 2` / `set interface HQ-MOV` / `set zone overlay`."
+      - "`config router static` / `edit 2` / `set dst 10.20.0.0 255.255.0.0` / `set sdwan-zone overlay`; policies use the zone name as the interface."
+    solution:
+      FGT-CLO: |
+        config system sdwan
+        set status enable
+        config zone
+        edit overlay
+        next
+        end
+        config members
+        edit 1
+        set interface HQ-EMC
+        set zone overlay
+        next
+        edit 2
+        set interface HQ-MOV
+        set zone overlay
+        next
+        end
+        end
+        config router static
+        edit 2
+        set dst 10.20.0.0 255.255.0.0
+        set sdwan-zone overlay
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "CLO-to-HQ"
+        set srcintf internal
+        set dstintf overlay
+        set srcaddr all
+        set dstaddr HQ-NETS
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 2
+        set name "HQ-to-CLO"
+        set srcintf overlay
+        set dstintf internal
+        set srcaddr HQ-NETS
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+    explain: |
+      IPsec tunnel interfaces can be SD-WAN members like physical ports: the zone becomes the "interface" for routes and
+      policies, and SD-WAN picks a tunnel per session. No gateway is needed on a tunnel member: the tunnel itself is
+      the next hop.
+  - id: b
+    title: Steer the ERP by SLA
+    tasks:
+      - "Health check HQ-ERP: ping 10.20.10.20 through both members, SLA 1 = latency 60 ms, loss 2 %."
+      - "Service rule ERP: HTTPS to 10.20.10.20, mode sla, HQ-EMC preferred over HQ-MOV."
+      - "Check with `diagnose sys sdwan health-check` and `diagnose sys sdwan service`."
+    checks:
+      - text: "HQ-ERP sees HQ-EMC alive and within the SLA"
+        sdwan: {dev: FGT-CLO, member: HQ-EMC, hc: HQ-ERP, sla: true}
+      - text: "HQ-ERP sees HQ-MOV alive"
+        sdwan: {dev: FGT-CLO, member: HQ-MOV, hc: HQ-ERP}
+      - text: "ERP traffic leaves through HQ-EMC while it meets the SLA"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443, egress: HQ-EMC, on: FGT-CLO}
+    hints:
+      - "`config health-check` / `edit HQ-ERP` / `set server 10.20.10.20` / `set members 1 2` / `config sla` / `edit 1` / `set latency-threshold 60` / `set packetloss-threshold 2`. The tunnels have no IP of their own: give each member `set source 10.30.0.1` so the probes come from an address HQ routes back through the tunnel."
+      - "`config service` / `edit 1` / `set name ERP` / `set mode sla` / `set dst ERP-SRV` (create the address) / `set protocol 6` / `set start-port 443` / `set end-port 443` / `config sla` / `edit HQ-ERP` / `set id 1` / `end` / `set priority-members 1 2`."
+    solution:
+      FGT-CLO: |
+        config firewall address
+        edit ERP-SRV
+        set subnet 10.20.10.20 255.255.255.255
+        next
+        end
+        config system sdwan
+        config members
+        edit 1
+        set source 10.30.0.1
+        next
+        edit 2
+        set source 10.30.0.1
+        next
+        end
+        config health-check
+        edit HQ-ERP
+        set server 10.20.10.20
+        set members 1 2
+        config sla
+        edit 1
+        set latency-threshold 60
+        set packetloss-threshold 2
+        next
+        end
+        next
+        end
+        config service
+        edit 1
+        set name ERP
+        set mode sla
+        set dst ERP-SRV
+        set protocol 6
+        set start-port 443
+        set end-port 443
+        config sla
+        edit HQ-ERP
+        set id 1
+        next
+        end
+        set priority-members 1 2
+        next
+        end
+        end
+        diagnose sys sdwan health-check
+    explain: |
+      An SLA rule uses the first member in priority order that meets the SLA. Probing the ERP itself through each
+      tunnel measures what users experience end to end, ISP and tunnel included. Probes leave from the member's IP;
+      a tunnel without one needs `source`, or HQ's reverse-path check drops the probe (it would come from the WAN IP).
+  - id: c
+    title: Emcali degrades
+    allow_pre_pass: true
+    events:
+      - {router: ISP-EMCALI, quality: {latency: 140, jitter: 30, loss: 6}}
+    brief: |
+      **10:20.** Emcali is congested: ~140 ms and 6 % loss. Users haven't called yet.
+    tasks:
+      - "Confirm what SD-WAN sees, and that the ERP moved by itself. Change nothing unless it didn't."
+    checks:
+      - text: "ERP traffic now uses HQ-MOV"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443, egress: HQ-MOV, on: FGT-CLO}
+      - text: "You looked at the health check"
+        ran: {dev: FGT-CLO, cmd: "sdwan health-check", fail: "Show the evidence: `diagnose sys sdwan health-check`."}
+    hints:
+      - "`diagnose sys sdwan health-check`: HQ-EMC fails the SLA (sla_map 0x0), HQ-MOV meets it."
+      - "Nothing to configure if part b is right; the rule moves new sessions on its own."
+    solution:
+      FGT-CLO: |
+        diagnose sys sdwan health-check
+        diagnose sys sdwan service
+    explain: |
+      This is the point of an overlay with SLA steering: the branch fails over per application before users notice,
+      and moves back when Emcali recovers. Existing sessions stay where they are unless you configure otherwise.

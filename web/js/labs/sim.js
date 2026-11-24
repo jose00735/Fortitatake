@@ -52,6 +52,20 @@ class Router {
   }
 }
 
+class FSwitch {
+  constructor(spec) {
+    this.id = spec.id;
+    this.kind = "fortiswitch";
+    this.model = spec.model || "FortiSwitch-148F-FPOE";
+    this.serial = spec.serial || "S148FF" + spec.id.replace(/\W/g, "").toUpperCase().slice(0, 10).padEnd(10, "0");
+    this.version = spec.version || "v7.6.2";
+    this.uplink = spec.uplink || "port48";
+    this.ports = (spec.ports || []).filter((p) => p !== this.uplink);
+    this.label = spec.label || "";
+    this.history = [];
+  }
+}
+
 class Cloud {
   constructor(spec) {
     this.id = spec.id;
@@ -78,16 +92,13 @@ export class Lab {
         dev = new FortiGate(d, sch, {
           onCommit: (fg, path, key) => { this.onCommit(fg, path, key); if (this.ready) this.dirty(fg); },
           onDelete: (fg, path, key) => { this.onDelete(fg, path, key); if (this.ready) this.dirty(fg); },
+          onVdom: (parent, child) => { this.wireFgt(child, d.kind); child.spec = parent.spec; this.devices.set(child.id, child); if (this.ready) this.dirty(child); },
+          onVdomDelete: (parent, child) => { this.devices.delete(child.id); if (this.ready) this.dirty(parent); },
         });
-        dev.diag = (fg, toks, line) => this.diagnose(fg, toks, line);
-        dev.extraRefs = (kind) => this.extraRefs(dev, kind);
-        dev.kind = d.kind;
-        if (d.kind !== "fortigate") this.mgmtInit(dev);
-        dev.sessions = new Map();
-        dev.dbg = { enabled: false, flowFilter: {}, flowCount: 0, traceId: 0, sniffer: null, pingSrc: null };
-        dev.async = [];
+        this.wireFgt(dev, d.kind);
       } else if (d.kind === "router") dev = new Router(d);
       else if (d.kind === "cloud") dev = new Cloud(d);
+      else if (d.kind === "fortiswitch") dev = new FSwitch(d);
       else dev = new Host(d, this);
       // directory data can change during a lab (events), so each run gets its own copy
       dev.spec = d.directory || d.ospf || d.bgp ? JSON.parse(JSON.stringify(d)) : d;
@@ -106,22 +117,56 @@ export class Lab {
       }),
     }));
     this.ver = 1;
+    this.loadVdoms();
+    this.refreshSegments();
     this.haSyncAll();
     this.renewAll();
     this.ready = true;
   }
 
-  dirty(fg) { this.ver = (this.ver || 0) + 1; this.haSync(fg); this.renewAll(); this.ver++; }
+  wireFgt(dev, kind) {
+    dev.diag = (fg, toks, line) => this.diagnose(fg, toks, line);
+    dev.extraRefs = (k) => this.extraRefs(dev, k);
+    dev.kind = kind;
+    if (kind !== "fortigate") this.mgmtInit(dev);
+    dev.sessions = new Map();
+    dev.dbg = { enabled: false, flowFilter: {}, flowCount: 0, traceId: 0, sniffer: null, pingSrc: null };
+    dev.async = [];
+  }
+  // VDOM instances of a device (a FortiGate in multi-VDOM mode has one per VDOM)
+  insts(d) { return d instanceof FortiGate ? d.allVdoms() : [d]; }
+  // inter-VDOM links are point-to-point segments between the two vdom-link interfaces
+  vlinkSegments() {
+    const out = [];
+    for (const d of this.devices.values()) {
+      if (!(d instanceof FortiGate) || d.parent) continue;
+      for (const l of d.entries("system vdom-link")) {
+        const ends = [0, 1].map((i) => {
+          const e = d.entry("system interface", l.key + i);
+          const vd = e ? (e.attrs.get("vdom") || ["root"])[0] : "root";
+          const inst = d.vdomInst(vd);
+          return inst ? { dev: inst.id, port: l.key + i, vlan: 0 } : null;
+        });
+        if (ends[0] && ends[1]) out.push({ id: `vlink:${d.id}:${l.key}`, members: ends, vlink: true, label: "" });
+      }
+    }
+    return out;
+  }
+  dirty(fg) { this.refreshSegments(); this.ver = (this.ver || 0) + 1; this.haSync(fg); this.renewAll(); this.ver++; }
   dev(id) { return this.devices.get(id); }
+  refreshSegments() {
+    if (!this.baseSegments) { this.baseSegments = this.segments; for (const s of this.segments) s.cable = s.members.some((m) => (this.dev(m.dev) || {}).kind === "fortiswitch"); }
+    this.segments = [...this.baseSegments, ...this.vlinkSegments(), ...this.switchSegments()];
+  }
   now() { this.clock += 37 + Math.floor(this.rand() * 40); return this.clock; }
 
   // ----- segments and addressing -----
   segOf(devId, port, vlan = 0) {
-    return this.segments.find((s) => s.members.some((m) => !m.down && m.dev === devId && (m.port === port || (!m.port && !port) || (!m.port && port === "eth0")) && (m.vlan || 0) === vlan));
+    return this.segments.find((s) => !s.cable && s.members.some((m) => !m.down && m.dev === devId && (m.port === port || (!m.port && !port) || (!m.port && port === "eth0")) && (m.vlan || 0) === vlan));
   }
   // logical FortiGate interfaces derived from config
   fgtIntfs(fg) {
-    return fg.entries("system interface").map((e) => {
+    return fg.entries("system interface").filter((e) => (e.attrs.get("vdom") || ["root"])[0] === fg.vdomName).map((e) => {
       const type = fg.one("system interface", e, "type");
       const ipv = fg.one("system interface", e, "ip") || "0.0.0.0 0.0.0.0";
       const p = parsePrefix(ipv);
@@ -129,7 +174,7 @@ export class Lab {
       const vlan = type === "vlan" ? Number(fg.one("system interface", e, "vlanid") || 0) : 0;
       const st = fg.one("system interface", e, "status");
       const admin = st !== "down" && st !== "disable";
-      const seg = type === "loopback" || type === "tunnel" ? null : this.segOf(fg.id, parent || e.key, vlan);
+      const seg = type === "loopback" || type === "tunnel" ? null : type === "vdom-link" ? this.segments.find((s) => s.vlink && s.members.some((m) => m.dev === fg.id && m.port === e.key)) || null : this.segOf(fg.physId, parent || e.key, vlan);
       let parentUp = true;
       if (parent) { const pe = fg.entry("system interface", parent); parentUp = !pe || fg.one("system interface", pe, "status") !== "down"; }
       const up = type === "tunnel" ? admin && this.tunnelUp(fg, e.key) : admin && parentUp && (type === "loopback" || (!!seg && !seg.down));
@@ -150,7 +195,8 @@ export class Lab {
       if (d instanceof Host && d.ip() === ip) return { dev: d, port: d.port };
       if (d instanceof Router) { const i = d.ifaces.find((x) => x.name === m.port && x.up && x.prefix && x.prefix.ip === ip); if (i) return { dev: d, port: i.name }; }
       if (d instanceof Cloud) { if (d.hosts.some((h) => h.ip === ip) || this.cloudGw(d, seg) === ip) return { dev: d, port: "net" }; }
-      if (d instanceof FortiGate) {
+      if (d instanceof FortiGate) for (const d2 of d.parent ? [d] : d.allVdoms()) {
+        const d = d2;
         if (this.haRole(d) === "secondary") continue;
         for (const i of this.fgtIntfs(d)) {
           if (!i.up || i.seg !== seg) continue;
@@ -174,8 +220,7 @@ export class Lab {
     h.lease = null;
     const seg = this.segOf(h.id, h.port) || this.segOf(h.id, null);
     if (!seg || seg.down) return false;
-    for (const m of seg.members) {
-      const fg = this.dev(m.dev);
+    for (const m of seg.members) for (const fg of this.insts(this.dev(m.dev) || {})) {
       if (!(fg instanceof FortiGate)) continue;
       const intf = this.fgtIntfs(fg).find((i) => i.seg === seg && i.up && i.prefix);
       if (!intf) continue;
@@ -228,6 +273,8 @@ export class Lab {
       const i = intfs.find((x) => x.name === devName);
       if (!bh && (!i || !i.up)) continue;
       const gw = ipToInt(fg.one("router static", r, "gateway") || "0.0.0.0");
+      // FortiOS doesn't install a static route whose gateway isn't on the interface's subnet
+      if (!bh && gw && i && i.prefix && i.type !== "tunnel" && !inPrefix(gw, i.prefix)) continue;
       routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw, dev: bh ? "Null" : devName, distance: Number(fg.one("router static", r, "distance")), priority: Number(fg.one("router static", r, "priority")), blackhole: bh });
     }
     for (const r of fg.product !== "fortios" ? fg.entries("system route") : []) {
@@ -819,6 +866,8 @@ Lab.prototype.postLoad = function () {};
 Lab.prototype.onDelete = function () {};
 Lab.prototype.authUser = function () { return null; };
 Lab.prototype.dynRoutes = function () { return []; };
+Lab.prototype.switchSegments = function () { return []; };
+Lab.prototype.loadVdoms = function () {};
 Lab.prototype.routerDynamic = function () { return []; };
 Lab.prototype.identityOk = function () { return false; };
 Lab.prototype.extraRefs = function () { return []; };

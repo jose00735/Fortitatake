@@ -18,7 +18,7 @@ Lab.prototype.fazSenders = function (faz) {
   const ip = mgmtIp(this, faz);
   const out = [];
   for (const fg of this.devices.values()) {
-    if (!(fg instanceof FortiGate) || fg.kind !== "fortigate" || this.haRole(fg) === "secondary") continue;
+    if (!(fg instanceof FortiGate) || fg.kind !== "fortigate" || fg.parent || this.haRole(fg) === "secondary") continue;
     const s = fg.obj("log fortianalyzer setting");
     if (fg.one("log fortianalyzer setting", s, "status") !== "enable") continue;
     if (ipToInt(String(fg.one("log fortianalyzer setting", s, "server") || "")) !== ip) continue;
@@ -124,7 +124,7 @@ Lab.prototype.fmgManaged = function (fmg) {
   const ip = mgmtIp(this, fmg);
   const out = [];
   for (const fg of this.devices.values()) {
-    if (!(fg instanceof FortiGate) || fg.kind !== "fortigate" || this.haRole(fg) === "secondary") continue;
+    if (!(fg instanceof FortiGate) || fg.kind !== "fortigate" || fg.parent || this.haRole(fg) === "secondary") continue;
     const s = fg.obj("system central-management");
     if (fg.one("system central-management", s, "type") !== "fortimanager") continue;
     if (ipToInt(String(fg.val("system central-management", s, "fmg")[0] || "").replace(/"/g, "")) !== ip) continue;

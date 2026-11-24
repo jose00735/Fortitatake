@@ -1,0 +1,206 @@
+id: M7.01
+title: "Switching on FortiSwitch: VLANs, LAG, MCLAG and STP protection"
+stage: S7
+stage_title: "S7 · FortiSwitch (FortiSwitch Administrator)"
+order: 160
+est_sessions: 1
+objectives:
+  - Explain native, allowed and untagged VLANs on a switch port and predict frame handling
+  - Build LAGs and explain what MCLAG adds
+  - Protect a topology with STP edge ports, BPDU guard, root guard, loop guard and flap guard
+sources:
+  - "FortiSwitchOS 8.0.2 Admin Guide (Standalone): Link aggregation and MCLAG (pp. 170–181), loop guard (p. 183), LLDP-MED (p. 184)"
+  - "FortiSwitchOS 8.0.2 Admin Guide (Standalone): STP, root guard and BPDU guard (pp. 263–284), flap guard (p. 285)"
+  - "FortiSwitchOS 8.0.2 Admin Guide (Standalone): VLANs: native, allowed, untagged (pp. 370–373)"
+
+units:
+  - id: M7.01.u1
+    title: VLANs on a port
+    tier: 1
+    est_min: 12
+    body: |
+      Every FortiSwitch port has three VLAN settings (pp. 370–371):
+
+      | Setting | Meaning |
+      |---|---|
+      | **Native VLAN** | The VLAN untagged incoming frames belong to (the port's "default" VLAN) |
+      | **Allowed VLANs** | Tagged VLANs the port accepts and sends |
+      | **Untagged VLANs** | Allowed VLANs whose frames leave the port **without** a tag |
+
+      - A PC or printer: native VLAN only (an **access** port).
+      - An AP or a hypervisor: native VLAN for management plus allowed (tagged) VLANs for SSIDs or VMs (a **trunk**).
+      - A frame tagged with a VLAN that isn't native or allowed is dropped.
+
+      :::recall
+      Q: An IP phone sends tagged VLAN 20 frames and the PC behind it sends untagged frames. What do you configure on the switch port?
+      A: Native VLAN = the data VLAN (for the PC), allowed VLANs includes 20 (for the phone's tagged voice).
+      :::
+
+      :::pitfall
+      Leaving every unused port in the default/native management VLAN gives anyone who plugs in a laptop a foothold
+      on the management network. Shut unused ports or put them in a dead VLAN.
+      :::
+  - id: M7.01.u2
+    title: LAG and MCLAG
+    tier: 2
+    est_min: 12
+    body: |
+      A **LAG** (trunk of several ports, usually with **LACP**) gives link-level redundancy and more bandwidth between two
+      devices. Traffic is spread per flow by a hash, so one flow never exceeds one member's speed (pp. 170–174).
+
+      An **MCLAG** pairs two FortiSwitches so they look like **one** switch to the device below: a server or an access
+      switch connects one LAG with members on both. If either switch fails, the LAG keeps working, with no STP
+      reconvergence (p. 174). The two peers are joined by an **ICL** (inter-chassis link), and the guide covers how to
+      detect a split-brain state when the ICL fails (p. 177).
+
+      :::why
+      Q: Why is MCLAG preferred over two separate uplinks protected by STP?
+      A: Both links forward at the same time and failover doesn't wait for STP; with STP one uplink is blocked and convergence takes time.
+      :::
+  - id: M7.01.u3
+    title: Keeping loops and rogue switches out
+    tier: 2
+    est_min: 12
+    body: |
+      | Feature | Protects against | Action |
+      |---|---|---|
+      | **STP edge port** | Delays on host ports | Port forwards immediately |
+      | **BPDU guard** | A switch plugged into an edge port | Any BPDU received shuts the port for a set time (p. 276) |
+      | **Root guard** | A downstream switch becoming STP root | Port blocked while it receives superior BPDUs |
+      | **Loop guard** (FortiSwitch feature) | Downstream loops, even without STP | Port detects its own loop-detection frames and shuts (p. 183) |
+      | **Flap guard** | A port going up/down rapidly (bad cable, attack) | Shuts the port after N changes in a time window (p. 285) |
+
+      :::ps
+      A standard access-port profile for a customer: edge port, BPDU guard, loop guard, a data VLAN as native, and
+      port security (next module). Apply it everywhere users plug in; keep uplinks without those protections.
+      :::
+
+cards:
+  - {id: M7.01.c01, unit: M7.01.u1, tier: 1, front: "Native VLAN", back: "The VLAN untagged incoming frames belong to on a port."}
+  - {id: M7.01.c02, unit: M7.01.u1, tier: 1, front: "Allowed VLANs", back: "Tagged VLANs a port accepts and sends."}
+  - {id: M7.01.c03, unit: M7.01.u1, tier: 2, front: "Untagged VLANs list", back: "Allowed VLANs whose frames leave the port without a tag."}
+  - {id: M7.01.c04, unit: M7.01.u2, tier: 2, front: "Does a LAG make one flow faster?", back: "No: flows are hashed onto members; one flow uses one member."}
+  - {id: M7.01.c05, unit: M7.01.u2, tier: 2, front: "MCLAG in one line", back: "Two FortiSwitches act as one LAG peer; node-level redundancy without STP blocking."}
+  - {id: M7.01.c06, unit: M7.01.u2, tier: 3, front: "ICL", back: "Inter-chassis link between MCLAG peers."}
+  - {id: M7.01.c07, unit: M7.01.u3, tier: 2, front: "BPDU guard action", back: "Shuts an edge port that receives a BPDU, for a set time."}
+  - {id: M7.01.c08, unit: M7.01.u3, tier: 2, front: "Root guard", back: "Blocks a port receiving superior BPDUs, so no downstream switch becomes root."}
+  - {id: M7.01.c09, unit: M7.01.u3, tier: 2, front: "FortiSwitch loop guard", back: "Detects downstream loops with its own frames and shuts the port; works with or without STP."}
+  - {id: M7.01.c10, unit: M7.01.u3, tier: 2, front: "Flap guard", back: "Shuts a port that changes state too many times within a time window."}
+
+quiz:
+  - id: M7.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "A port's native VLAN is 60. A PC sends untagged frames. Which VLAN are they in?"
+    options:
+      - {id: a, text: "60", correct: true}
+      - {id: b, text: "1", why_wrong: "Only if native were 1."}
+      - {id: c, text: "Dropped", why_wrong: "Untagged frames go to the native VLAN."}
+      - {id: d, text: "All allowed VLANs", why_wrong: "Untagged frames belong to one VLAN."}
+    explanation: "Native VLAN = untagged ingress."
+    source: "FortiSwitchOS 8.0.2 Admin Guide p. 370"
+  - id: M7.01.q02
+    type: single
+    tier: 2
+    stem: "Someone plugs a small switch into a user port protected by BPDU guard. What happens?"
+    options:
+      - {id: a, text: "The port shuts down when it receives a BPDU", correct: true}
+      - {id: b, text: "The new switch becomes root", why_wrong: "BPDU guard prevents it."}
+      - {id: c, text: "Nothing, BPDUs are forwarded", why_wrong: "They're not forwarded."}
+      - {id: d, text: "The port moves to the native VLAN", why_wrong: "It goes down."}
+    explanation: "Edge ports shouldn't see BPDUs."
+    source: "FortiSwitchOS 8.0.2 Admin Guide p. 276"
+  - id: M7.01.q03
+    type: multi
+    tier: 2
+    stem: "Which are true about MCLAG? Select all that apply."
+    options:
+      - {id: a, text: "Two switches appear as one LAG peer", correct: true}
+      - {id: b, text: "Failover doesn't depend on STP reconvergence", correct: true}
+      - {id: c, text: "It needs an inter-chassis link", correct: true}
+      - {id: d, text: "It doubles the speed of a single TCP flow", why_wrong: "Flows are hashed."}
+    explanation: "Node-level redundancy without blocked links."
+    source: "FortiSwitchOS 8.0.2 Admin Guide p. 174"
+  - id: M7.01.q04
+    type: single
+    tier: 2
+    stem: "A port keeps going up and down because of a damaged cable and STP recalculates constantly. Which feature stops it?"
+    options:
+      - {id: a, text: "Flap guard", correct: true}
+      - {id: b, text: "Root guard", why_wrong: "About STP root."}
+      - {id: c, text: "Storm control", why_wrong: "About traffic rates."}
+      - {id: d, text: "LLDP-MED", why_wrong: "Discovery protocol."}
+    explanation: "Flap guard shuts a flapping port."
+    source: "FortiSwitchOS 8.0.2 Admin Guide p. 285"
+  - id: M7.01.q05
+    type: text
+    tier: 1
+    stem: "Protocol commonly used to negotiate a LAG (four letters)?"
+    accept: ["lacp"]
+    explanation: "Link Aggregation Control Protocol (802.3ad / 802.1AX)."
+
+labs:
+  - id: M7.01.lab1
+    title: The access-port profile
+    goal: "Write the switch-port settings for user ports, AP ports and uplinks in a warehouse."
+    worked:
+      config: |
+        # User port (PC, scanner):   native VLAN = data VLAN; edge port; BPDU guard; loop guard
+        # AP port:                   native = AP management VLAN; allowed = SSID VLANs (tagged); edge port
+        # IP phone + PC:             native = data VLAN; allowed = voice VLAN (tagged); LLDP-MED for the voice VLAN
+        # Uplink to core (MCLAG):    trunk with all needed VLANs; no BPDU guard; root guard on downstream-facing ports
+        # Unused ports:              shut down or dead VLAN
+      notes:
+        - "Profiles beat port-by-port configuration."
+        - "Document which ports are uplinks before enabling guards."
+    faded:
+      template: |
+        # PC port: native = {{data}} VLAN, {{BPDU}} guard
+        # AP port: allowed = {{SSID}} VLANs tagged
+        # Unused: {{shut}} down
+    solo:
+      prompt: "Name the protection for each risk, one per line: switch on a user port, downstream switch becoming root, loop below an access switch, flapping cable."
+      required: ["bpdu", "root", "loop", "flap"]
+      solution: |
+        BPDU guard
+        root guard
+        loop guard
+        flap guard
+      notes: "Storm control limits the damage while you find the loop."
+
+scenarios:
+  - id: M7.01.sc1
+    kind: situation
+    tier: 3
+    title: The Monday-morning broadcast storm
+    situation: |
+      A warehouse network melts down every Monday. A cleaner reconnects a loose cable between two wall ports on the
+      same switch.
+    ask: "What do you propose?"
+    right_thinking:
+      - "Loop guard on access ports (and BPDU guard where STP is used)"
+      - "Storm control to cap broadcast while it happens"
+      - "Shut unused ports"
+    what: "Protection that works without depending on the cleaner."
+    why: "Layer-2 loops are a design problem, not a people problem."
+    how: ["Loop guard", "Storm control", "Unused ports", "Monitoring"]
+    model_answer: |
+      "That's a loop through two access ports. I'd enable loop guard on all access ports so the second port shuts the
+      moment it sees its own loop-detection frames, add storm control to cap broadcast if anything slips through, and
+      shut unused wall ports. Then we alert on port shutdowns so the IT team finds the cable on Monday morning."
+    best_way: "Prevent, contain, detect."
+    rubric: ["names loop guard", "adds storm control", "addresses unused ports"]
+
+interview:
+  - id: M7.01.t01
+    stage: technical
+    question: "What's the difference between native, allowed and untagged VLANs on a FortiSwitch port?"
+    testing: "VLAN fundamentals"
+    framework: "Define each → example"
+    model_answer: |
+      "Native is the VLAN untagged incoming frames go into. Allowed are the tagged VLANs the port carries. Untagged
+      VLANs are allowed VLANs sent out without a tag. A PC port only needs native; an AP port has its management
+      VLAN as native and the SSID VLANs as allowed."
+    best_way: "Three definitions, one example."
+    target: "0:30"

@@ -14,8 +14,7 @@ Lab.prototype.onCommit = function (fg, path, key) {
     const p1 = fg.entry(P1, key);
     const t = fg.inst("system interface");
     let e = t.entries.get(key);
-    if (!e) { e = new Entry(key); t.entries.set(key, e); }
-    e.attrs.set("vdom", ["root"]);
+    if (!e) { e = new Entry(key); t.entries.set(key, e); e.attrs.set("vdom", [fg.vdomName || "root"]); }
     e.attrs.set("type", ["tunnel"]);
     e.attrs.set("interface", [o(fg, P1, p1, "interface") || ""]);
   }
@@ -33,7 +32,8 @@ function selector(fg, p2, side) {
     return a ? parsePrefix(fg.one("firewall address", a, "subnet")) : { ip: 0, len: 0 };
   }
   if (t === "ip") return { ip: ipToInt(o(fg, P2, p2, `${side}-start-ip`) || "0.0.0.0"), len: 32 };
-  const p = parsePrefix(o(fg, P2, p2, `${side}-subnet`) || "0.0.0.0 0.0.0.0");
+  const raw = fg.val(P2, p2, `${side}-subnet`).join(" ");
+  const p = !raw || raw === "0.0.0.0" ? { ip: 0, len: 0 } : parsePrefix(raw);
   return p || { ip: 0, len: 0 };
 }
 const within = (inner, outer) => outer.len <= inner.len && inPrefix(inner.ip, outer);

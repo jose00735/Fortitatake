@@ -98,6 +98,17 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.6.4 adds (VDOMs, FortiSwitch, overlay)
+
+- VDOMs (`fgt.js` + `vdom.js`): `set vdom-mode multi-vdom`, `config vdom` / `edit <name>` (creates VDOMs), `config global`; each VDOM is its own FortiGate instance (id `FGT[VDOM]`) sharing the global tables (interfaces, admins, HA, DNS…); per-VDOM / global command checks; inter-VDOM links (`config system vdom-link` creates `<name>0/1`, point-to-point segments); specs can declare `vdoms: {NAME: cli}`. Interfaces, routing, DHCP, ARP and debug output follow the VDOM that owns the port.
+- FortiSwitch (`switch.js`): `kind: fortiswitch` devices cabled to a FortiLink interface; discovery creates the managed-switch entry by serial; authorization (`fsw-wan1-admin enable`); one L2 domain per FortiLink VLAN from port `vlan` settings; `status down` ports; `execute switch-controller get-conn-status`; switch console (`get system status`, `show switch interface`). Cables to switches are drawn but not used for forwarding.
+- SD-WAN: members can be IPsec tunnels; member `source` for health-check probes (tunnels without an IP fail with a clear reason); reentrancy guard for probes through members.
+- IPsec: phase2 without selectors means 0.0.0.0/0. Static routes whose gateway isn't on the interface subnet aren't installed (as in FortiOS).
+- Grader: `fsw` check; `sdwan` checks take `hc` and `sla`; `dhcp` takes `expect: fail`.
+- Topology: viewBox fits every device; switch access ports labelled at the device end; FortiSwitch glyph.
+- Labs: D2.01 (3 parts), D4.01, W2.01 (3 parts), W4.01, W4.02, X3.02 (3 parts). Modules: M7.01, M7.02, M7.03, M8.05, M4.01, M4.02, M2.03.
+- Not built: ADVPN emulation (dial-up FortiGate spokes and shortcuts); covered in M2.03 and M8.03 content instead.
+
 ### What v0.6.3 adds (dynamic routing)
 
 - `routing.js`: a control plane computed per config version. OSPF: network statements, areas (regular/stub), passive interfaces, ospf-interface (cost, network type, hello/dead, text/MD5 auth, MTU, mtu-ignore, priority), adjacency rules (mask, area, timers, stub flag, auth, router ID, network type, MTU → ExStart), DR/BDR display, SPF with O / O IA / O E1 / O E2, redistribution, default-information-originate. BGP: eBGP/iBGP sessions (update-source, multihop, MD5, remote-as checks with FSM states and reasons), network statements with network-import-check, redistribution, prefix lists (ge/le), route maps (local preference, weight, MED, AS-path prepend), iBGP split horizon, route reflectors, next-hop-self, recursive next hops, best-path selection, distances 20/200.

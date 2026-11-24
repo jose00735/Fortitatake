@@ -1,0 +1,149 @@
+id: W2.01
+track: fortiswitch
+modules: [M7.01, M7.03]
+tier: 2
+order: 10
+kind: project
+title: "Andes warehouse: FortiSwitch over FortiLink"
+customer: Andes Logistics
+par: 60
+skills: [FortiLink, switch authorization, FortiLink VLANs, port assignment, DHCP, port shutdown]
+brief: |
+  **SOW 2026-171, warehouse LAN.** A FortiSwitch 148F-FPOE (**FSW-WH**, serial `S148FFTF26000417`) is cabled to
+  FGT-BOG **port6**, which the customer already made the FortiLink interface (10.255.1.1/24). Handheld scanners
+  connect to the switch and must reach the ERP web app (ERP-SRV, 10.20.10.20, HTTPS) and nothing else.
+
+  | VLAN | Name | Subnet | Switch ports |
+  |---|---|---|---|
+  | 60 | SCANNERS | 10.20.60.1/24, DHCP .100–.199, DNS 8.8.8.8 | port1, port2 |
+topology: {use: andes-fsw}
+parts:
+  - id: a
+    title: Authorize the switch
+    tasks:
+      - "Find the switch on FortiLink (`execute switch-controller get-conn-status`)."
+      - "Authorize it and give it the description FSW-WH."
+    checks:
+      - text: "FSW-WH is authorized"
+        fsw: {dev: FSW-WH}
+      - text: "It's named in FortiOS"
+        config: {dev: FGT-BOG, path: switch-controller managed-switch, key: S148FFTF26000417, attr: description, equals: FSW-WH}
+    hints:
+      - "Discovered switches appear under `config switch-controller managed-switch` with `fsw-wan1-admin discovered`."
+      - "`edit S148FFTF26000417` / `set fsw-wan1-admin enable` / `set description FSW-WH`."
+    solution:
+      FGT-BOG: |
+        execute switch-controller get-conn-status
+        config switch-controller managed-switch
+        edit S148FFTF26000417
+        set fsw-wan1-admin enable
+        set description FSW-WH
+        next
+        end
+    explain: |
+      FortiLink lets the FortiGate discover and manage the switch: once authorized, the FortiGate pushes its
+      configuration and the switch's ports become FortiGate-controlled. Until then, the switch passes no user traffic,
+      which is why authorization is a deliberate step (a rogue switch plugged into FortiLink can't join by itself).
+  - id: b
+    title: The scanner VLAN
+    tasks:
+      - "VLAN interface SCANNERS (ID 60) on fortilink with 10.20.60.1/24 and a DHCP server as in the table."
+      - "Put switch ports port1 and port2 in SCANNERS."
+      - "Policy SCANNERS → ERP-SRV, HTTPS only. Test from SCAN-01: `curl https://10.20.10.20`."
+    checks:
+      - text: "SCAN-01 gets an address in 10.20.60.0/24"
+        dhcp: {host: SCAN-01, in: 10.20.60.0/24}
+      - text: "SCAN-02 too"
+        dhcp: {host: SCAN-02, in: 10.20.60.0/24}
+      - text: "Scanners reach the ERP over HTTPS"
+        probe: {from: SCAN-01, to: 10.20.10.20, proto: tcp, port: 443}
+      - text: "…and nothing else on it"
+        probe: {from: SCAN-02, to: 10.20.10.20, proto: tcp, port: 1433, expect: fail}
+    hints:
+      - "`config system interface` / `edit SCANNERS` / `set interface fortilink` / `set vlanid 60` / `set ip 10.20.60.1 255.255.255.0` / `set allowaccess ping`, then a `config system dhcp server` entry for it."
+      - "Ports are set on the FortiGate: `config switch-controller managed-switch` / `edit S148FFTF26000417` / `config ports` / `edit port1` / `set vlan SCANNERS`."
+    solution:
+      FGT-BOG: |
+        config system interface
+        edit SCANNERS
+        set interface fortilink
+        set vlanid 60
+        set ip 10.20.60.1 255.255.255.0
+        set allowaccess ping
+        next
+        end
+        config system dhcp server
+        edit 2
+        set interface SCANNERS
+        set default-gateway 10.20.60.1
+        set netmask 255.255.255.0
+        set dns-service specify
+        set dns-server1 8.8.8.8
+        config ip-range
+        edit 1
+        set start-ip 10.20.60.100
+        set end-ip 10.20.60.199
+        next
+        end
+        next
+        end
+        config switch-controller managed-switch
+        edit S148FFTF26000417
+        config ports
+        edit port1
+        set vlan SCANNERS
+        next
+        edit port2
+        set vlan SCANNERS
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "Scanners-ERP"
+        set srcintf SCANNERS
+        set dstintf port2
+        set srcaddr all
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        next
+        end
+    explain: |
+      With FortiLink, a switch VLAN is just a FortiGate VLAN interface on the FortiLink interface: the FortiGate is the
+      gateway, the DHCP server and the firewall for it, and every flow between VLANs crosses a policy. The `vlan`
+      setting on a switch port is its native (untagged) VLAN.
+  - id: c
+    title: The laptop on port 12
+    brief: |
+      **Walk-through finding.** A laptop nobody recognizes is plugged into **port12** in the warehouse, and it got an
+      address on the FortiLink management subnet. Security wants the port shut until someone claims it.
+    tasks:
+      - "Shut port12 from the FortiGate."
+    checks:
+      - text: "ROGUE-PC can't reach the FortiGate any more"
+        probe: {from: ROGUE-PC, to: 10.255.1.1, expect: fail}
+      - text: "ROGUE-PC gets no address"
+        dhcp: {host: ROGUE-PC, expect: fail}
+      - text: "Scanners still work"
+        probe: {from: SCAN-01, to: 10.20.10.20, proto: tcp, port: 443}
+    hints:
+      - "Port settings live under the managed switch on the FortiGate: `config ports` / `edit port12`."
+      - "`set status down`. In production you'd also move unused ports to a quarantine VLAN."
+    solution:
+      FGT-BOG: |
+        config switch-controller managed-switch
+        edit S148FFTF26000417
+        config ports
+        edit port12
+        set status down
+        next
+        end
+        next
+        end
+    explain: |
+      A port with no VLAN set sits in the FortiLink native VLAN, which here is the switch management network: an
+      unknown device on it is a real risk. Shut unused ports, or put them in a dead VLAN, and consider 802.1X/MAB on
+      access ports so only known devices get a network at all.

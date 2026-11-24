@@ -1,0 +1,106 @@
+id: W4.02
+track: fortiswitch
+modules: [M7.03]
+tier: 4
+order: 11
+kind: ticket
+title: "\"We replaced the broken switch and now nothing in the warehouse works\""
+customer: Andes Logistics
+par: 25
+skills: [switch replacement, authorization, port configuration]
+brief: |
+  **Ticket 9152, priority 1.** The warehouse switch died; the on-site technician cabled in the RMA unit (same model,
+  new serial **S148FFTF26000417**) to the same FortiLink port and plugged the scanners into the same ports. Nothing
+  works since. The old switch was S148FFTF25009981.
+topology:
+  use: andes-fsw
+  devices:
+    FGT-BOG:
+      config: |
+        config system interface
+        edit SCANNERS
+        set interface fortilink
+        set vlanid 60
+        set ip 10.20.60.1 255.255.255.0
+        set allowaccess ping
+        next
+        end
+        config system dhcp server
+        edit 2
+        set interface SCANNERS
+        set default-gateway 10.20.60.1
+        set netmask 255.255.255.0
+        set dns-service specify
+        set dns-server1 8.8.8.8
+        config ip-range
+        edit 1
+        set start-ip 10.20.60.100
+        set end-ip 10.20.60.199
+        next
+        end
+        next
+        end
+        config switch-controller managed-switch
+        edit S148FFTF25009981
+        set fsw-wan1-peer fortilink
+        set fsw-wan1-admin enable
+        set description FSW-WH
+        config ports
+        edit port1
+        set vlan SCANNERS
+        next
+        edit port2
+        set vlan SCANNERS
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "Scanners-ERP"
+        set srcintf SCANNERS
+        set dstintf port2
+        set srcaddr all
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        next
+        end
+tasks:
+  - "Check what the FortiGate sees on FortiLink."
+  - "Bring the new switch into service with the old switch's port settings."
+  - "Answer the root cause."
+checks:
+  - text: "The new switch is authorized"
+    fsw: {dev: FSW-WH}
+  - text: "SCAN-01 gets a scanner address"
+    dhcp: {host: SCAN-01, in: 10.20.60.0/24}
+  - text: "SCAN-02 opens the ERP"
+    probe: {from: SCAN-02, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~serial|authori|new switch|replace|discovered"], sample: "The RMA switch has a new serial: it's only discovered, not authorized, and the port VLANs are configured under the old serial", hint: "What identifies a managed switch on the FortiGate?", why: "Managed switches are keyed by serial number. The replacement shows up as a new, unauthorized switch, and all port settings still belong to the old serial."}
+hints:
+  - "`execute switch-controller get-conn-status`: the new serial is Discovered, the old one is gone."
+  - "Authorize the new serial and set port1 and port2 to SCANNERS under it (the FortiLink Guide also documents `execute replace-device fortiswitch <old> <new>`, which moves the configuration for you)."
+solution:
+  FGT-BOG: |
+    execute switch-controller get-conn-status
+    config switch-controller managed-switch
+    edit S148FFTF26000417
+    set fsw-wan1-admin enable
+    set description FSW-WH
+    config ports
+    edit port1
+    set vlan SCANNERS
+    next
+    edit port2
+    set vlan SCANNERS
+    next
+    end
+    next
+    end
+explain: |
+  Switch configuration lives on the FortiGate, keyed by serial. For an RMA, the replace-device command moves the old
+  serial's configuration to the new one; otherwise you authorize the new unit and rebuild the port settings, then
+  delete the old entry.

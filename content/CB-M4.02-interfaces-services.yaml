@@ -1,0 +1,219 @@
+id: M4.02
+title: "Interfaces and network services: VLANs, aggregates, zones, DHCP and DNS"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 170
+est_sessions: 1
+objectives:
+  - Choose between physical, VLAN, aggregate, redundant, loopback and zone interfaces
+  - Configure DHCP servers (ranges, options, reservations) and relay
+  - Configure the FortiGate's own DNS and DNS service on interfaces
+  - Troubleshoot addressing problems from the client side
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Network: interfaces, VLANs, aggregates, zones (pp. 236–404)"
+  - "FortiOS 8.0.2 Admin Guide: DNS (p. 405+), DHCP (p. 607+)"
+
+units:
+  - id: M4.02.u1
+    title: Interface types
+    tier: 1
+    est_min: 12
+    body: |
+      | Type | Use |
+      |---|---|
+      | Physical | A port |
+      | **VLAN** | 802.1Q sub-interface on a physical or aggregate interface (`set interface port2`, `set vlanid 20`) |
+      | **Aggregate** | LACP bundle of ports to a switch: more bandwidth, link redundancy |
+      | **Redundant** | Active/standby ports without LACP |
+      | **Loopback** | Always up: router IDs, BGP peering, management IPs |
+      | **Zone** | Groups interfaces so one policy covers them all |
+      | Tunnel | Created by IPsec phase1-interface |
+
+      ## Zones
+
+      Policies can reference a zone instead of each interface. Traffic **between** interfaces in the same zone is
+      blocked by default (`intrazone deny`); set `intrazone allow` or write intra-zone policies.
+
+      :::recall
+      Q: VLAN 10 and VLAN 20 are in the same zone LAN-ZONE. A PC in VLAN 10 can't reach VLAN 20. Why?
+      A: Intra-zone traffic is denied by default: set intrazone allow on the zone or add a policy.
+      :::
+  - id: M4.02.u2
+    title: DHCP
+    tier: 1
+    est_min: 12
+    body: |
+      DHCP is DORA: **D**iscover (broadcast), **O**ffer, **R**equest, **A**ck. A FortiGate interface can be a DHCP server
+      (per interface) or a **relay** to a central server (`set dhcp-relay-service enable` and the server IP on the
+      interface).
+
+      :::cli
+      config system dhcp server
+          edit 2
+              set interface "SCANNERS"
+              set default-gateway 10.20.60.1
+              set netmask 255.255.255.0
+              set dns-service specify
+              set dns-server1 8.8.8.8
+              config ip-range
+                  edit 1
+                      set start-ip 10.20.60.100
+                      set end-ip 10.20.60.199
+                  next
+              end
+          next
+      end
+      :::
+
+      - `dns-service`: `default` (the FortiGate's system DNS), `local` (the interface IP: the FortiGate as DNS
+        server), `specify` (explicit servers).
+      - Reservations (`config reserved-address`) pin an IP to a MAC.
+      - Options (e.g. 66/67 for PXE, 150 for phones) go under `config options`.
+
+      :::pitfall
+      A Windows PC with 169.254.x.x got no DHCP answer at all: no server on that VLAN, a wrong VLAN on the switch port,
+      or a full scope. A PC with an address in the **wrong** subnet is in the wrong VLAN.
+      :::
+  - id: M4.02.u3
+    title: DNS on and through the FortiGate
+    tier: 2
+    est_min: 10
+    body: |
+      - **System DNS** (`config system dns`): what the FortiGate itself uses for FortiGuard, FQDN addresses, updates.
+      - **DNS service on an interface** (`config system dns-server`): the FortiGate answers DNS for clients, either
+        forwarding (recursive) or from its own DNS database (split DNS for internal names).
+      - FQDN addresses in policies depend on the FortiGate resolving the same answers the clients get. A mismatch
+        (different DNS servers, CDN answers) makes FQDN policies miss.
+
+      :::ps
+      In a cutover, write down for each VLAN: gateway, DHCP range, DNS servers handed out, and reservations. Most
+      Monday-morning tickets after a firewall migration are DHCP or DNS details.
+      :::
+
+cards:
+  - {id: M4.02.c01, unit: M4.02.u1, tier: 1, front: "VLAN interface essentials", back: "set interface <parent>, set vlanid <id>, IP."}
+  - {id: M4.02.c02, unit: M4.02.u1, tier: 2, front: "Aggregate vs redundant", back: "Aggregate: LACP, all members active. Redundant: one active member, no LACP."}
+  - {id: M4.02.c03, unit: M4.02.u1, tier: 1, front: "Why loopbacks?", back: "Always up: router IDs, BGP peering, management."}
+  - {id: M4.02.c04, unit: M4.02.u1, tier: 2, front: "Intra-zone traffic default", back: "Denied (intrazone deny)."}
+  - {id: M4.02.c05, unit: M4.02.u2, tier: 1, front: "DORA", back: "Discover, Offer, Request, Ack."}
+  - {id: M4.02.c06, unit: M4.02.u2, tier: 2, front: "dns-service options in a DHCP server", back: "default (system DNS), local (interface IP), specify (explicit)."}
+  - {id: M4.02.c07, unit: M4.02.u2, tier: 1, front: "169.254.x.x on Windows means…", back: "No DHCP answer (APIPA)."}
+  - {id: M4.02.c08, unit: M4.02.u3, tier: 2, front: "System DNS vs dns-server", back: "System DNS: what the FortiGate uses. dns-server: the FortiGate answering clients on an interface."}
+
+quiz:
+  - id: M4.02.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Two VLAN interfaces in the same zone can't talk. Default settings. Fix?"
+    options:
+      - {id: a, text: "set intrazone allow on the zone (or an intra-zone policy)", correct: true}
+      - {id: b, text: "Add a static route", why_wrong: "Both are connected."}
+      - {id: c, text: "Enable NAT", why_wrong: "Not the issue."}
+      - {id: d, text: "Change the VLAN IDs", why_wrong: "Unrelated."}
+    explanation: "Intra-zone is denied by default."
+  - id: M4.02.q02
+    type: order
+    tier: 1
+    stem: "Order the DHCP exchange."
+    items: ["Discover", "Offer", "Request", "Ack"]
+    explanation: "DORA."
+  - id: M4.02.q03
+    type: single
+    tier: 2
+    stem: "A scanner gets 10.255.1.37 on a network where scanners should get 10.20.60.x. Most likely?"
+    options:
+      - {id: a, text: "It's in the wrong VLAN", correct: true}
+      - {id: b, text: "DHCP scope full", why_wrong: "It would get nothing (APIPA)."}
+      - {id: c, text: "Wrong DNS", why_wrong: "Doesn't change the address."}
+      - {id: d, text: "Policy missing", why_wrong: "Policies don't assign IPs."}
+    explanation: "Wrong subnet = wrong broadcast domain."
+  - id: M4.02.q04
+    type: text
+    tier: 2
+    stem: "DHCP server dns-service value that hands out the interface's own IP as DNS?"
+    accept: ["local"]
+    explanation: "local = the FortiGate answers DNS on that interface."
+
+labs:
+  - id: M4.02.lab1
+    title: A new VLAN, end to end
+    goal: "Add a VLAN with DHCP, DNS and policies for a new department."
+    worked:
+      config: |
+        config system interface
+            edit "FINANCE"
+                set interface "port2"
+                set vlanid 30
+                set ip 10.20.30.1 255.255.255.0
+                set allowaccess ping
+                set role lan
+            next
+        end
+        config system dhcp server
+            edit 3
+                set interface "FINANCE"
+                set default-gateway 10.20.30.1
+                set netmask 255.255.255.0
+                set dns-service default
+                config ip-range
+                    edit 1
+                        set start-ip 10.20.30.100
+                        set end-ip 10.20.30.199
+                    next
+                end
+            next
+        end
+        # then: switch port VLAN 30 tagged on the uplink, policies FINANCE → servers / Internet
+      notes:
+        - "The switch side must tag VLAN 30 toward the FortiGate."
+        - "Test with ipconfig /renew and a ping to the gateway."
+    faded:
+      template: |
+        set interface "{{port2}}"
+        set vlanid {{30}}
+        config system {{dhcp}} server
+    solo:
+      prompt: "Write the three things a new VLAN needs on the FortiGate before users can work, one per line: interface, dhcp, policy."
+      required: ["interface", "dhcp", "policy"]
+      solution: |
+        VLAN interface with IP
+        DHCP server for it
+        firewall policies for it
+      notes: "Plus the switch side."
+
+scenarios:
+  - id: M4.02.sc1
+    kind: situation
+    tier: 2
+    title: "\"Half the floor has no network after the migration\""
+    situation: |
+      After migrating to a new FortiGate, PCs on floor 3 show 169.254.x.x. Floor 2 is fine. Both floors are VLANs on
+      the same aggregate.
+    ask: "How do you narrow it down?"
+    right_thinking:
+      - "APIPA = no DHCP answer"
+      - "Check the VLAN interface exists with the right VLAN ID, and a DHCP server on it"
+      - "Check the switch tags that VLAN on the aggregate"
+    what: "A quick split between FortiGate config and switch config."
+    why: "Migrations often miss one VLAN or one tag."
+    how: ["Interface", "DHCP", "Switch trunk", "Test"]
+    model_answer: |
+      "169.254 means no DHCP answer, so the broadcast isn't reaching a DHCP server. I'd check that floor 3's VLAN
+      interface exists with the right ID and has a DHCP server, then that the switch tags that VLAN on the aggregate
+      to the new FortiGate. A sniffer on the VLAN interface for UDP 67 tells me in seconds which side it is."
+    best_way: "Symptom, both sides, one test."
+    rubric: ["interprets APIPA", "checks both sides", "uses a sniffer"]
+
+interview:
+  - id: M4.02.t01
+    stage: technical
+    question: "When would you use a zone on a FortiGate?"
+    testing: "Interface design"
+    framework: "Purpose → behaviour → caveat"
+    model_answer: |
+      "To group interfaces that share policies, like several user VLANs or two ISP links in older designs, so one
+      policy covers them. The caveat is that traffic between members of the same zone is denied by default, so I
+      either allow intra-zone traffic deliberately or write policies for it."
+    best_way: "Use, then the intra-zone default."
+    target: "0:25"

@@ -1,0 +1,194 @@
+id: M7.03
+title: "FortiLink: managing FortiSwitch from the FortiGate"
+stage: S7
+stage_title: "S7 · FortiSwitch (FortiSwitch Administrator)"
+order: 164
+est_sessions: 1
+objectives:
+  - Set up a FortiLink interface and authorize FortiSwitch units
+  - Create FortiLink VLANs and assign switch ports from the FortiGate
+  - Troubleshoot discovery, authorization and VLAN placement
+  - Handle switch replacement and scale with FortiManager
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Switch Controller (p. 4120) and the FortiLink Guide it references"
+  - "FortiManager 7.6.8 Admin Guide: FortiSwitch Manager (pp. 970–1024)"
+  - "FortiSwitchOS 8.0.2 Admin Guide: QoS (p. 394), PoE (p. 355)"
+
+units:
+  - id: M7.03.u1
+    title: What FortiLink is
+    tier: 1
+    est_min: 11
+    body: |
+      **FortiLink** (the Switch Controller) lets a FortiGate discover, authorize and manage FortiSwitch units. VLANs are
+      created on the FortiGate as interfaces on the FortiLink interface, and the FortiGate's security (firewall
+      policies, 802.1X, NAC) extends to every switch port (p. 4120).
+
+      - Typical layer-2 design: the FortiGate connects to distribution switches, which connect down to access
+        switches.
+      - A **third-party switch between** the FortiGate and the FortiSwitch isn't supported in layer-2 FortiLink mode;
+        FortiLink over a **layer-3** network is (p. 4120).
+      - The FortiGate is the gateway, DHCP server and firewall for every FortiLink VLAN: traffic between VLANs always
+        crosses a policy.
+
+      :::recall
+      Q: Where do you change the native VLAN of port 12 on a FortiLink-managed switch?
+      A: On the FortiGate: config switch-controller managed-switch → the switch's serial → config ports → port12 → set vlan.
+      :::
+  - id: M7.03.u2
+    title: From cable to working port
+    tier: 2
+    est_min: 13
+    body: |
+      1. **FortiLink interface**: a physical port or an aggregate (`set fortilink enable`), with an IP (often
+         10.255.1.1/24) and a DHCP scope for the switches' management.
+      2. **Discovery**: the switch appears under `config switch-controller managed-switch`, keyed by **serial**, with
+         `fsw-wan1-admin discovered`.
+      3. **Authorization**: `set fsw-wan1-admin enable`. Until then, the switch passes no user traffic.
+      4. **VLANs**: `config system interface` → `edit SCANNERS` → `set interface fortilink` → `set vlanid 60` → IP,
+         DHCP server.
+      5. **Ports**: `config ports` → `edit port1` → `set vlan SCANNERS` (native), `set allowed-vlans` for trunks,
+         `set status down` for unused ports, PoE and security policies per port.
+      6. **Policies**: between VLANs and to the Internet, like any other interface.
+
+      :::cli
+      execute switch-controller get-conn-status
+      :::
+
+      :::pitfall
+      A port with no VLAN set stays in the FortiLink native VLAN, usually the switch management network. "It gets an
+      IP but nothing works" often means "it got an address on the wrong network".
+      :::
+  - id: M7.03.u3
+    title: Operations at scale
+    tier: 2
+    est_min: 11
+    body: |
+      - **Replacement (RMA)**: managed switches are keyed by serial. A new unit appears as a new, unauthorized switch;
+        its port settings must move from the old serial (the FortiLink Guide documents a replace-device command for
+        this).
+      - **Firmware**: the FortiGate can stage and push FortiSwitch firmware.
+      - **FortiManager FortiSwitch Manager** manages switch templates, VLANs and port profiles centrally for many
+        FortiGates (pp. 970–1024), in the same ADOM workflow as policies.
+      - **QoS and PoE**: per-port PoE status and power, and QoS policies so voice keeps priority on uplinks
+        (FortiSwitchOS pp. 355, 394).
+
+      :::ps
+      In a FortiLink rollout, label every switch with its serial and location before it leaves the box, and keep a
+      port map per switch. Authorization, RMA and troubleshooting all start from the serial.
+      :::
+
+cards:
+  - {id: M7.03.c01, unit: M7.03.u1, tier: 1, front: "FortiLink in one line", back: "The FortiGate discovers, authorizes and manages FortiSwitches; VLANs are FortiGate interfaces."}
+  - {id: M7.03.c02, unit: M7.03.u1, tier: 2, front: "Third-party switch between FortiGate and FortiSwitch in L2 FortiLink?", back: "Not supported. FortiLink over a layer-3 network is."}
+  - {id: M7.03.c03, unit: M7.03.u2, tier: 1, front: "How is a managed switch identified on the FortiGate?", back: "By serial number (config switch-controller managed-switch → edit <serial>)."}
+  - {id: M7.03.c04, unit: M7.03.u2, tier: 1, front: "Authorize a discovered switch", back: "set fsw-wan1-admin enable"}
+  - {id: M7.03.c05, unit: M7.03.u2, tier: 2, front: "Create a FortiLink VLAN", back: "config system interface → edit <name> → set interface fortilink → set vlanid <id> → IP."}
+  - {id: M7.03.c06, unit: M7.03.u2, tier: 2, front: "Assign a switch port's native VLAN", back: "managed-switch → config ports → edit portN → set vlan <VLAN interface>."}
+  - {id: M7.03.c07, unit: M7.03.u2, tier: 2, front: "Check FortiLink switches from the CLI", back: "execute switch-controller get-conn-status"}
+  - {id: M7.03.c08, unit: M7.03.u3, tier: 2, front: "Replacement switch shows as Discovered. Why?", back: "New serial: it's a new managed-switch entry; port config is still under the old serial."}
+
+quiz:
+  - id: M7.03.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "A new FortiSwitch shows as Discovered on FortiLink. What must you do before it passes user traffic?"
+    options:
+      - {id: a, text: "Authorize it (fsw-wan1-admin enable)", correct: true}
+      - {id: b, text: "Reboot it", why_wrong: "Discovery already happened."}
+      - {id: c, text: "Create a policy to its management IP", why_wrong: "Not about user traffic."}
+      - {id: d, text: "Upgrade the FortiGate", why_wrong: "Unrelated."}
+    explanation: "Authorization is explicit."
+  - id: M7.03.q02
+    type: single
+    tier: 2
+    stem: "A scanner on a managed switch port gets 10.255.1.37 instead of a scanner VLAN address. Cause?"
+    options:
+      - {id: a, text: "The port's native VLAN isn't set, so it's in the FortiLink native VLAN", correct: true}
+      - {id: b, text: "The scanner VLAN's DHCP scope is full", why_wrong: "It would get no address."}
+      - {id: c, text: "The switch isn't authorized", why_wrong: "Then it would get nothing."}
+      - {id: d, text: "A missing policy", why_wrong: "Policies don't choose addresses."}
+    explanation: "10.255.1.x is the FortiLink subnet."
+  - id: M7.03.q03
+    type: multi
+    tier: 2
+    stem: "Which are configured on the FortiGate in FortiLink mode? Select all that apply."
+    options:
+      - {id: a, text: "Switch port native VLANs", correct: true}
+      - {id: b, text: "VLAN gateway IPs", correct: true}
+      - {id: c, text: "Policies between VLANs", correct: true}
+      - {id: d, text: "Nothing: the switch keeps its own config", why_wrong: "The FortiGate pushes it."}
+    explanation: "Central management is the point."
+  - id: M7.03.q04
+    type: text
+    tier: 2
+    stem: "CLI to list FortiLink switches and their status (begin with 'execute')."
+    accept: ["execute switch-controller get-conn-status", "exec switch-controller get-conn-status"]
+    explanation: "Shows serial, version, status."
+
+labs:
+  - id: M7.03.lab1
+    title: FortiLink checklist
+    goal: "List the steps from a boxed switch to a working, secured access port."
+    worked:
+      config: |
+        # 1 FortiLink interface (port or aggregate) with set fortilink enable + IP + DHCP
+        # 2 Cable the switch; execute switch-controller get-conn-status → Discovered
+        # 3 managed-switch <serial> → set fsw-wan1-admin enable, set description <name>
+        # 4 VLAN interfaces on fortilink (IP, DHCP, allowaccess as needed)
+        # 5 config ports: native VLAN per port, allowed VLANs for APs, status down for unused
+        # 6 Policies between VLANs and to the Internet
+        # 7 Test from a device on each VLAN; save the port map
+      notes:
+        - "Steps 1–3 are the same for every switch; templates in FortiManager scale them."
+    faded:
+      template: |
+        # discover → {{authorize}} (fsw-wan1-admin enable)
+        # VLAN = interface on {{fortilink}} with a vlanid
+        # port native VLAN: set {{vlan}} <name>
+    solo:
+      prompt: "Write the three FortiLink objects you touch to bring a scanner port into service, one per line: managed switch, vlan interface, switch port."
+      required: ["managed-switch", "interface", "port"]
+      solution: |
+        config switch-controller managed-switch (authorize by serial)
+        config system interface (VLAN on fortilink)
+        config ports (set vlan on the port)
+      notes: "Then a firewall policy."
+
+scenarios:
+  - id: M7.03.sc1
+    kind: raid
+    tier: 3
+    title: The RMA at 6 a.m.
+    situation: |
+      A warehouse switch died overnight. The technician installed the replacement at 5:40. Shift starts at 6:00 and
+      nothing works.
+    ask: "Your moves, in order?"
+    right_thinking:
+      - "get-conn-status: new serial Discovered"
+      - "Authorize, move port config from old serial (replace-device or rebuild)"
+      - "Test a scanner; remove the old entry later"
+    what: "Service back before the shift, clean-up after."
+    why: "RMAs are routine; doing them fast is a PS differentiator."
+    how: ["Status", "Authorize", "Port config", "Test", "Clean-up"]
+    model_answer: |
+      "First get-conn-status: the RMA unit is there with a new serial, only discovered. I authorize it, move the
+      old serial's port settings to it, then test a scanner on its port. Once the shift is running, I delete the old
+      entry and update the asset list with the new serial."
+    best_way: "Serial first."
+    rubric: ["checks status", "authorizes and restores ports", "tests and cleans up"]
+
+interview:
+  - id: M7.03.t01
+    stage: technical
+    question: "Walk me through adding a FortiSwitch to a FortiGate with FortiLink."
+    testing: "FortiLink operations"
+    framework: "Interface → discover → authorize → VLANs → ports → policies"
+    model_answer: |
+      "Enable FortiLink on a FortiGate port or aggregate with an IP and DHCP for the switches. Cable the switch; it
+      shows up by serial as discovered, and I authorize it. Then I create VLANs as interfaces on the FortiLink
+      interface, assign native VLANs to ports from the FortiGate, shut unused ports, and write the policies between
+      VLANs. Finally I test from a device on each VLAN."
+    best_way: "In order, with the serial as the key."
+    target: "0:45"
