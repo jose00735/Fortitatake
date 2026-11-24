@@ -217,6 +217,10 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 ## Roadmap
 
+### Proposed v0.8.0: Linux lab engine (order pending Jose's decision)
+
+Real Linux under the FortiGate labs, on Windows and Android: the app downloads a vanilla Alpine x86 release (hash and signature checked), adds a FortiTatake overlay (agent, package list) through Alpine's apkovl mechanism, and boots it in QEMU (Windows) or v86 (Android). Each lab device is a network namespace; a compiler turns the FortiOS config into nftables, routes and NAT; diagnostics and grading read real traffic. Phase 0 is a go/no-go spike with measured gates; the JavaScript simulator stays the fallback. Full blueprint: the "FortiTatake Linux Lab Engine — Blueprint" doc. If adopted, capstones move to v0.9.0 and the question overhaul to v0.10.0.
+
 ### v0.8.0: capstones and the last stages
 
 - Labs: tier 6 capstones with sub-labs (timed, faults injected mid-lab, a customer who changes a requirement), including a cross-tool investigation (FortiSIEM + FortiEDR + FortiGate). MOP and acceptance-test deliverables.
