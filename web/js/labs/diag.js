@@ -23,6 +23,7 @@ Lab.prototype.diagnose = function (fg, toks, line) {
       if (r !== null && r !== undefined) return r;
     }
     if (this.haDiag) { const r = this.haDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
+    if (this.authDiag && fg.kind === "fortigate") { const r = this.authDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
     if (head === "get" && match(rest, ["vpn", "ipsec", "tunnel", "summary"]) && this.vpnSummary) return this.vpnSummary(fg);
     if (head === "get") return getCmd(this, fg, rest, toks.slice(1));
     if (head === "diagnose") return diagCmd(this, fg, rest, toks.slice(1));
@@ -306,8 +307,8 @@ export function hostRun(lab, h, line) {
   const c = t[0].toLowerCase();
   const win = h.os === "windows";
   if (c === "help" || c === "?") return win
-    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, nslookup <name>, curl [-k] [-I] <url>, tnc <host> -port <n>, forticlient connect|status|disconnect, cls"
-    : "Commands: ip a, ip route, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, clear";
+    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, nslookup <name>, curl [-k] [-I] <url>, tnc <host> -port <n>, login <user> <password>, forticlient connect|status|disconnect, cls"
+    : "Commands: ip a, ip route, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, login <user> <password>, clear";
   if (c === "ipconfig" || (c === "ip" && t[1] && "address".startsWith(t[1])) || c === "ifconfig") {
     if (t[1] && t[1].toLowerCase() === "/renew") { const ok = lab.renew(h); if (!ok) return "An error occurred while renewing interface Ethernet0 : unable to contact your DHCP server. Request has timed out."; }
     if (t[1] && t[1].toLowerCase() === "/release") { h.lease = null; return "Ethernet adapter Ethernet0:\n\n   Media State . . . . . . . . . . . : Media disconnected"; }
@@ -350,6 +351,7 @@ export function hostRun(lab, h, line) {
     if (c === "nc") return p.ok ? `Connection to ${host} ${port} port [tcp/*] succeeded!` : `nc: connect to ${host} port ${port} (tcp) failed: ${p.drop && p.drop.refused ? "Connection refused" : "Connection timed out"}`;
     return `ComputerName     : ${host}\nRemoteAddress    : ${intToIp(r.ip)}\nRemotePort       : ${port}\nInterfaceAlias   : Ethernet0\nSourceAddress    : ${intToIp(h.ip() || 0)}\nTcpTestSucceeded : ${p.ok ? "True" : "False"}`;
   }
+  if (c === "login") return lab.hostLogin ? lab.hostLogin(h, t.slice(1)) : "No authentication page here.";
   if (c === "forticlient" || c === "fortivpn") return lab.forticlient ? lab.forticlient(h, t.slice(1)) : "FortiClient is not installed.";
   if (c === "ss" || c === "netstat") return [...h.services].filter((s) => s.startsWith("tcp/")).map((s) => `LISTEN 0 511 0.0.0.0:${s.slice(4)} 0.0.0.0:*`).join("\n") || "(no listening ports)";
   if (c === "hostname") return h.hostname;
@@ -402,6 +404,12 @@ function hostCurl(lab, h, args) {
   const r = lab.resolve(h.id, host);
   if (r.err) return `curl: (6) Could not resolve host: ${host}`;
   const p = lab.probe(h.id, { dst: r.ip, proto: 6, dport: port });
+  if (!p.ok && p.drop && p.drop.auth && (port === 80 || port === 443)) {
+    // identity-based policy: the FortiGate answers with its authentication page
+    h.authPending = { fg: p.drop.auth.fg, policy: p.drop.auth.policy };
+    const portal = `${intToIp(p.drop.auth.portal)}:${scheme === "https" ? 1003 : 1000}`;
+    return `HTTP/1.1 303 See Other\nLocation: ${scheme === "https" ? "https" : "http"}://${portal}/fgtauth?0a1b2c3d4e5f6789\n${head ? "" : `\n<html><head><title>Firewall Authentication</title></head><body><h2>Authentication Required</h2><p>Please enter your username and password to continue.</p><form>Username: ____  Password: ____  [Continue]</form></body></html>\n(Type: login <user> <password>)`}`;
+  }
   if (!p.ok) {
     if (p.drop && p.drop.refused) return `curl: (7) Failed to connect to ${host} port ${port} after 23 ms: Couldn't connect to server`;
     return `curl: (28) Failed to connect to ${host} port ${port} after 21003 ms: Timeout was reached`;

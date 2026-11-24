@@ -1,0 +1,66 @@
+id: U1.01
+track: fortigate
+modules: [M4.06]
+tier: 1
+order: 20
+kind: project
+title: A local account for the ERP vendor
+customer: Andes Logistics
+par: 25
+skills: [local users, user groups, identity-based policy, captive portal]
+brief: |
+  **Change 2026-1240.** The ERP vendor sends an engineer to HQ once a month. He works from **HQ-PC** and needs **SSH to
+  ERP-SRV (10.20.40.20)**, and nothing else on the server segment. He has no Active Directory account, so Andes wants a
+  local FortiGate account for him: `sap-vendor`, password `Vend0r.SAP26`.
+
+  Everyone else on the LAN keeps using the Internet without logging in.
+topology: {use: andes-id}
+tasks:
+  - "Local user sap-vendor (password Vend0r.SAP26) in a firewall user group ERP-Vendors."
+  - "A policy HQ LAN → ERP-SRV for SSH that only lets ERP-Vendors through."
+  - "From HQ-PC, try `curl https://erp.andes.local`, log in with `login sap-vendor Vend0r.SAP26`, then `tnc 10.20.40.20 -port 22`."
+checks:
+  - text: "After logging in as sap-vendor, HQ-PC reaches SSH on the ERP"
+    probe: {from: HQ-PC, to: 10.20.40.20, proto: tcp, port: 22, as: [sap-vendor, Vend0r.SAP26]}
+  - text: "Without logging in, SSH to the ERP is blocked"
+    probe: {from: HQ-PC, to: 10.20.40.20, proto: tcp, port: 22, fresh: true, expect: fail}
+  - text: "The vendor account opens nothing else on the server segment"
+    probe: {from: HQ-PC, to: 10.20.40.20, proto: tcp, port: 1433, as: [sap-vendor, Vend0r.SAP26], expect: fail}
+  - text: "A wrong password is refused"
+    login: {from: HQ-PC, user: sap-vendor, pass: "vendor123", expect: fail}
+  - text: "Staff still browse the Internet without logging in"
+    probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443, fresh: true}
+hints:
+  - "`config user local` / `edit sap-vendor` / `set type password` / `set passwd Vend0r.SAP26`, then `config user group` / `edit ERP-Vendors` / `set member sap-vendor`."
+  - "The policy is a normal port2 → port4 policy for SSH to ERP-SRV, plus `set groups ERP-Vendors`. Unauthenticated traffic doesn't match it, so it falls through to the implicit deny."
+solution:
+  FGT-BOG: |
+    config user local
+    edit sap-vendor
+    set type password
+    set passwd Vend0r.SAP26
+    next
+    end
+    config user group
+    edit ERP-Vendors
+    set member sap-vendor
+    next
+    end
+    config firewall policy
+    edit 3
+    set name "Vendor-ERP-SSH"
+    set srcintf port2
+    set dstintf port4
+    set srcaddr HQ-LAN
+    set dstaddr ERP-SRV
+    set action accept
+    set schedule always
+    set service SSH
+    set groups ERP-Vendors
+    next
+    end
+explain: |
+  An identity-based policy matches only traffic from a source IP with an authenticated user in its groups. Everyone
+  else falls through to the next policies, which is why the Internet keeps working without a login. SSH can't show a
+  login page, so the vendor authenticates once over HTTP(S) (the FortiGate redirects to its portal on port 1000/1003),
+  and from then on his IP is in `diagnose firewall auth list` until the auth timeout.

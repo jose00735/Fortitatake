@@ -98,6 +98,15 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.6.2 adds (identity)
+
+- `auth.js`: directory servers are lab hosts with a `directory:` spec (users, groups, LDAP bind account and TLS requirements, NPS RADIUS clients and secret, FSSO collector agent with monitored groups and logons). LDAP (simple/anonymous/regular binds, cnid, DN, LDAPS/STARTTLS, server-identity-check against the certificate name, FQDN servers), RADIUS (client IP, shared secret, Fortinet-Group-Name groups, NPS policy), local users, `user group` with `match` entries, FSSO agents and `fsso-service` groups.
+- Identity-based policies (`groups`, `users`): unauthenticated traffic falls through (auth-on-demand implicitly); if nothing else matches, HTTP/HTTPS gets the captive portal and hosts log in with `login <user> <password>`.
+- Diagnostics: `diagnose test authserver ldap|radius`, `diagnose debug application fnbamd -1`, `diagnose firewall auth list|clear`, `diagnose debug authd fsso server-status|list`.
+- Grader: `login`, `authserver`, `fsso` checks; probes take `as: [user, password]` or `fresh: true`. Part events can change the directory (`directory:`).
+- Topology `andes-id` (DC-01 with AD/NPS/FSSO, servers segment on port4, FIN-PC).
+- Labs: U1.01, U2.01 (3 parts), U2.02, U2.03, U4.01–U4.04. Modules: M4.06 Authentication, M3.04 Identity and access.
+
 ### What v0.6.1 adds (labs in sorties)
 
 - Every lab carries `modules:` (curriculum ids it teaches; required by `build_labs.py`).

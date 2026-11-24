@@ -1,0 +1,68 @@
+id: U2.03
+track: fortigate
+modules: [M4.06, M3.04]
+tier: 2
+order: 42
+kind: project
+title: "No more login pages: FSSO with the collector agent"
+customer: Andes Logistics
+par: 45
+skills: [FSSO, collector agent, fsso-service groups, transparent identity]
+brief: |
+  **SOW 2026-131, identity phase (part 3).** Finance complains about typing their password into the FortiGate page every
+  morning. Andes installed the **FSSO collector agent** on DC-01 (port 8000, password `FSSO-Andes!`) and set it to
+  monitor the Finance, Staff and Contractors groups. It already sees Windows logons: jperez on FIN-PC, mrojas on HQ-PC.
+
+  Replace the Finance login with FSSO: Finance users reach the ERP over HTTPS the moment they log on to Windows.
+topology:
+  use: andes-id
+tasks:
+  - "FSSO agent CA-DC01 to DC-01 on the FortiGate; check it with `diagnose debug authd fsso server-status` and `diagnose debug authd fsso list`."
+  - "An FSSO group Finance-SSO with the Finance group the agent sends."
+  - "Policy HQ LAN → ERP-SRV for HTTPS, for Finance-SSO only."
+checks:
+  - text: "The collector agent is connected"
+    fsso: {dev: FGT-BOG}
+  - text: "jperez on FIN-PC reaches the ERP with no login page"
+    probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, fresh: true}
+  - text: "mrojas on HQ-PC (Staff) doesn't"
+    probe: {from: HQ-PC, to: 10.20.40.20, proto: tcp, port: 443, fresh: true, expect: fail}
+  - text: "You checked the logon list"
+    ran: {dev: FGT-BOG, cmd: "authd fsso (list|server)", fail: "Look at what the agent sends: `diagnose debug authd fsso list`."}
+hints:
+  - "`config user fsso` / `edit CA-DC01` / `set server 10.20.40.10` / `set password FSSO-Andes!`. Once it connects, the monitored groups exist on the FortiGate (Tab completes them in `set member`)."
+  - "`config user group` / `edit Finance-SSO` / `set group-type fsso-service` / `set member \"CN=FINANCE,OU=GROUPS,DC=ANDES,DC=LOCAL\"`, then `set groups Finance-SSO` on the policy."
+solution:
+  FGT-BOG: |
+    config user fsso
+    edit CA-DC01
+    set server 10.20.40.10
+    set password FSSO-Andes!
+    next
+    end
+    diagnose debug authd fsso server-status
+    diagnose debug authd fsso list
+    config user group
+    edit Finance-SSO
+    set group-type fsso-service
+    set member "CN=FINANCE,OU=GROUPS,DC=ANDES,DC=LOCAL"
+    next
+    end
+    config firewall policy
+    edit 3
+    set name "Finance-ERP-SSO"
+    set srcintf port2
+    set dstintf port4
+    set srcaddr HQ-LAN
+    set dstaddr ERP-SRV
+    set action accept
+    set schedule always
+    set service HTTPS
+    set groups Finance-SSO
+    next
+    end
+explain: |
+  The collector agent reads logon events from the domain controllers and sends the FortiGate IP-to-user-and-group
+  mappings for the groups it monitors. An `fsso-service` group holds those AD groups; a policy with it matches traffic
+  from any IP the agent says belongs to a member. Nobody types a password, but identity is only as fresh as the logon
+  events: shared PCs, VPN IPs and NAT in front of users are the usual FSSO trouble spots.

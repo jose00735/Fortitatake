@@ -1,0 +1,139 @@
+id: U2.01
+track: fortigate
+modules: [M4.06, M3.04]
+tier: 2
+order: 40
+kind: project
+title: "Andes Logistics: ERP access by Active Directory group"
+customer: Andes Logistics
+par: 60
+skills: [LDAP server, regular bind, cnid, group matching, LDAPS]
+brief: |
+  **SOW 2026-131, identity phase.** The ERP web app (https://erp.andes.local, 10.20.40.20) must only be reachable by the
+  **Finance** AD group. Users log in with their Windows username (`jperez`, not "Juan Perez").
+
+  AD facts from the customer's sysadmin:
+  - Domain controller **DC-01**, 10.20.40.10 (dc01.andes.local), base DN `DC=andes,DC=local`.
+  - Read-only service account `CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local`, password `Sv-FGT.2026!`.
+  - Finance group: `CN=Finance,OU=Groups,DC=andes,DC=local`.
+  - Test users: **jperez** / `Andes.Fin26` (Finance), **mrojas** / `Andes.Ops26` (Staff only).
+topology: {use: andes-id}
+parts:
+  - id: a
+    title: Connect the FortiGate to AD
+    tasks:
+      - "LDAP server DC-LDAP pointing at DC-01, regular bind with the service account, searching the whole domain by Windows username."
+      - "Prove it with `diagnose test authserver ldap DC-LDAP jperez Andes.Fin26`."
+    checks:
+      - text: "DC-LDAP authenticates jperez and returns the Finance group"
+        authserver: {dev: FGT-BOG, kind: ldap, server: DC-LDAP, user: jperez, pass: Andes.Fin26, group: "CN=Finance,OU=Groups"}
+      - text: "The disabled ex-employee ccastro is refused"
+        authserver: {dev: FGT-BOG, kind: ldap, server: DC-LDAP, user: ccastro, pass: Old.Pass19, expect: fail}
+      - text: "You tested it from the CLI"
+        ran: {dev: FGT-BOG, cmd: "test authserver ldap", fail: "Prove the connection with `diagnose test authserver ldap DC-LDAP jperez Andes.Fin26` before building policies on it."}
+    hints:
+      - "Users type `jperez`: that's the sAMAccountName attribute, so `set cnid sAMAccountName`. With the default `cn` the search looks for cn=jperez and finds nothing."
+      - "`set type regular` binds as the service account (`set username` = its full DN, `set password`), then searches under `set dn DC=andes,DC=local`."
+    solution:
+      FGT-BOG: |
+        config user ldap
+        edit DC-LDAP
+        set server 10.20.40.10
+        set cnid sAMAccountName
+        set dn DC=andes,DC=local
+        set type regular
+        set username "CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local"
+        set password Sv-FGT.2026!
+        next
+        end
+        diagnose test authserver ldap DC-LDAP jperez Andes.Fin26
+    explain: |
+      AD doesn't allow anonymous searches, so `regular` binds as a service account first, searches for
+      `sAMAccountName=jperez` under the base DN, then binds as the user with the typed password. `simple` skips the search
+      and builds the DN as `cnid=user,dn`, which only works when every user sits directly in one OU and is named by that
+      attribute: never the case in a real AD.
+  - id: b
+    title: Finance only
+    tasks:
+      - "Firewall group Finance-FW: members from DC-LDAP, matched on the Finance group DN."
+      - "Policy HQ LAN → ERP-SRV, HTTPS, for Finance-FW only."
+      - "From FIN-PC: `curl https://erp.andes.local`, `login jperez Andes.Fin26`, curl again. From HQ-PC try mrojas."
+    checks:
+      - text: "jperez (Finance) reaches the ERP over HTTPS after logging in"
+        probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, as: [jperez, Andes.Fin26]}
+      - text: "mrojas (Staff) can't use it"
+        probe: {from: HQ-PC, to: 10.20.40.20, proto: tcp, port: 443, as: [mrojas, Andes.Ops26], expect: fail}
+      - text: "Nobody reaches it without logging in"
+        probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, fresh: true, expect: fail}
+      - text: "Finance gets HTTPS only, not the database port"
+        probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 1433, as: [jperez, Andes.Fin26], expect: fail}
+    hints:
+      - "`config user group` / `edit Finance-FW` / `set member DC-LDAP` / `config match` / `edit 1` / `set server-name DC-LDAP` / `set group-name \"CN=Finance,OU=Groups,DC=andes,DC=local\"`."
+      - "Without the match entry, any AD user who authenticates would be in Finance-FW."
+    solution:
+      FGT-BOG: |
+        config user group
+        edit Finance-FW
+        set member DC-LDAP
+        config match
+        edit 1
+        set server-name DC-LDAP
+        set group-name "CN=Finance,OU=Groups,DC=andes,DC=local"
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 3
+        set name "Finance-ERP"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        set groups Finance-FW
+        next
+        end
+    explain: |
+      The match entry is what turns "anyone in AD" into "members of Finance": FortiOS compares the memberOf DNs the
+      search returned with `group-name`, as a full DN. mrojas authenticates fine (good password) but isn't in a group
+      that any identity policy accepts, so her traffic falls through to the implicit deny.
+  - id: c
+    title: The LDAP hardening weekend
+    events:
+      - {directory: {dev: DC-01, ldap: {require_tls: true}}}
+    brief: |
+      **Monday, 7:40.** Over the weekend the customer applied their domain-controller hardening baseline: LDAP signing
+      and channel binding are now required. Finance can't log in to the ERP any more.
+    tasks:
+      - "Reproduce with `diagnose test authserver ldap DC-LDAP jperez Andes.Fin26` (and fnbamd debug if you want the detail)."
+      - "Move DC-LDAP to LDAPS with the server's identity still verified (the DC's certificate is issued to dc01.andes.local)."
+    checks:
+      - text: "DC-LDAP authenticates jperez again"
+        authserver: {dev: FGT-BOG, kind: ldap, server: DC-LDAP, user: jperez, pass: Andes.Fin26, group: "CN=Finance,OU=Groups"}
+      - text: "Finance reaches the ERP again"
+        probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, as: [jperez, Andes.Fin26]}
+      - text: "The session is encrypted (LDAPS or STARTTLS)"
+        config: {dev: FGT-BOG, path: user ldap, key: DC-LDAP, attr: secure, equals: "~starttls|ldaps", fail: "DC-LDAP still sends LDAP in clear text."}
+      - text: "The server certificate is still checked"
+        config: {dev: FGT-BOG, path: user ldap, key: DC-LDAP, attr: server-identity-check, equals: "~enable|^$", fail: "Turning off server-identity-check makes it work, but then any machine with a certificate can pretend to be the DC."}
+    hints:
+      - "`set secure ldaps` and `set port 636`. Then the test fails again: the FortiGate compares the certificate name with what you typed in `server`."
+      - "Use the name on the certificate: `set server dc01.andes.local` (the FortiGate resolves it), and keep `server-identity-check enable`. In production you'd also import the AD CA and set `ca-cert`."
+    solution:
+      FGT-BOG: |
+        config user ldap
+        edit DC-LDAP
+        set server dc01.andes.local
+        set secure ldaps
+        set port 636
+        next
+        end
+        diagnose test authserver ldap DC-LDAP jperez Andes.Fin26
+    explain: |
+      With signing required, a domain controller rejects simple binds over plain LDAP ("Strong(er) authentication
+      required"). LDAPS (636) or STARTTLS (389) fixes it. The FortiGate checks that the certificate matches the `server`
+      value, so point it at the DC's FQDN instead of disabling the check. Disabling `server-identity-check` is the
+      common shortcut, and it makes the bind vulnerable to an impostor.

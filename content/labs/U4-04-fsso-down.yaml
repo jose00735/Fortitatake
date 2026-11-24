@@ -1,0 +1,77 @@
+id: U4.04
+track: fortigate
+modules: [M4.06]
+tier: 4
+order: 23
+kind: ticket
+title: "\"Since the DC rebuild, Finance gets no ERP and no login page\""
+customer: Andes Logistics
+par: 20
+skills: [FSSO collector agent, server-status, logon list]
+brief: |
+  **Ticket 7812, priority 1.** DC-01 was rebuilt over the weekend (same IP, same name). The collector agent was
+  reinstalled by the AD team. Since then Finance can't reach the ERP. FSSO users never see a login page, so they're
+  stuck. The AD team says the new agent password is `FSSO-Andes-2027`.
+topology:
+  use: andes-id
+  devices:
+    FGT-BOG:
+      config: |
+        config user fsso
+        edit CA-DC01
+        set server 10.20.40.10
+        set password FSSO-Andes!
+        next
+        end
+        config user adgrp
+        edit "CN=FINANCE,OU=GROUPS,DC=ANDES,DC=LOCAL"
+        set server-name CA-DC01
+        next
+        end
+        config user group
+        edit Finance-SSO
+        set group-type fsso-service
+        set member "CN=FINANCE,OU=GROUPS,DC=ANDES,DC=LOCAL"
+        next
+        end
+        config firewall policy
+        edit 3
+        set name "Finance-ERP-SSO"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        set groups Finance-SSO
+        next
+        end
+events:
+  - {directory: {dev: DC-01, fsso: {password: "FSSO-Andes-2027"}}}
+tasks:
+  - "Check the agent (`diagnose debug authd fsso server-status`) and the logon list."
+  - "Fix it so jperez on FIN-PC reaches the ERP again with no login."
+  - "Answer the root cause."
+checks:
+  - text: "The collector agent is connected"
+    fsso: {dev: FGT-BOG}
+  - text: "jperez on FIN-PC reaches the ERP"
+    probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, fresh: true}
+  - text: "Root cause"
+    answer: {accept: ["~password|agent|collector"], sample: "The reinstalled collector agent has a new password; the FortiGate still uses the old one, so FSSO is disconnected", hint: "What does server-status say about CA-DC01?", why: "The FortiGate authenticates to the collector agent with a shared password. The reinstall set a new one, the connection fails, the logon list is empty, and no traffic matches the FSSO group."}
+hints:
+  - "`diagnose debug authd fsso server-status` shows CA-DC01 disconnected, and the logon list is empty."
+  - "`config user fsso` / `edit CA-DC01` / `set password FSSO-Andes-2027`."
+solution:
+  FGT-BOG: |
+    diagnose debug authd fsso server-status
+    config user fsso
+    edit CA-DC01
+    set password FSSO-Andes-2027
+    next
+    end
+explain: |
+  With FSSO, "no identity" first means "is the agent connected?", then "does the logon list have this IP?", then "is
+  the user's group one the agent monitors and the fsso-service group contains?". Reinstalling an agent resets its
+  password and its monitored groups, so put both in the DC rebuild runbook.

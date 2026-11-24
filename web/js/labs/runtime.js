@@ -6,6 +6,7 @@ import "./sdwan.js";
 import "./ha.js";
 import "./utm.js";
 import "./mgmt.js";
+import "./auth.js";
 import { hostRun, routerRun } from "./diag.js";
 import { runChecks } from "./grader.js";
 import { FortiGate } from "./fgt.js";
@@ -46,6 +47,14 @@ export class LabRun {
         if (changed) { this.lab.dirty(); changed = false; }
         for (const t of ev.traffic) for (let i = 0; i < (t.count || 1); i++) this.lab.probe(t.from, { dst: ipToInt(t.to), proto: { icmp: 1, tcp: 6, udp: 17 }[t.proto || "tcp"], dport: t.port || 0 });
         for (const d of this.lab.devices.values()) if (d.async) d.async.length = 0;
+      }
+      if (ev.directory) {
+        const d = this.lab.dev(ev.directory.dev), D = d && d.spec.directory;
+        if (D) {
+          for (const k of ["ldap", "radius", "fsso"]) if (ev.directory[k]) D[k] = { ...(D[k] || {}), ...ev.directory[k] };
+          if (ev.directory.users) for (const u of ev.directory.users) { const x = (D.users || []).find((y) => y.sam === u.sam); if (x) Object.assign(x, u); else (D.users = D.users || []).push(u); }
+          D._norm = null; changed = true;
+        }
       }
       if (ev.dns) { for (const [n, ip] of Object.entries(ev.dns)) this.lab.names.set(n.toLowerCase(), ipToInt(ip)); changed = true; }
     }

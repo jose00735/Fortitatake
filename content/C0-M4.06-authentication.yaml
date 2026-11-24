@@ -1,0 +1,470 @@
+id: M4.06
+title: "Authentication on FortiGate: users, LDAP, RADIUS and FSSO"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 140
+est_sessions: 1
+objectives:
+  - Pick the right user type (local, remote, FSSO, PKI, SAML) for a requirement
+  - Configure an LDAP server for Active Directory (regular bind, cnid, DN, LDAPS) and prove it from the CLI
+  - Configure RADIUS with group matching through Fortinet-Group-Name
+  - Build identity-based policies and explain what unauthenticated traffic does
+  - Troubleshoot authentication with diagnose test authserver, fnbamd debug, the auth list and FSSO status
+sources:
+  - "FortiOS 8.0.2 Admin Guide: User & Authentication overview and user types (pp. 3905–3909)"
+  - "FortiOS 8.0.2 Admin Guide: Authentication settings, timeout and auth-on-demand (pp. 3916–3920)"
+  - "FortiOS 8.0.2 Admin Guide: LDAP servers, bind types, nested groups (pp. 3930–3947)"
+  - "FortiOS 8.0.2 Admin Guide: RADIUS servers and VSAs (pp. 3948–3960), RADSEC (p. 3987)"
+  - "FortiOS 8.0.2 Admin Guide: FSSO components and settings (pp. 4093–4110)"
+
+units:
+  - id: M4.06.u1
+    title: Who is the user? Types, groups and identity policies
+    tier: 1
+    est_min: 12
+    body: |
+      FortiOS controls access **by user group**: users go into groups, and policies, VPN portals, SSIDs, ZTNA and remote
+      admin accounts reference the groups (p. 3909).
+
+      | User type | Who checks the password | Typical use |
+      |---|---|---|
+      | Local | The FortiGate's own database | Small sites, break-glass and vendor accounts |
+      | Remote | LDAP, RADIUS, TACACS+ or FortiNAC | Corporate users from AD or a NAC |
+      | FSSO | Nobody at the FortiGate: Windows logon events | Transparent identity on AD networks |
+      | PKI / peer | Client certificate | Machines, VPN with certificates |
+      | SAML | An IdP (Entra ID, FortiAuthenticator, Okta…) | Cloud identity, MFA at the IdP |
+
+      User types and their authentication methods are on p. 3906.
+
+      ## Identity-based policies
+
+      Add `set groups` (or `users`) to a firewall policy and it only matches traffic from a source IP that has an
+      **authenticated user in those groups**. With the default `auth-on-demand implicitly`, unauthenticated traffic
+      that doesn't match keeps going down the policy list; `always` forces the login whenever an identity policy could
+      match (p. 3920).
+
+      Users authenticate through the **captive portal**: an HTTP or HTTPS request that hits an identity policy is
+      redirected to the FortiGate's authentication page (port 1003 for HTTPS by default, p. 4001). SSH, RDP or a
+      database connection can't show a login page, so the user logs in once over the web first.
+
+      ## How long does the login last?
+
+      `config user setting` → `auth-timeout` (minutes, **default 5**) and `auth-timeout-type`: `idle-timeout`,
+      `hard-timeout` or `new-session` (p. 3917).
+
+      :::cli
+      config user setting
+          set auth-timeout-type idle-timeout
+          set auth-timeout 480
+      end
+      :::
+
+      :::recall
+      Q: An identity policy for Finance sits above a general Internet policy. A Staff user who never logged in browses. What happens with the default auth-on-demand?
+      A: The Finance policy doesn't match an unauthenticated IP, so the traffic falls through to the general policy and works.
+      :::
+
+      :::pitfall
+      Identity is tied to the **source IP**. Anything that hides the user's real IP (a proxy, a Citrix server, NAT in
+      front of the FortiGate) breaks per-user policies, unless you use the matching agent (TS agent for Citrix) or
+      explicit proxy authentication.
+      :::
+  - id: M4.06.u2
+    title: LDAP to Active Directory
+    tier: 2
+    est_min: 15
+    body: |
+      ## The settings that matter (p. 3931)
+
+      | Setting | What it does | AD value |
+      |---|---|---|
+      | `server` | DC address or FQDN | Use the FQDN when using LDAPS |
+      | `cnid` | Attribute the username is matched against (case sensitive) | `sAMAccountName` (users type `jperez`) |
+      | `dn` | Where the search starts | `DC=andes,DC=local` for the whole domain |
+      | `type` | Bind type | `regular` |
+      | `username` / `password` | The service account for a regular bind | Full DN of a read-only account |
+      | `secure` | `disable`, `starttls` or `ldaps` | `ldaps` (port 636) or `starttls` (389) |
+
+      ## Bind types (p. 3931)
+
+      - **Simple:** binds as `cnid=user,dn` with the typed password. It **doesn't search** the subtree, so it only works
+        when users sit directly in that one container and are named by that attribute.
+      - **Anonymous:** binds without credentials and searches from the DN down. Many directories (AD included) refuse
+        it.
+      - **Regular:** binds as a service account, searches for the user, then binds as the user with the typed password.
+        This is the AD choice.
+
+      Fortinet's own guidance: secure the connection with **LDAPS**, and give the bind account **least privilege**,
+      never a domain admin (p. 3905).
+
+      ## Groups
+
+      The search returns the user's `memberOf` DNs. In a user group, `config match` / `set group-name` compares them
+      **as full DNs**. Nested groups need `set search-type recursive`: without it only direct memberships come back
+      (pp. 3934–3935).
+
+      ## Prove it before you build on it
+
+      :::cli
+      diagnose test authserver ldap DC-LDAP jperez Andes.Fin26
+      authenticate 'jperez' against 'DC-LDAP' succeeded!
+      Group membership(s) - CN=Finance,OU=Groups,DC=andes,DC=local
+                            CN=Staff,OU=Groups,DC=andes,DC=local
+      :::
+
+      :::why
+      Q: Why does a regular bind need a service account at all, if the user types a password?
+      A: The FortiGate must first find the user's DN by searching for sAMAccountName=jperez, and AD doesn't allow anonymous searches. The service account does the search; the user's own bind then checks the password.
+      :::
+
+      :::pitfall
+      Domain-controller hardening that requires LDAP signing or channel binding breaks plain LDAP binds overnight.
+      Move to LDAPS or STARTTLS, and point `server` at the name on the DC's certificate instead of turning off
+      `server-identity-check`.
+      :::
+  - id: M4.06.u3
+    title: RADIUS, VSAs and FSSO
+    tier: 2
+    est_min: 14
+    body: |
+      ## RADIUS
+
+      Typical in front of NPS, FortiAuthenticator or a NAC. The FortiGate sends an Access-Request; the server answers
+      Accept or Reject. Two things identify the FortiGate to the server: its **source IP** (a RADIUS client entry) and
+      the **shared secret**.
+
+      - NPS **silently drops** requests from an IP that isn't a client: you see a timeout.
+      - A wrong secret makes the server decrypt a garbage password: you see a **reject**.
+
+      To place users in groups, the server returns the **Fortinet-Group-Name** vendor-specific attribute (Fortinet
+      vendor ID 12356, attribute 1, a string), and the user group's `match` entry compares it (pp. 3956, 3959).
+      RADIUS returns plain names (`Contractors`), not DNs.
+
+      Fortinet suggests **RADSEC** (RADIUS over TLS) to secure RADIUS connections (pp. 3905, 3987).
+
+      :::cli
+      diagnose test authserver radius NPS pap lgomez Contr4t1sta!
+      :::
+
+      ## FSSO
+
+      Single sign-on for AD: users never see a login page. The components (p. 4094):
+
+      - **DC agent** on each domain controller, in DC agent mode: watches logon events and sends them to the collector.
+      - **Collector agent (CA):** gathers logons, can also **poll the DCs** so DC agents aren't needed, does DNS
+        lookups, group checks and workstation checks, and updates the FortiGates (p. 4095).
+      - **TS agent** for Citrix/terminal servers (many users behind one IP), and an eDirectory agent for Novell.
+      - FortiAuthenticator can also collect logon events.
+
+      On the FortiGate: `config user fsso` (server, port 8000 by default, password), then an `fsso-service` user group
+      whose members are the AD groups the agent monitors. `logon-timeout` keeps known logons for a while (default
+      5 minutes) if the agent goes down (p. 4102).
+
+      :::recall
+      Q: Contractors get "timeout" from RADIUS, not "rejected". What do you check first?
+      A: That the server has a RADIUS client entry for the IP the FortiGate actually sources from (egress interface or source-ip).
+      :::
+  - id: M4.06.u4
+    title: Troubleshooting authentication like a PS engineer
+    tier: 3
+    est_min: 12
+    body: |
+      Split every problem into **authentication** (is the password accepted?) and **authorization** (does the user land
+      in the group the policy wants?).
+
+      | Step | Command | What it tells you |
+      |---|---|---|
+      | 1 | `diagnose test authserver ldap|radius …` | Server reachable, bind OK, password OK, which groups come back |
+      | 2 | `diagnose debug application fnbamd -1` + `diagnose debug enable` | Live trace of the auth daemon: search filter, bind result, group matching |
+      | 3 | `diagnose firewall auth list` | Which IPs have an authenticated user, in which group, for how long |
+      | 4 | `diagnose debug authd fsso server-status` / `… fsso list` | Is the collector agent connected, which logons it sent |
+      | 5 | `diagnose debug flow` | Which policy the traffic actually matched |
+
+      ## Patterns
+
+      - **Everyone fails at once:** something shared broke: the bind account's password, the DC, TLS requirements.
+      - **One user fails:** their password, account state, or group.
+      - **Login succeeds, access still fails:** authorization: a group DN mismatch, a missing match entry, or the
+        traffic matching another policy.
+      - **Timeouts:** routing or source IP to the server, or a RADIUS client entry.
+
+      :::ps
+      In a cutover, test with `diagnose test authserver` and two real accounts (one that should get in, one that
+      shouldn't) before the users arrive. Put the service account in the customer's password-rotation runbook, so the
+      next rotation doesn't take the firewall login down with it.
+      :::
+
+cards:
+  - {id: M4.06.c01, unit: M4.06.u1, tier: 1, front: "What does FortiOS use to grant access to users: users or user groups?", back: "User groups. Policies, VPN portals, SSIDs and remote admins reference groups (p. 3909)."}
+  - {id: M4.06.c02, unit: M4.06.u1, tier: 1, front: "Default firewall authentication timeout?", back: "5 minutes (`config user setting` → `auth-timeout`)."}
+  - {id: M4.06.c03, unit: M4.06.u1, tier: 2, front: "auth-timeout-type options", back: "idle-timeout, hard-timeout, new-session."}
+  - {id: M4.06.c04, unit: M4.06.u1, tier: 2, front: "auth-on-demand: default and alternative", back: "`implicitly` (default): unauthenticated traffic falls through to later policies. `always`: force authentication when an identity policy could match."}
+  - {id: M4.06.c05, unit: M4.06.u1, tier: 1, front: "Default HTTPS captive portal port for firewall authentication", back: "1003."}
+  - {id: M4.06.c06, unit: M4.06.u2, tier: 1, front: "cnid for AD users who log in with their Windows username", back: "sAMAccountName."}
+  - {id: M4.06.c07, unit: M4.06.u2, tier: 2, front: "LDAP bind types and which one AD needs", back: "Simple (no search), Anonymous (often refused), Regular (service account search, then user bind). AD: Regular."}
+  - {id: M4.06.c08, unit: M4.06.u2, tier: 2, front: "How does an LDAP group match compare groups?", back: "As full DNs, e.g. CN=Finance,OU=Groups,DC=andes,DC=local."}
+  - {id: M4.06.c09, unit: M4.06.u2, tier: 3, front: "Nested AD groups don't show up in the test. Fix?", back: "`set search-type recursive` on the LDAP server."}
+  - {id: M4.06.c10, unit: M4.06.u2, tier: 2, front: "LDAPS port, and the safe way to keep server-identity-check on", back: "636. Point `server` at the FQDN on the DC certificate (and import the CA)."}
+  - {id: M4.06.c11, unit: M4.06.u3, tier: 2, front: "RADIUS VSA FortiOS uses for group membership", back: "Fortinet-Group-Name (vendor ID 12356, attribute 1, string)."}
+  - {id: M4.06.c12, unit: M4.06.u3, tier: 2, front: "RADIUS timeout vs reject: usual causes", back: "Timeout: server doesn't know the client IP (or no route). Reject: wrong password, wrong shared secret, or the server's policy says no."}
+  - {id: M4.06.c13, unit: M4.06.u3, tier: 2, front: "What does the FSSO collector agent do?", back: "Collects logons (from DC agents or by polling DCs), does DNS, group and workstation checks, and updates the FortiGates."}
+  - {id: M4.06.c14, unit: M4.06.u3, tier: 1, front: "Default FSSO collector agent port on the FortiGate side", back: "8000."}
+  - {id: M4.06.c15, unit: M4.06.u3, tier: 3, front: "Which FSSO agent for a Citrix server where many users share one IP?", back: "The TS (terminal server) agent."}
+  - {id: M4.06.c16, unit: M4.06.u4, tier: 2, front: "Command to test an LDAP server and see the groups returned", back: "`diagnose test authserver ldap <server> <user> <password>`"}
+  - {id: M4.06.c17, unit: M4.06.u4, tier: 2, front: "Command to see authenticated firewall users", back: "`diagnose firewall auth list`"}
+  - {id: M4.06.c18, unit: M4.06.u4, tier: 3, front: "Daemon to debug for LDAP/RADIUS authentication", back: "fnbamd: `diagnose debug application fnbamd -1`, then `diagnose debug enable`."}
+
+quiz:
+  - id: M4.06.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Users log in to the FortiGate portal as 'jperez'. The LDAP server has cnid 'cn'. What happens?"
+    options:
+      - {id: a, text: "The search for cn=jperez finds nothing, so login fails", correct: true}
+      - {id: b, text: "It works, because cn and sAMAccountName are the same in AD", why_wrong: "cn is usually the full name (Juan Perez)."}
+      - {id: c, text: "It works only with LDAPS", why_wrong: "Encryption doesn't change which attribute is searched."}
+      - {id: d, text: "The FortiGate falls back to local users", why_wrong: "There's no such fallback."}
+    explanation: "cnid is the attribute matched against the typed username. Windows usernames live in sAMAccountName."
+    source: "FortiOS 8.0.2 Admin Guide p. 3931"
+  - id: M4.06.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Policy 3 allows Finance-FW to the ERP; policy 4 allows HQ-LAN to the Internet without groups. A Staff user who never logged in browses the Internet. Default settings. Result?"
+    options:
+      - {id: a, text: "Policy 4 matches; no login page", correct: true}
+      - {id: b, text: "The user gets the login page first", why_wrong: "That's auth-on-demand always."}
+      - {id: c, text: "Implicit deny", why_wrong: "The traffic matches policy 4."}
+      - {id: d, text: "Policy 3 matches and logs the user as guest", why_wrong: "Identity policies don't match unauthenticated IPs."}
+    explanation: "With auth-on-demand implicitly, unauthenticated traffic falls through identity policies to the next match."
+    source: "FortiOS 8.0.2 Admin Guide p. 3920"
+  - id: M4.06.q03
+    type: multi
+    tier: 2
+    stem: "Which are true about LDAP bind types? Select all that apply."
+    options:
+      - {id: a, text: "Simple doesn't search the subtree", correct: true}
+      - {id: b, text: "Regular uses a bind account to search, then binds as the user", correct: true}
+      - {id: c, text: "Anonymous is refused by many directories", correct: true}
+      - {id: d, text: "Simple is the recommended choice for AD", why_wrong: "It only works when all users sit in one container."}
+    explanation: "Regular is the AD choice; simple builds the DN directly; anonymous is often refused."
+    source: "FortiOS 8.0.2 Admin Guide p. 3931"
+  - id: M4.06.q04
+    type: single
+    tier: 2
+    stem: "diagnose test authserver radius NPS pap lgomez ... → 'failed(no response)'. NPS is running. Most likely cause?"
+    options:
+      - {id: a, text: "NPS has no RADIUS client entry for the IP the FortiGate sources from", correct: true}
+      - {id: b, text: "Wrong password", why_wrong: "That produces a reject, not silence."}
+      - {id: c, text: "Wrong shared secret", why_wrong: "Usually a reject: the password decrypts to garbage."}
+      - {id: d, text: "Missing Fortinet-Group-Name", why_wrong: "That affects group matching after an Accept."}
+    explanation: "Unknown clients are dropped silently. Check the egress interface or source-ip against the client list."
+  - id: M4.06.q05
+    type: order
+    tier: 3
+    stem: "Order the steps of a regular LDAP bind authentication."
+    items: ["FortiGate binds as the service account", "Searches for cnid=<user> under the DN", "Binds as the found user DN with the typed password", "Reads memberOf and compares with the group match"]
+    explanation: "Search first (service account), then verify the password with the user's own bind, then authorize."
+  - id: M4.06.q06
+    type: single
+    tier: 2
+    stem: "Which RADIUS attribute does FortiOS read to put a user in a group?"
+    options:
+      - {id: a, text: "Fortinet-Group-Name", correct: true}
+      - {id: b, text: "Fortinet-Access-Profile", why_wrong: "That's for admin profiles."}
+      - {id: c, text: "Class", why_wrong: "Not the group VSA FortiOS documents."}
+      - {id: d, text: "Filter-Id", why_wrong: "Not used for FortiOS groups."}
+    explanation: "Vendor 12356, attribute 1."
+    source: "FortiOS 8.0.2 Admin Guide p. 3956"
+  - id: M4.06.q07
+    type: multi
+    tier: 3
+    stem: "Finance can log in (password accepted) but the ERP still times out. Plausible causes? Select all that apply."
+    options:
+      - {id: a, text: "The group match DN doesn't match the user's memberOf", correct: true}
+      - {id: b, text: "The ERP traffic matches another policy above the identity policy", correct: true}
+      - {id: c, text: "Nested group without search-type recursive", correct: true}
+      - {id: d, text: "The bind account password expired", why_wrong: "Then the login itself would fail."}
+    explanation: "Authentication passed; look at authorization and policy matching."
+  - id: M4.06.q08
+    type: text
+    tier: 2
+    stem: "Which CLI command lists the IPs with an authenticated firewall user?"
+    accept: ["diagnose firewall auth list", "diag firewall auth list", "diagnose firewall auth l"]
+    explanation: "It shows user, group, server and expiry."
+  - id: M4.06.q09
+    type: single
+    tier: 2
+    stem: "With FSSO, who tells the FortiGate which user is at 10.20.10.60?"
+    options:
+      - {id: a, text: "The collector agent, from DC logon events or DC polling", correct: true}
+      - {id: b, text: "The user, through the captive portal", why_wrong: "FSSO is transparent."}
+      - {id: c, text: "The DHCP server", why_wrong: "DHCP doesn't know the user."}
+      - {id: d, text: "The LDAP server object on the FortiGate", why_wrong: "LDAP is optional for FSSO group lookups, not the source of logons."}
+    explanation: "The CA builds IP-to-user mappings and pushes them."
+    source: "FortiOS 8.0.2 Admin Guide pp. 4094–4095"
+  - id: M4.06.q10
+    type: numeric
+    tier: 1
+    stem: "Default FSSO logon-timeout in minutes (how long logons are kept when the agent is unreachable)?"
+    answer: 5
+    explanation: "Range 1–2880, default 5."
+    source: "FortiOS 8.0.2 Admin Guide p. 4102"
+
+labs:
+  - id: M4.06.lab1
+    title: AD login for the ERP, end to end
+    goal: "Connect a FortiGate to AD over LDAPS, create a Finance group and an identity policy, and prove it."
+    worked:
+      config: |
+        config user ldap
+            edit "DC-LDAP"
+                set server "dc01.andes.local"
+                set cnid "sAMAccountName"
+                set dn "DC=andes,DC=local"
+                set type regular
+                set username "CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local"
+                set password <service-account-password>
+                set secure ldaps
+                set port 636
+            next
+        end
+        diagnose test authserver ldap DC-LDAP jperez <password>
+        config user group
+            edit "Finance-FW"
+                set member "DC-LDAP"
+                config match
+                    edit 1
+                        set server-name "DC-LDAP"
+                        set group-name "CN=Finance,OU=Groups,DC=andes,DC=local"
+                    next
+                end
+            next
+        end
+        config firewall policy
+            edit 3
+                set srcintf "port2"
+                set dstintf "port4"
+                set srcaddr "HQ-LAN"
+                set dstaddr "ERP-SRV"
+                set service "HTTPS"
+                set action accept
+                set schedule "always"
+                set groups "Finance-FW"
+            next
+        end
+      notes:
+        - "Test with one user who should get in and one who shouldn't."
+        - "Read memberOf in the test output and copy the DN exactly into group-name."
+        - "Keep server-identity-check on: use the DC's FQDN."
+    faded:
+      template: |
+        config user ldap
+            edit "DC-LDAP"
+                set cnid "{{sAMAccountName}}"
+                set type {{regular}}
+                set secure {{ldaps}}
+            next
+        end
+        diagnose test authserver {{ldap}} DC-LDAP jperez <password>
+    solo:
+      prompt: "Write the four commands or settings you'd use to prove an AD login works end to end, one per line, using: test authserver, fnbamd, auth list, debug flow."
+      required: ["test authserver", "fnbamd", "auth list", "debug flow"]
+      solution: |
+        diagnose test authserver ldap DC-LDAP jperez <password>
+        diagnose debug application fnbamd -1
+        diagnose firewall auth list
+        diagnose debug flow trace start 10
+      notes: "Then test a user who must be refused."
+
+scenarios:
+  - id: M4.06.sc1
+    kind: situation
+    tier: 3
+    title: "\"Just disable the certificate check, it works\""
+    situation: |
+      During go-live, LDAPS fails with a certificate error because the LDAP server is set to the DC's IP. The customer's
+      admin says: "Disable server-identity-check, we're inside our own network."
+    ask: "What do you do and say?"
+    right_thinking:
+      - "Explain the risk: without the check, any host with a certificate can impersonate the DC and harvest passwords"
+      - "Offer the fix that keeps the check: use the FQDN on the certificate and import the AD CA"
+      - "If they still choose to disable it, record the risk acceptance in the change"
+    what: "A secure fix proposed in minutes, and the decision documented."
+    why: "PS engineers own the quality of what they leave behind."
+    how: ["Show the certificate subject", "Change server to the FQDN", "Import the CA", "Retest"]
+    model_answer: |
+      "We can make it work without lowering security. The certificate is issued to dc01.andes.local, and we're
+      connecting by IP, so the name check fails. If I point the FortiGate at the FQDN and import your AD CA, LDAPS works
+      with the check on. Turning it off means any machine with a certificate could pretend to be your DC and see every
+      password. If you still prefer to disable it today, I'll note it in the change record as an accepted risk."
+    best_way: "Keep the control, fix the name."
+    rubric: ["explains the risk in business terms", "offers the secure fix", "documents the decision"]
+  - id: M4.06.sc2
+    kind: raid
+    tier: 3
+    title: Monday morning, nobody can log in
+    situation: |
+      100 users fail firewall authentication since 7:00. The FortiGate config hasn't changed in a month. AD admins
+      rotated service-account passwords on Sunday.
+    ask: "Your first three moves?"
+    right_thinking:
+      - "Everyone at once points to something shared: the bind account or the DC"
+      - "diagnose test authserver with a known-good account; fnbamd debug for the bind result"
+      - "Update the bind password; add the account to the rotation runbook"
+    what: "Root cause in minutes, not a password reset storm."
+    why: "Pattern recognition saves hours."
+    how: ["test authserver", "fnbamd debug", "fix the bind", "runbook"]
+    model_answer: |
+      "If everyone fails at once, it isn't their passwords. I'd run diagnose test authserver with a test account and
+      the fnbamd debug: if the bind as svc-fortigate fails with invalid credentials, the rotation changed it. Update
+      the password on the FortiGate, retest, and ask the AD team to add this account to their rotation checklist."
+    best_way: "Shared failure → shared component."
+    rubric: ["recognizes the pattern", "uses the right tools", "prevents a repeat"]
+
+interview:
+  - id: M4.06.t01
+    stage: technical
+    question: "How would you integrate a FortiGate with Active Directory for user-based policies?"
+    testing: "LDAP vs FSSO judgement and correct settings"
+    framework: "Requirement → method → settings → test"
+    model_answer: |
+      "If users must log in explicitly, LDAP: regular bind with a least-privilege service account, cnid
+      sAMAccountName, the domain as the base DN, LDAPS. Then a user group matched on the AD group DN and identity
+      policies. If they want transparency, FSSO with the collector agent, ideally polling or DC agents on every DC,
+      and fsso-service groups. Either way I prove it with diagnose test authserver and two test users before go-live."
+    best_way: "Two options, the trade-off, and how you'd test."
+    target: "1:00"
+  - id: M4.06.t02
+    stage: technical
+    question: "Users authenticate fine but still can't reach the application. How do you troubleshoot?"
+    testing: "Authentication vs authorization"
+    framework: "Authn passed → authz → policy match"
+    model_answer: |
+      "If the password is accepted, I look at authorization. diagnose firewall auth list shows which group the user
+      landed in; the fnbamd debug shows whether group matching passed; diagnose test authserver lists the real group
+      DNs to compare with the match entry. Then debug flow shows which policy the traffic hits, in case another
+      policy matches first."
+    best_way: "Name the split, then the tools in order."
+    target: "0:45"
+  - id: M4.06.t03
+    stage: technical
+    question: "RADIUS authentication times out. What could it be?"
+    testing: "RADIUS mechanics"
+    framework: "Path → client entry → secret"
+    model_answer: |
+      "A timeout means no answer, so: is there a route from the FortiGate to the server on UDP 1812, and is the
+      FortiGate's source IP, the egress interface or source-ip, configured as a RADIUS client? NPS drops unknown
+      clients silently. A wrong secret or password usually gives a reject instead."
+    best_way: "Timeout vs reject is the key."
+    target: "0:35"
+
+field_reports:
+  - id: M4.06.fr1
+    title: Credentials are the front door
+    body: |
+      Stolen or guessed credentials are one of the most common ways attackers get in. A firewall that can tie every
+      session to a named user turns "an IP on the LAN" into "Juan from Finance", in policies and in the logs your SOC
+      reads. That's the business case for identity-based policies, and MFA on remote access is the second half of it.
+    source: "General industry knowledge; see the DBIR for current figures"

@@ -1,0 +1,82 @@
+id: U4.03
+track: fortigate
+modules: [M4.06]
+tier: 4
+order: 22
+kind: ticket
+title: "\"RADIUS times out, but NPS is up and the secret is right\""
+customer: Andes Logistics
+par: 25
+skills: [RADIUS clients, source-ip, local-out traffic]
+brief: |
+  **Ticket 7790, priority 2.** A partner configured contractor authentication against NPS last week and left. Contractors
+  have never been able to log in. The partner's handover note: *"NPS secret NPS-Andes-77 checked twice, NPS service is
+  running, port 1812 open on the DC. Probably a FortiGate bug."*
+
+  NPS has one RADIUS client entry: 10.20.40.1.
+topology:
+  use: andes-id
+  devices:
+    FGT-BOG:
+      config: |
+        config user radius
+        edit NPS
+        set server 10.20.40.10
+        set secret NPS-Andes-77
+        set source-ip 10.20.10.1
+        next
+        end
+        config user group
+        edit Contractors-FW
+        set member NPS
+        config match
+        edit 1
+        set server-name NPS
+        set group-name Contractors
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 1
+        set dstaddr none
+        next
+        edit 3
+        set name "Contractors-Web"
+        set srcintf port2
+        set dstintf port1
+        set srcaddr HQ-LAN
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service HTTP HTTPS DNS
+        set groups Contractors-FW
+        set nat enable
+        next
+        end
+tasks:
+  - "Reproduce with `diagnose test authserver radius NPS pap lgomez Contr4t1sta!`."
+  - "Find out why NPS never answers and fix it on the FortiGate (the customer won't touch NPS today)."
+  - "Answer the root cause."
+checks:
+  - text: "NPS authenticates lgomez"
+    authserver: {dev: FGT-BOG, kind: radius, server: NPS, user: lgomez, pass: "Contr4t1sta!", group: Contractors}
+  - text: "lgomez browses after logging in"
+    probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443, as: [lgomez, "Contr4t1sta!"]}
+  - text: "Root cause"
+    answer: {accept: ["~source|client|10\\.20\\.10\\.1|nas"], sample: "source-ip 10.20.10.1 makes requests come from an IP that isn't an NPS RADIUS client, so NPS drops them silently", hint: "Which IP does NPS see the request coming from?", why: "NPS discards requests from unknown clients without answering, so the FortiGate sees a timeout. The partner forced source-ip 10.20.10.1 (the LAN IP), but the client entry is 10.20.40.1."}
+hints:
+  - "A timeout (not a reject) from NPS usually means NPS doesn't know the client. `show user radius NPS` and look for anything that changes the source address."
+  - "`unset source-ip` (the FortiGate then uses port4, 10.20.40.1), or set it to 10.20.40.1."
+solution:
+  FGT-BOG: |
+    diagnose test authserver radius NPS pap lgomez Contr4t1sta!
+    config user radius
+    edit NPS
+    unset source-ip
+    next
+    end
+explain: |
+  RADIUS servers authenticate their clients by source IP plus shared secret. A request from an unknown IP is dropped
+  without a reply, which looks exactly like a firewall or a dead server. Check the IP the server sees: the egress
+  interface by default, or `source-ip` / `nas-ip` when someone set them.

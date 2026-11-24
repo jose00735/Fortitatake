@@ -6,7 +6,9 @@ const STRINGY = new Set(["string", "var-string", "user", "text"]);
 
 // Attributes that point at other objects: used for validation, completion, rename and delete checks.
 export const REFS = {
-  "firewall policy": { srcintf: "intf", dstintf: "intf", srcaddr: "addr", dstaddr: "daddr", service: "svc", schedule: "sched", poolname: "pool", "ssl-ssh-profile": "sslprof", "av-profile": "avprof", "webfilter-profile": "wfprof" },
+  "firewall policy": { srcintf: "intf", dstintf: "intf", srcaddr: "addr", dstaddr: "daddr", service: "svc", schedule: "sched", poolname: "pool", "ssl-ssh-profile": "sslprof", "av-profile": "avprof", "webfilter-profile": "wfprof", groups: "usergrp", users: "localuser" },
+  "user group": { member: "usermember" },
+  "user local": { "ldap-server": "ldapsrv", "radius-server": "radiussrv" },
   "router static": { device: "intfonly" },
   "router policy": { "input-device": "intfonly", "output-device": "intfonly" },
   "system dhcp server": { interface: "intfonly" },
@@ -141,6 +143,11 @@ export class FortiGate {
       case "sslprof": return names("firewall ssl-ssh-profile");
       case "avprof": return names("antivirus profile");
       case "wfprof": return names("webfilter profile");
+      case "usergrp": return names("user group");
+      case "localuser": return names("user local");
+      case "ldapsrv": return names("user ldap");
+      case "radiussrv": return names("user radius");
+      case "usermember": return [...names("user local"), ...names("user ldap"), ...names("user radius"), ...names("user adgrp"), ...(this.extraRefs ? this.extraRefs("adgrp") : [])];
       default: return [];
     }
   }

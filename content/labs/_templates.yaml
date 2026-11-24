@@ -905,3 +905,94 @@ andes-soc-live:
         set logtraffic all
         next
         end
+
+# ---------------------------------------------------------------------------
+# Andes HQ with Active Directory: DC-01 (LDAP/LDAPS, NPS RADIUS, FSSO collector agent) and the ERP
+# on a server segment behind port4, two staff PCs on the LAN. Internet and AD policies in place.
+andes-id:
+  extends: andes
+  dns: {dc01.andes.local: 10.20.40.10, erp.andes.local: 10.20.40.20}
+  remove_segments: [bog-lan]
+  devices:
+    ERP-SRV: {nic: {ip: 10.20.40.20/24, gw: 10.20.40.1}, services: [tcp/443, tcp/1433, tcp/22]}
+    HQ-PC: {hostname: HQ-PC-MROJAS}
+    FGT-BOG:
+      config: |
+        config system interface
+        edit port4
+        set ip 10.20.40.1/24
+        set allowaccess ping
+        set alias "SERVERS"
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+        config firewall address
+        edit HQ-LAN
+        set subnet 10.20.10.0 255.255.255.0
+        next
+        edit DC-01
+        set subnet 10.20.40.10 255.255.255.255
+        next
+        edit ERP-SRV
+        set subnet 10.20.40.20 255.255.255.255
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "HQ-Internet"
+        set srcintf port2
+        set dstintf port1
+        set srcaddr HQ-LAN
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        edit 2
+        set name "HQ-to-DC"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr DC-01
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+  add_devices:
+    - {id: FIN-PC, kind: host, os: windows, hostname: FIN-PC-JPEREZ, nic: {ip: 10.20.10.60/24, gw: 10.20.10.1, dns: [8.8.8.8]}}
+    - id: DC-01
+      kind: server
+      os: windows
+      hostname: DC01
+      nic: {ip: 10.20.40.10/24, gw: 10.20.40.1}
+      services: [tcp/389, tcp/636, udp/1812, udp/1813, tcp/8000, tcp/445, udp/53, tcp/88]
+      directory:
+        domain: andes.local
+        base: DC=andes,DC=local
+        ldap:
+          ports: [389, 636]
+          cert_name: dc01.andes.local
+          require_tls: false
+          bind: {dn: "CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local", pass: "Sv-FGT.2026!"}
+        radius: {secret: "NPS-Andes-77", clients: [10.20.40.1], groups: true}
+        fsso:
+          port: 8000
+          password: "FSSO-Andes!"
+          groups: [Finance, Staff, Contractors]
+          logons:
+            - {user: jperez, ip: 10.20.10.60, ws: FIN-PC-JPEREZ}
+            - {user: mrojas, ip: 10.20.10.50, ws: HQ-PC-MROJAS}
+        users:
+          - {sam: jperez, cn: Juan Perez, ou: "OU=Bogota,OU=Staff,DC=andes,DC=local", pass: "Andes.Fin26", groups: [Finance, Staff, VPN-Users]}
+          - {sam: mrojas, cn: Maria Rojas, ou: "OU=Bogota,OU=Staff,DC=andes,DC=local", pass: "Andes.Ops26", groups: [Staff]}
+          - {sam: lgomez, cn: Luis Gomez, ou: "OU=Contractors,DC=andes,DC=local", pass: "Contr4t1sta!", groups: [Contractors]}
+          - {sam: ccastro, cn: Carlos Castro, ou: "OU=Bogota,OU=Staff,DC=andes,DC=local", pass: "Old.Pass19", groups: [Finance, Staff], disabled: true}
+          - {sam: svc-fortigate, cn: svc-fortigate, ou: "OU=Service Accounts,DC=andes,DC=local", pass: "Sv-FGT.2026!", groups: []}
+  add_segments:
+    - {id: bog-lan, label: HQ LAN 10.20.10.0/24, members: ["FGT-BOG:port2", HQ-PC, FIN-PC]}
+    - {id: bog-srv, label: Servers 10.20.40.0/24, members: ["FGT-BOG:port4", DC-01, ERP-SRV]}
+  layout: {seg:bog-lan: [340, 425], HQ-PC: [285, 500], FIN-PC: [405, 500], seg:bog-srv: [90, 425], DC-01: [25, 500], ERP-SRV: [150, 500]}

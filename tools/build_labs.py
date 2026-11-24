@@ -13,7 +13,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACKS = {"fortigate", "fortimanager", "fortianalyzer", "fortiswitch", "fortisiem", "fortiedr", "secops", "integration", "sdwan", "vpn", "ha"}
 KINDS = {"project", "ticket", "drill", "capstone", "investigation"}
-CHECK_TYPES = {"probe", "config", "dhcp", "route", "ran", "backup", "answer", "all", "state", "soc", "tunnel", "ha", "client", "sdwan", "web", "faz", "fmg"}
+CHECK_TYPES = {"probe", "config", "dhcp", "route", "ran", "backup", "answer", "all", "state", "soc", "tunnel", "ha", "client", "sdwan", "web", "faz", "fmg", "login", "authserver", "fsso"}
 
 
 def merge_topology(t, templates, lab_id):

@@ -1,0 +1,309 @@
+id: M3.04
+title: "Identity and access: directories, AAA, federation and MFA"
+stage: S3
+stage_title: "S3 · Security, crypto, identity and the threat landscape"
+order: 142
+est_sessions: 1
+objectives:
+  - Tell authentication, authorization and accounting apart and map them to RADIUS, TACACS+ and LDAP
+  - Explain SAML and OIDC flows and which party trusts which
+  - Explain how 802.1X with EAP controls access at the port or SSID
+  - Choose MFA factors and explain why phishing-resistant MFA matters
+  - Explain SCIM provisioning and where it fits next to SAML
+sources:
+  - "FortiOS 8.0.2 Admin Guide: User & Authentication overview (p. 3905), SAML (pp. 3994–4040), TACACS+ (p. 4041), SCIM (p. 4043)"
+  - "FortiOS 8.0.2 Admin Guide: FortiTokens (pp. 4054–4084), 802.1X status (p. 3986), RADSEC (p. 3987)"
+  - "Protocol knowledge: RADIUS (RFC 2865/2866), LDAP (RFC 4511), SAML 2.0 (OASIS), OpenID Connect Core 1.0, SCIM (RFC 7643/7644), 802.1X/EAP (IEEE 802.1X, RFC 3748)"
+
+units:
+  - id: M3.04.u1
+    title: AAA and the three classic protocols
+    tier: 1
+    est_min: 12
+    body: |
+      **Authentication** proves who you are. **Authorization** decides what you may do. **Accounting** records what you
+      did. Every access design answers all three.
+
+      | Protocol | Transport | Strengths | Typical use |
+      |---|---|---|---|
+      | **LDAP** | TCP 389, LDAPS 636 | A directory: users, groups, attributes | Look up users and group membership in AD |
+      | **RADIUS** | UDP 1812 auth, 1813 accounting | AAA for network access, vendor attributes (VSAs) | VPN, Wi-Fi, 802.1X, firewall auth via NPS or a NAC |
+      | **TACACS+** | TCP 49 | Separates authn, authz and accounting; per-command authorization | Network device administration |
+
+      ## Details that come up in interviews
+
+      - RADIUS only obscures the **password** with the shared secret; the rest of the packet is in clear. That's why
+        Fortinet recommends **RADSEC** (RADIUS over TLS) for untrusted paths (pp. 3905, 3987).
+      - TACACS+ encrypts the whole payload and can authorize **each command** an admin types: the usual choice for
+        managing switches, routers and firewalls.
+      - LDAP is a **directory protocol**, not an AAA protocol: the firewall uses it to check a password with a bind
+        and read groups, but the policy decision stays on the firewall.
+
+      :::recall
+      Q: Which protocol would you choose to control which commands each network admin may run?
+      A: TACACS+, because it authorizes per command and encrypts the whole session.
+      :::
+  - id: M3.04.u2
+    title: Federation with SAML and OIDC
+    tier: 2
+    est_min: 14
+    body: |
+      Federation lets one **identity provider (IdP)** (Entra ID, Okta, FortiAuthenticator) vouch for users to many
+      **service providers (SPs)**. The SP never sees the password; it trusts a **signed assertion** from the IdP.
+
+      ## SAML 2.0, SP-initiated (as FortiOS uses it, pp. 3994–4008)
+
+      1. The user opens a resource on the SP (for example, browses through an identity-based firewall policy).
+      2. The SP redirects the browser to the IdP with an authentication request. On FortiGate the captive portal port
+         (1003 by default) does this redirect.
+      3. The user authenticates at the IdP, MFA included.
+      4. The IdP returns a **signed XML assertion** with the username and group attributes, through the browser.
+      5. The SP checks the signature with the IdP's certificate, reads the group, and applies the policy.
+
+      Configuration is an exchange of **metadata**: entity IDs, URLs and the IdP signing certificate.
+
+      ## OIDC
+
+      **OpenID Connect** is an identity layer on **OAuth 2.0**: JSON tokens instead of XML, the **ID token** (a signed
+      JWT) carries who the user is, and an access token is for APIs. It's the modern default for web and mobile apps;
+      SAML still dominates enterprise SSO for older apps and network devices.
+
+      :::why
+      Q: Why is MFA usually configured at the IdP rather than on each firewall or app?
+      A: Federation centralizes authentication. One strong policy at the IdP (MFA, conditional access) then protects every SP that trusts it.
+      :::
+
+      :::pitfall
+      SAML depends on **clocks** (assertions have validity windows) and on the **certificate** the SP trusts. An IdP
+      certificate rollover that nobody copied to the SP breaks every login at once.
+      :::
+  - id: M3.04.u3
+    title: 802.1X, EAP and network access control
+    tier: 2
+    est_min: 12
+    body: |
+      **802.1X** controls access at the **switch port or SSID** before the device gets a network:
+
+      | Role | Who | Job |
+      |---|---|---|
+      | Supplicant | The laptop or phone | Sends credentials |
+      | Authenticator | Switch or AP (or FortiGate/FortiSwitch/FortiAP) | Relays EAP inside RADIUS; opens the port |
+      | Authentication server | RADIUS (NPS, FortiAuthenticator, a NAC) | Decides, can return a VLAN |
+
+      **EAP** carries the actual method:
+
+      - **EAP-TLS:** certificates on both sides. The strongest common choice, no passwords to phish.
+      - **PEAP-MSCHAPv2:** a TLS tunnel protecting a username and password. Common, weaker if clients don't validate
+        the server certificate.
+      - **MAB** (MAC authentication bypass) for printers and cameras that can't do 802.1X; a MAC is easy to spoof, so
+        pair it with a restricted VLAN.
+
+      On FortiOS, `diagnose sys 802-1x status` shows the 802.1X state of switch members (p. 3986).
+
+      :::recall
+      Q: In 802.1X, which device talks RADIUS to the server?
+      A: The authenticator (the switch or AP), not the laptop.
+      :::
+  - id: M3.04.u4
+    title: MFA, phishing resistance and provisioning
+    tier: 2
+    est_min: 12
+    body: |
+      ## Factors
+
+      Something you **know** (password), **have** (token, phone, key), **are** (biometric). MFA combines two different
+      kinds.
+
+      | Factor | Phishing-resistant? | Notes |
+      |---|---|---|
+      | SMS or email code | No | Can be intercepted or relayed |
+      | TOTP app (FortiToken Mobile) | No | A fake page can relay the code in real time |
+      | Push approval | No | Push fatigue: attackers spam prompts until one is approved |
+      | FIDO2 / passkeys, certificates | **Yes** | Bound to the real site's origin or to a private key |
+
+      FortiOS supports FortiToken hardware and mobile tokens and FortiIdentity Cloud for MFA on local and remote users
+      (pp. 3907, 4054).
+
+      ## Provisioning with SCIM
+
+      SAML answers "who is logging in now". **SCIM** answers "which users and groups exist": the IdP pushes users and
+      group changes to the SP over a REST API, so a user disabled in the IdP disappears from the app too. FortiOS can act
+      as a SCIM server for this (p. 4043).
+
+      :::ps
+      In an access project, always ask about the **joiner-mover-leaver** process: how a leaver's access is removed
+      everywhere. SCIM, FSSO with AD, or RADIUS to a central directory all solve it; local accounts on every firewall
+      don't.
+      :::
+
+cards:
+  - {id: M3.04.c01, unit: M3.04.u1, tier: 1, front: "Authentication vs authorization vs accounting", back: "Who you are · what you may do · what you did."}
+  - {id: M3.04.c02, unit: M3.04.u1, tier: 1, front: "RADIUS ports", back: "UDP 1812 (authentication), 1813 (accounting)."}
+  - {id: M3.04.c03, unit: M3.04.u1, tier: 1, front: "TACACS+ port and its big advantage", back: "TCP 49. Encrypts the whole payload and authorizes per command."}
+  - {id: M3.04.c04, unit: M3.04.u1, tier: 2, front: "What part of a RADIUS packet is protected by the shared secret?", back: "Only the password attribute. Use RADSEC (TLS) for the rest."}
+  - {id: M3.04.c05, unit: M3.04.u1, tier: 1, front: "LDAP and LDAPS ports", back: "389 and 636."}
+  - {id: M3.04.c06, unit: M3.04.u2, tier: 2, front: "SAML: who signs the assertion, who verifies it?", back: "The IdP signs; the SP verifies with the IdP's certificate."}
+  - {id: M3.04.c07, unit: M3.04.u2, tier: 2, front: "OIDC in one line", back: "An identity layer on OAuth 2.0: a signed JWT ID token says who the user is."}
+  - {id: M3.04.c08, unit: M3.04.u2, tier: 3, front: "Two things that break all SAML logins at once", back: "IdP signing certificate rollover not copied to the SP; clock skew."}
+  - {id: M3.04.c09, unit: M3.04.u3, tier: 1, front: "802.1X roles", back: "Supplicant (client), authenticator (switch/AP), authentication server (RADIUS)."}
+  - {id: M3.04.c10, unit: M3.04.u3, tier: 2, front: "Strongest common EAP method", back: "EAP-TLS: certificates on both sides."}
+  - {id: M3.04.c11, unit: M3.04.u3, tier: 2, front: "MAB and its risk", back: "MAC authentication bypass for devices without 802.1X; MACs can be spoofed, so restrict the VLAN."}
+  - {id: M3.04.c12, unit: M3.04.u4, tier: 2, front: "Phishing-resistant MFA examples", back: "FIDO2 security keys and passkeys; certificate-based authentication."}
+  - {id: M3.04.c13, unit: M3.04.u4, tier: 2, front: "MFA push fatigue", back: "Attackers send repeated push prompts until a tired user approves one."}
+  - {id: M3.04.c14, unit: M3.04.u4, tier: 2, front: "SCIM vs SAML", back: "SAML authenticates a login; SCIM provisions and deprovisions users and groups."}
+
+quiz:
+  - id: M3.04.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which protocol lets you authorize each CLI command a network admin runs?"
+    options:
+      - {id: a, text: "TACACS+", correct: true}
+      - {id: b, text: "RADIUS", why_wrong: "RADIUS combines authn and authz in one exchange, not per command."}
+      - {id: c, text: "LDAP", why_wrong: "A directory protocol."}
+      - {id: d, text: "SAML", why_wrong: "Web SSO."}
+    explanation: "TACACS+ separates AAA and supports command authorization."
+  - id: M3.04.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "In SAML SP-initiated login, where does the user type the password?"
+    options:
+      - {id: a, text: "At the IdP", correct: true}
+      - {id: b, text: "At the SP", why_wrong: "The SP never sees it."}
+      - {id: c, text: "In the assertion", why_wrong: "The assertion carries identity, not the password."}
+      - {id: d, text: "On the FortiGate captive portal form", why_wrong: "The portal redirects to the IdP."}
+    explanation: "The SP redirects to the IdP, which authenticates and returns a signed assertion."
+  - id: M3.04.q03
+    type: multi
+    tier: 2
+    stem: "Which MFA methods are phishing-resistant? Select all that apply."
+    options:
+      - {id: a, text: "FIDO2 security key", correct: true}
+      - {id: b, text: "Passkey", correct: true}
+      - {id: c, text: "TOTP code", why_wrong: "Can be relayed by a fake page."}
+      - {id: d, text: "SMS code", why_wrong: "Can be intercepted or relayed."}
+    explanation: "Origin-bound or key-bound methods resist phishing."
+  - id: M3.04.q04
+    type: single
+    tier: 2
+    stem: "In 802.1X, the laptop is the…"
+    options:
+      - {id: a, text: "Supplicant", correct: true}
+      - {id: b, text: "Authenticator", why_wrong: "That's the switch or AP."}
+      - {id: c, text: "Authentication server", why_wrong: "That's RADIUS."}
+      - {id: d, text: "Relay agent", why_wrong: "A DHCP term."}
+    explanation: "Supplicant ↔ authenticator (EAPOL) ↔ RADIUS server."
+  - id: M3.04.q05
+    type: order
+    tier: 2
+    stem: "Order the SAML SP-initiated flow."
+    items: ["User requests a resource at the SP", "SP redirects the browser to the IdP", "User authenticates at the IdP (with MFA)", "IdP returns a signed assertion via the browser", "SP validates the signature and applies the policy"]
+    explanation: "Redirect out, authenticate, assertion back, validate."
+  - id: M3.04.q06
+    type: single
+    tier: 2
+    stem: "A user is disabled in Entra ID but still exists in an app's local user list. What solves this class of problem?"
+    options:
+      - {id: a, text: "SCIM provisioning", correct: true}
+      - {id: b, text: "Longer SAML assertion lifetime", why_wrong: "Makes it worse."}
+      - {id: c, text: "RADIUS accounting", why_wrong: "Records usage, doesn't deprovision."}
+      - {id: d, text: "LDAP anonymous bind", why_wrong: "Unrelated, and usually refused."}
+    explanation: "SCIM pushes joins, changes and removals from the IdP to the SP."
+  - id: M3.04.q07
+    type: text
+    tier: 1
+    stem: "Which EAP method uses certificates on both client and server?"
+    accept: ["eap-tls", "eap tls", "tls"]
+    explanation: "EAP-TLS."
+  - id: M3.04.q08
+    type: single
+    tier: 3
+    stem: "Why does Fortinet suggest RADSEC for RADIUS?"
+    options:
+      - {id: a, text: "Classic RADIUS only protects the password attribute; RADSEC wraps everything in TLS", correct: true}
+      - {id: b, text: "RADIUS can't carry group attributes", why_wrong: "VSAs carry them."}
+      - {id: c, text: "RADSEC is faster over UDP", why_wrong: "It runs over TLS/TCP."}
+      - {id: d, text: "NPS requires it", why_wrong: "Not a requirement."}
+    explanation: "Confidentiality and integrity for the whole exchange."
+    source: "FortiOS 8.0.2 Admin Guide pp. 3905, 3987"
+
+labs:
+  - id: M3.04.lab1
+    title: Draw the access design for a hybrid company
+    goal: "Choose the identity protocol for each access path at Andes Logistics and justify it."
+    worked:
+      config: |
+        # Access path                     → protocol / method            → why
+        # Staff Wi-Fi (corporate laptops) → 802.1X EAP-TLS to NPS        → certificates, no passwords to phish
+        # Printers and cameras            → MAB + isolated VLAN          → can't do 802.1X; MAC is spoofable
+        # Remote access VPN               → SAML to Entra ID with MFA    → central MFA and conditional access
+        # Firewall user policies (HQ)     → FSSO collector agent         → transparent identity from AD logons
+        # Network device admin            → TACACS+ (or RADIUS + MFA)    → per-command authorization, accounting
+        # SaaS apps                       → OIDC/SAML SSO + SCIM         → SSO plus automatic deprovisioning
+      notes:
+        - "Every path names authn, authz and how a leaver loses access."
+        - "Phishing-resistant MFA where the risk is highest: remote access and admin."
+    faded:
+      template: |
+        # Staff Wi-Fi         → 802.1X {{EAP-TLS}}
+        # Remote access VPN   → {{SAML}} with MFA at the IdP
+        # Device admin        → {{TACACS+}}
+        # SaaS deprovisioning → {{SCIM}}
+    solo:
+      prompt: "Name the protocol for each, one per line: device admin per-command control, web SSO with signed XML assertions, JSON ID tokens on OAuth 2.0, user provisioning API."
+      required: ["tacacs", "saml", "oidc", "scim"]
+      solution: |
+        TACACS+
+        SAML
+        OIDC
+        SCIM
+      notes: "LDAP and RADIUS cover the rest of most designs."
+
+scenarios:
+  - id: M3.04.sc1
+    kind: situation
+    tier: 3
+    title: "\"We have MFA, we're safe\""
+    situation: |
+      A customer's CISO says remote access is solved: "Everyone has push MFA." Last month a contractor approved a push
+      at 2 a.m. after twenty prompts.
+    ask: "How do you respond in the design review?"
+    right_thinking:
+      - "Acknowledge MFA is a big improvement"
+      - "Explain push fatigue and that push/TOTP aren't phishing-resistant"
+      - "Propose number matching as a quick win and FIDO2/certificates for admins and high-risk users"
+    what: "A respectful upgrade path, not a lecture."
+    why: "Credibility comes from specific, proportionate advice."
+    how: ["Agree", "Name the gap", "Quick win", "Target state"]
+    model_answer: |
+      "MFA was the right move, and it stops most password attacks. The 2 a.m. approval shows its limit: push and codes
+      can be fatigued or relayed. Quick win: number matching and alerts on repeated prompts. Target state: FIDO2 keys
+      or certificates for admins and contractors, enforced at the IdP so the VPN and every app inherit it."
+    best_way: "Credit, gap, quick win, target."
+    rubric: ["respectful", "technically precise", "actionable path"]
+
+interview:
+  - id: M3.04.t01
+    stage: technical
+    question: "RADIUS or TACACS+ for administering 200 FortiGates and switches?"
+    testing: "AAA protocol choice"
+    framework: "Requirement → protocol → why"
+    model_answer: |
+      "For admin access I prefer TACACS+: it encrypts the whole session, separates authentication from authorization,
+      and can authorize and account per command. RADIUS works too, especially with MFA through FortiAuthenticator, but
+      it only protects the password and has no per-command control. Either way, local break-glass accounts stay, vaulted."
+    best_way: "Pick one, give the reason, mention break-glass."
+    target: "0:40"
+  - id: M3.04.t02
+    stage: technical
+    question: "Explain SAML to a customer who only knows usernames and passwords."
+    testing: "Explaining federation simply"
+    framework: "Analogy → flow → benefit"
+    model_answer: |
+      "Think of a passport. Your company's identity system, the IdP, checks who you are once, with MFA, and gives the
+      app a signed pass saying 'this is Juan from Finance'. The app trusts the signature and never sees your password.
+      You get one strong login for everything, and when HR disables you, every app stops trusting you."
+    best_way: "One analogy, then the benefit."
+    target: "0:35"

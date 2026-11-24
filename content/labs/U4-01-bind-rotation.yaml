@@ -1,0 +1,79 @@
+id: U4.01
+track: fortigate
+modules: [M4.06]
+tier: 4
+order: 20
+kind: ticket
+title: "\"Nobody in Finance can log in since this morning\""
+customer: Andes Logistics
+par: 20
+skills: [LDAP bind, fnbamd debug, diagnose test authserver]
+brief: |
+  **Ticket 7731, priority 1.** Finance gets "Authentication failed" on the FortiGate login page, every user, since about
+  7:00. Nothing changed on the firewall, says the customer. The AD team rotated a few service-account passwords last
+  night as part of their quarterly hygiene; they sent the new one for svc-fortigate: `Sv-FGT.2027#`.
+topology:
+  use: andes-id
+  devices:
+    FGT-BOG:
+      config: |
+        config user ldap
+        edit DC-LDAP
+        set server 10.20.40.10
+        set cnid sAMAccountName
+        set dn DC=andes,DC=local
+        set type regular
+        set username "CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local"
+        set password Sv-FGT.2026!
+        next
+        end
+        config user group
+        edit Finance-FW
+        set member DC-LDAP
+        config match
+        edit 1
+        set server-name DC-LDAP
+        set group-name "CN=Finance,OU=Groups,DC=andes,DC=local"
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 3
+        set name "Finance-ERP"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        set groups Finance-FW
+        next
+        end
+events:
+  - {directory: {dev: DC-01, ldap: {bind: {dn: "CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local", pass: "Sv-FGT.2027#"}}}}
+tasks:
+  - "Reproduce: from FIN-PC, `curl https://erp.andes.local` then `login jperez Andes.Fin26`."
+  - "Find the cause on the FortiGate (fnbamd debug or `diagnose test authserver ldap`) and fix it."
+  - "Answer the root cause."
+checks:
+  - text: "jperez reaches the ERP after logging in"
+    probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, as: [jperez, Andes.Fin26]}
+  - text: "Root cause"
+    answer: {accept: ["~bind|service account|svc-fortigate|rotat"], sample: "The service account's bind password was rotated in AD but not on the FortiGate", hint: "Which credentials does the FortiGate use before it even looks at jperez's password?", why: "With type regular the FortiGate first binds as svc-fortigate. Its password changed in AD, so the bind fails (invalid credentials, 49) and every user fails, whatever they type."}
+hints:
+  - "`diagnose debug application fnbamd -1`, `diagnose debug enable`, then log in again from FIN-PC (or run `diagnose test authserver ldap DC-LDAP jperez Andes.Fin26`)."
+  - "Every user failing at once points at something shared: the bind account. `config user ldap` / `edit DC-LDAP` / `set password` with the new value."
+solution:
+  FGT-BOG: |
+    diagnose test authserver ldap DC-LDAP jperez Andes.Fin26
+    config user ldap
+    edit DC-LDAP
+    set password Sv-FGT.2027#
+    next
+    end
+explain: |
+  "Everyone fails at once" is never the users' passwords. With a regular bind, the service account is a single point of
+  failure: put it on the AD team's rotation checklist, or use a managed account process that updates the FortiGate
+  (or FortiManager) in the same change.

@@ -1,0 +1,83 @@
+id: U4.02
+track: fortigate
+modules: [M4.06]
+tier: 4
+order: 21
+kind: ticket
+title: "\"Juan logs in fine, but the ERP still won't open\""
+customer: Andes Logistics
+par: 20
+skills: [group matching, memberOf, diagnose firewall auth list]
+brief: |
+  **Ticket 7745, priority 2.** After a partner "tidied up" the user groups, Juan Pérez (Finance) types his password,
+  gets past the login page, and the ERP still times out. "The password works, so it's not authentication," says the
+  partner.
+topology:
+  use: andes-id
+  devices:
+    FGT-BOG:
+      config: |
+        config user ldap
+        edit DC-LDAP
+        set server 10.20.40.10
+        set cnid sAMAccountName
+        set dn DC=andes,DC=local
+        set type regular
+        set username "CN=svc-fortigate,OU=Service Accounts,DC=andes,DC=local"
+        set password Sv-FGT.2026!
+        next
+        end
+        config user group
+        edit Finance-FW
+        set member DC-LDAP
+        config match
+        edit 1
+        set server-name DC-LDAP
+        set group-name "CN=Finance,OU=Staff,DC=andes,DC=local"
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 3
+        set name "Finance-ERP"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service HTTPS
+        set groups Finance-FW
+        next
+        end
+tasks:
+  - "Reproduce from FIN-PC and read what the FortiGate thinks of Juan (`diagnose firewall auth list`, fnbamd debug)."
+  - "Fix it so Finance, and only Finance, opens the ERP."
+  - "Answer the root cause."
+checks:
+  - text: "jperez reaches the ERP after logging in"
+    probe: {from: FIN-PC, to: 10.20.40.20, proto: tcp, port: 443, as: [jperez, Andes.Fin26]}
+  - text: "mrojas (Staff) still can't"
+    probe: {from: HQ-PC, to: 10.20.40.20, proto: tcp, port: 443, as: [mrojas, Andes.Ops26], expect: fail}
+  - text: "Root cause"
+    answer: {accept: ["~group|dn|match|ou="], sample: "The group match points at CN=Finance,OU=Staff instead of the real DN CN=Finance,OU=Groups", hint: "Compare the memberOf values the DC returns with the group-name in Finance-FW.", why: "The match entry compares full DNs. CN=Finance,OU=Staff doesn't exist, so Juan authenticates but never qualifies for Finance-FW, and the ERP policy doesn't match his traffic."}
+hints:
+  - "`diagnose test authserver ldap DC-LDAP jperez Andes.Fin26` lists Juan's real group DNs. Compare them with `show user group Finance-FW`."
+  - "Fix the match: `config user group` / `edit Finance-FW` / `config match` / `edit 1` / `set group-name \"CN=Finance,OU=Groups,DC=andes,DC=local\"`."
+solution:
+  FGT-BOG: |
+    diagnose test authserver ldap DC-LDAP jperez Andes.Fin26
+    config user group
+    edit Finance-FW
+    config match
+    edit 1
+    set group-name "CN=Finance,OU=Groups,DC=andes,DC=local"
+    next
+    end
+    next
+    end
+explain: |
+  Authentication and authorization are two steps. The password check passed; the group check didn't, because LDAP
+  group matching is an exact DN comparison. The fnbamd debug says "Failed group matching", which is the line that
+  separates the two.

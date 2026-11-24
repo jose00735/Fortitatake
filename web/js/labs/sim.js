@@ -80,6 +80,7 @@ export class Lab {
           onDelete: (fg, path, key) => { this.onDelete(fg, path, key); if (this.ready) this.dirty(fg); },
         });
         dev.diag = (fg, toks, line) => this.diagnose(fg, toks, line);
+        dev.extraRefs = (kind) => this.extraRefs(dev, kind);
         dev.kind = d.kind;
         if (d.kind !== "fortigate") this.mgmtInit(dev);
         dev.sessions = new Map();
@@ -88,7 +89,8 @@ export class Lab {
       } else if (d.kind === "router") dev = new Router(d);
       else if (d.kind === "cloud") dev = new Cloud(d);
       else dev = new Host(d, this);
-      dev.spec = d;
+      // directory data can change during a lab (events), so each run gets its own copy
+      dev.spec = d.directory ? { ...d, directory: JSON.parse(JSON.stringify(d.directory)) } : d;
       this.devices.set(d.id, dev);
       this.order.push(d.id);
     }
@@ -347,6 +349,7 @@ export class Lab {
   }
   // first matching policy (FortiOS order); returns {policy, action} or null (implicit deny)
   policyLookup(fg, pkt, inIntf, outIntf, vip) {
+    let authNeeded = null;
     for (const p of fg.entries("firewall policy")) {
       const v = (a) => fg.val("firewall policy", p, a);
       if (fg.one("firewall policy", p, "status") === "disable") continue;
@@ -364,9 +367,16 @@ export class Lab {
       const probe = vip ? { ...pkt, dport: vip.dport } : pkt;
       if (!svcNames.some((s) => this.svcMatch(fg, s, probe))) continue;
       if (!this.schedMatch(fg, fg.one("firewall policy", p, "schedule"))) continue;
-      return { policy: p, id: p.key, action: fg.one("firewall policy", p, "action"), nat: fg.one("firewall policy", p, "nat") === "enable", name: fg.one("firewall policy", p, "name") };
+      // identity-based policy: only an authenticated user in its groups matches; others fall through
+      const groups = v("groups"), users = v("users");
+      let who = null;
+      if (groups.length || users.length) {
+        who = this.authUser(fg, pkt.src);
+        if (!who || !this.identityOk(fg, who, groups, users)) { if (!authNeeded) authNeeded = { policy: p, id: p.key, action: "auth", groups, users, name: fg.one("firewall policy", p, "name") }; continue; }
+      }
+      return { policy: p, id: p.key, action: fg.one("firewall policy", p, "action"), nat: fg.one("firewall policy", p, "nat") === "enable", name: fg.one("firewall policy", p, "name"), user: who };
     }
-    return null;
+    return authNeeded;
   }
 
   // ----- tracing helpers -----
@@ -627,7 +637,8 @@ export class Lab {
       tl.push(["fw_forward_handler", 930, `Denied by forward policy check (policy ${id})`]);
       done(); ev.drop = "policy"; ev.policy = id;
       if (!this.quiet) this.logTraffic(fg, pol ? pol.policy : null, { ...pkt, inIntf: inI.name, outIntf: outI.name, action: "deny", policyid: id });
-      res.drop = { dev: fg.id, reason: pol ? `denied by policy ${id}${pol.name ? ` (${pol.name})` : ""}` : "no policy matches: implicit deny (policy 0)", policy: id };
+      res.drop = { dev: fg.id, reason: pol && pol.action === "auth" ? `authentication required: policy ${id} only allows ${[...pol.groups, ...pol.users].join(", ")}, and ${intToIp(pkt.src)} has no authenticated user that qualifies` : pol ? `denied by policy ${id}${pol.name ? ` (${pol.name})` : ""}` : "no policy matches: implicit deny (policy 0)", policy: id };
+      if (pol && pol.action === "auth") res.drop.auth = { fg: fg.id, policy: id, portal: inI.prefix ? inI.prefix.ip : 0 };
       return null;
     }
     ev.policy = pol.id;
@@ -804,6 +815,9 @@ Lab.prototype.logTraffic = function () {};
 Lab.prototype.onCommit = function () {};
 Lab.prototype.postLoad = function () {};
 Lab.prototype.onDelete = function () {};
+Lab.prototype.authUser = function () { return null; };
+Lab.prototype.identityOk = function () { return false; };
+Lab.prototype.extraRefs = function () { return []; };
 Lab.prototype.clientTunnel = function (h, pkt, res) { res.drop = { dev: h.id, reason: "VPN not simulated" }; return null; };
 
 function maskLen(m) { const n = ipToInt(m); let l = 0; for (let i = 31; i >= 0; i--) if ((n >>> i) & 1) l++; return l; }

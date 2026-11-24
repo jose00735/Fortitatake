@@ -27,6 +27,9 @@ function one(lab, c, answers) {
   if (c.web) return webCheck(lab, c.web);
   if (c.faz) return fazCheck(lab, c.faz);
   if (c.fmg) return fmgCheck(lab, c.fmg);
+  if (c.login) return loginCheck(lab, c.login);
+  if (c.authserver) return authServerCheck(lab, c.authserver);
+  if (c.fsso) return fssoCheck(lab, c.fsso);
   if (c.all) { const r = c.all.map((x) => one(lab, x, answers)); return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail }; }
   return { pass: false, detail: "Unknown check type" };
 }
@@ -42,7 +45,57 @@ export function probeCheck(lab, pr) {
   let dst = pr.to;
   const savedClock = lab.clock;
   if (pr.at) lab.clock = Date.parse(pr.at);
-  try { return probeInner(lab, pr, id, src, dst); } finally { if (pr.at) lab.clock = savedClock; }
+  // `as: [user, password]` logs the PC in through the FortiGate's auth page for this probe only
+  const fgs = [...lab.devices.values()].filter((d) => d instanceof FortiGate);
+  const savedAuth = pr.as || pr.fresh ? fgs.map((f) => [f, f.authList]) : null;
+  try {
+    if (pr.fresh || pr.as) for (const f of fgs) f.authList = [];
+    if (pr.as) {
+      const h = lab.dev(id);
+      lab.probe(id, { dst: ipToInt("142.250.78.4"), proto: 6, dport: 80 });
+      const r = lab.portalLogin(h, pr.as[0], pr.as[1]);
+      if (!r.ok && (pr.expect || "ok") !== "fail") return { pass: false, detail: `${pr.as[0]} can't log in from ${id}: ${r.err}.` };
+    }
+    return probeInner(lab, pr, id, src, dst);
+  } finally {
+    if (pr.at) lab.clock = savedClock;
+    if (savedAuth) { for (const [f, a] of savedAuth) f.authList = a; lab.ver++; }
+  }
+}
+
+function loginCheck(lab, c) {
+  const h = lab.dev(c.from);
+  const fgs = [...lab.devices.values()].filter((d) => d instanceof FortiGate);
+  const saved = fgs.map((f) => [f, f.authList]);
+  try {
+    for (const f of fgs) f.authList = [];
+    lab.probe(c.from, { dst: ipToInt("142.250.78.4"), proto: 6, dport: 80 });
+    const r = lab.portalLogin(h, c.user, c.pass);
+    const want = (c.expect || "ok") === "ok";
+    if (want && !r.ok) return { pass: false, detail: `${c.user} can't log in from ${c.from}: ${r.err}.` };
+    if (!want && r.ok) return { pass: false, detail: `${c.user} can still log in from ${c.from} (groups ${r.groups.join(", ")}).` };
+    if (want && c.group && !r.groups.includes(c.group)) return { pass: false, detail: `${c.user} logs in, but lands in ${r.groups.join(", ")} instead of ${c.group}.` };
+    return { pass: true, detail: want ? `${c.user} logs in from ${c.from} (${r.groups.join(", ")}).` : `${c.user} is refused, as it should be.` };
+  } finally { for (const [f, a] of saved) f.authList = a; lab.ver++; }
+}
+
+function authServerCheck(lab, c) {
+  const fg = lab.dev(c.dev);
+  const r = c.kind === "radius" ? lab.radiusAuth(fg, c.server, c.user, c.pass) : lab.ldapAuth(fg, c.server, c.user, c.pass);
+  const want = (c.expect || "ok") === "ok";
+  if (want && !r.ok) return { pass: false, detail: `${c.server} doesn't authenticate ${c.user}: ${r.err}.` };
+  if (!want && r.ok) return { pass: false, detail: `${c.server} still authenticates ${c.user}.` };
+  if (want && c.group && !(r.groups || []).some((g) => g.toLowerCase().includes(c.group.toLowerCase()))) return { pass: false, detail: `${c.server} authenticates ${c.user} but returns no ${c.group} membership (got ${(r.groups || []).join(", ") || "none"}).` };
+  return { pass: true, detail: want ? `${c.server} authenticates ${c.user}${r.groups && r.groups.length ? ` with ${r.groups.length} group(s)` : ""}.` : `${c.server} refuses ${c.user}.` };
+}
+
+function fssoCheck(lab, c) {
+  const fg = lab.dev(c.dev);
+  const ag = lab.fssoAgents(fg);
+  const a = c.agent ? ag.find((x) => x.name === c.agent) : ag[0];
+  if (!a) return { pass: false, detail: `${c.dev} has no FSSO collector agent configured.` };
+  if (a.status !== "connected") return { pass: false, detail: `FSSO agent ${a.name} is ${a.status}: ${a.why}.` };
+  return { pass: true, detail: `FSSO agent ${a.name} is connected with ${a.logons.length} logon(s).` };
 }
 function probeInner(lab, pr, id, src, dst) {
   if (String(dst).startsWith("@")) {

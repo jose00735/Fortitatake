@@ -1,0 +1,96 @@
+id: U2.02
+track: fortigate
+modules: [M4.06, M3.04]
+tier: 2
+order: 41
+kind: project
+title: Contractors through NPS (RADIUS) with a group attribute
+customer: Andes Logistics
+par: 40
+skills: [RADIUS server, shared secret, NPS clients, Fortinet-Group-Name, group matching]
+brief: |
+  **SOW 2026-131, identity phase (part 2).** Contractors sit on the HQ LAN with their own laptops. They may browse the
+  web (HTTP/HTTPS) only after logging in, and only if they're in the AD group **Contractors**. Security wants the
+  decision on the Windows side, in **NPS** on DC-01, which already has a network policy that returns the
+  **Fortinet-Group-Name** attribute with the user's AD group.
+
+  NPS facts: RADIUS client entry for **10.20.40.1** (the FortiGate's server-segment IP), shared secret `NPS-Andes-77`.
+  Test contractor: **lgomez** / `Contr4t1sta!`.
+
+  For this lab, contractor laptops share HQ-PC.
+topology:
+  use: andes-id
+  devices:
+    FGT-BOG:
+      config: |
+        config firewall policy
+        edit 1
+        set srcaddr all
+        set dstaddr none
+        next
+        end
+tasks:
+  - "RADIUS server NPS pointing at DC-01 with the shared secret; test with `diagnose test authserver radius NPS pap lgomez Contr4t1sta!`."
+  - "Firewall group Contractors-FW: members from NPS, matched on the group name NPS returns."
+  - "A web-only (HTTP, HTTPS, DNS) Internet policy for Contractors-FW from the HQ LAN, with NAT."
+checks:
+  - text: "NPS authenticates lgomez and returns the Contractors group"
+    authserver: {dev: FGT-BOG, kind: radius, server: NPS, user: lgomez, pass: "Contr4t1sta!", group: Contractors}
+  - text: "After logging in, lgomez browses https://www.google.com"
+    probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443, as: [lgomez, "Contr4t1sta!"]}
+  - text: "Contractors get web only, not remote desktop"
+    probe: {from: HQ-PC, to: 142.250.78.4, proto: tcp, port: 3389, as: [lgomez, "Contr4t1sta!"], expect: fail}
+  - text: "mrojas (not a contractor) can't use the contractor policy"
+    login: {from: HQ-PC, user: mrojas, pass: Andes.Ops26, expect: fail}
+  - text: "Without logging in, no Internet"
+    probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443, fresh: true, expect: fail}
+hints:
+  - "`config user radius` / `edit NPS` / `set server 10.20.40.10` / `set secret NPS-Andes-77`. The FortiGate reaches DC-01 out of port4, so NPS sees it as 10.20.40.1: the client entry it already has."
+  - "Group: `set member NPS`, then `config match` / `edit 1` / `set server-name NPS` / `set group-name Contractors`. RADIUS returns plain group names, not DNs."
+solution:
+  FGT-BOG: |
+    config user radius
+    edit NPS
+    set server 10.20.40.10
+    set secret NPS-Andes-77
+    next
+    end
+    diagnose test authserver radius NPS pap lgomez Contr4t1sta!
+    config user group
+    edit Contractors-FW
+    set member NPS
+    config match
+    edit 1
+    set server-name NPS
+    set group-name Contractors
+    next
+    end
+    next
+    end
+    config firewall service group
+    edit WEB-ONLY
+    set member HTTP HTTPS DNS
+    next
+    end
+    config firewall policy
+    edit 3
+    set name "Contractors-Web"
+    set srcintf port2
+    set dstintf port1
+    set srcaddr HQ-LAN
+    set dstaddr all
+    set action accept
+    set schedule always
+    set service WEB-ONLY
+    set groups Contractors-FW
+    set nat enable
+    next
+    end
+explain: |
+  With RADIUS the server decides who gets in (the NPS network policy) and tells the FortiGate which group the user
+  belongs to through a vendor-specific attribute, Fortinet-Group-Name. The FortiGate's match entry compares that value
+  with `group-name`. Two classic gotchas: NPS silently drops requests from an IP that isn't a RADIUS client (you see a
+  timeout, not a reject), and a wrong shared secret shows up as a reject, because the server decrypts a garbage password.
+
+  Note the DNS service in the contractor group: before the login, unauthenticated DNS isn't allowed by any policy here,
+  which is fine because the login page is reached by IP redirect.
