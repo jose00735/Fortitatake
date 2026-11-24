@@ -52,6 +52,11 @@ export class LabRun {
     if (changed) this.lab.dirty();
   }
   goto(i) { while (this.part < i) { this.part++; this.applyEvents(this.parts[this.part]); } }
+  // start at part i as if the earlier parts were done with their reference solutions (sortie and review runs)
+  jumpTo(i) {
+    while (this.part < i) { this.applySolution(this.current); this.passed.add(this.current.id); this.goto(this.part + 1); }
+    this.lab.dirty();
+  }
   get current() { return this.parts[this.part]; }
   device(id) { return this.lab.dev(id); }
   consoleDevices() { return this.lab.order.map((id) => this.lab.dev(id)).filter((d) => d.kind !== "cloud"); }

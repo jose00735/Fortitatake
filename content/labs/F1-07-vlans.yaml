@@ -1,5 +1,6 @@
 id: F1.07
 track: fortigate
+modules: [M4.02]
 tier: 1
 order: 7
 kind: project

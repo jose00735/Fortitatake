@@ -1,5 +1,6 @@
 id: M4.01
 track: fortimanager
+modules: [M5.01, M5.02]
 tier: 4
 order: 52
 kind: ticket

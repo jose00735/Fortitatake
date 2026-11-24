@@ -1,5 +1,6 @@
 id: P2.01
 track: fortigate
+modules: [M4.07, M4.08]
 tier: 2
 order: 30
 kind: project

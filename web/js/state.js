@@ -22,6 +22,17 @@ export async function loadAll() {
     for (const q of m.quiz || []) S.itemIndex.set(q.id, { item: q, kind: "quiz", module: m.id });
     for (const q of m.interview || []) S.itemIndex.set(q.id, { item: q, kind: "interview", module: m.id });
   }
+  // lab parts are review items as well (LAB.<lab>.<part>), indexed under each module they teach
+  S.labs = [];
+  S.labsByModule = new Map();
+  try {
+    const cat = await (await fetch("content/labs.json", { cache: "no-store" })).json();
+    S.labs = cat.labs.map((l) => ({ id: l.id, title: l.title, kind: l.kind, tier: l.tier, track: l.track, par: l.par, modules: l.modules || [], parts: l.parts.map((p) => ({ id: p.id, title: p.title })) }));
+    for (const l of S.labs) {
+      for (const m of l.modules) { if (!S.labsByModule.has(m)) S.labsByModule.set(m, []); S.labsByModule.get(m).push(l); }
+      for (const p of l.parts) S.itemIndex.set(`LAB.${l.id}.${p.id}`, { item: { lab: l.id, part: p.id, title: p.title, labTitle: l.title }, kind: "labpart", module: l.modules[0] });
+    }
+  } catch (e) { /* labs are optional for sorties */ }
   const r = await api("events");
   S.confirmed = r.events || [];
   S.serverCount = S.confirmed.length;

@@ -19,9 +19,39 @@ async function loadSchemas() {
   return schemas;
 }
 const key = (id) => "ft-lab-" + id;
-function saved(id) { try { return JSON.parse(localStorage.getItem(key(id)) || "null"); } catch (e) { return null; } }
-function store(run) { try { localStorage.setItem(key(run.def.id), JSON.stringify(run.save())); } catch (e) { /* storage off: progress lives for this session only */ } }
-function forget(id) { try { localStorage.removeItem(key(id)); } catch (e) { /* ignore */ } }
+function saved(id, k = key(id)) { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } }
+function store(run, k = key(run.def.id)) { try { localStorage.setItem(k, JSON.stringify(run.save())); } catch (e) { /* storage off: progress lives for this session only */ } }
+function forget(id, k = key(id)) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
+
+// lab parts are review items too: LAB.<lab>.<part>
+export const partItemId = (lab, part) => `LAB.${lab}.${part}`;
+export async function labIndex() {
+  const cat = await loadCatalog();
+  return cat.labs;
+}
+
+// A single lab part inside a sortie block or a review. The run is separate from the
+// catalogue run (its own save slot), so practising part c here never disturbs the lab.
+// opts: { label, exam, slot } · done(result|null), result = { passed, hints, revealed, ms }
+export async function labPart(stage, labId, partId, opts, done) {
+  stage.replaceChildren(h(`<div class="panel"><p class="muted">Booting the lab…</p></div>`));
+  const [cat, sch] = await Promise.all([loadCatalog(), loadSchemas()]);
+  const def = cat.labs.find((l) => l.id === labId);
+  const idx = def ? def.parts.findIndex((p) => p.id === partId) : -1;
+  if (idx < 0) return done(null);
+  const k = `ft-lab-s-${opts.slot || "x"}-${labId}-${partId}`;
+  const boot = (fresh) => {
+    if (fresh) forget(labId, k);
+    const prev = saved(labId, k);
+    const run = new LabRun(def, sch, prev);
+    if (!prev) { run.jumpTo(idx); store(run, k); }
+    run.exam = !!opts.exam;
+    mount(stage, run, { embedded: true, only: idx, key: k, label: opts.label, exam: !!opts.exam,
+      reset: () => boot(true),
+      finish: (r) => { if (r) forget(labId, k); done(r); } });
+  };
+  boot(false);
+}
 
 // ---------- catalogue ----------
 export async function labsHome(main, filter = "all") {
@@ -68,8 +98,10 @@ export async function labView(main, id) {
   mount(main, run);
 }
 
-function mount(main, run) {
+function mount(main, run, opts = {}) {
   const def = run.def;
+  const k = opts.key || key(def.id);
+  const emb = !!opts.embedded;
   const devs = run.consoleDevices();
   const firstFgt = devs.find((d) => d instanceof FortiGate) || devs[0];
   const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket" };
@@ -77,11 +109,11 @@ function mount(main, run) {
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
   else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ISP router. Try: show ip interface brief` : `${d.id} (${d.os}) · type help`, "");
 
-  const el = h(`<div class="labrun" data-view="ticket">
+  const el = h(`<div class="labrun${emb ? " embedded" : ""}" data-view="ticket">
     <header class="lr-head">
-      <a href="#/labs" class="ghost btn small">← Labs</a>
+      ${emb ? `<span class="tag acc">${esc(opts.label || "Lab")}</span>` : `<a href="#/labs" class="ghost btn small">← Labs</a>`}
       <div class="lr-title"><span class="tiny">${esc(def.id)} · ${esc(KIND[def.kind] || def.kind)} · ${esc(def.customer || "")}</span><b>${esc(def.title)}</b></div>
-      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span><label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label><button class="ghost small" data-reset>Reset</button></div>
+      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
     </header>
     <nav class="lr-tabs" aria-label="Lab panels"><button data-v="ticket" class="on">Ticket</button><button data-v="net">Network</button><button data-v="term">Console</button></nav>
     <div class="lr-grid">
@@ -140,7 +172,7 @@ function mount(main, run) {
     if (r) print(dev, r);
     pump();
     if (line.trim()) { ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length; }
-    store(run);
+    store(run, k);
     paint(); topo();
   };
   inp.addEventListener("keydown", (e) => {
@@ -188,7 +220,7 @@ function mount(main, run) {
     const shown = run.hints[p.id] || 0;
     const answers = (p.checks || []).filter((c) => c.answer);
     side.innerHTML = `
-      ${run.part === 0 && !run.passed.size ? `<details class="panel md lr-brief" open><summary><b>The brief</b></summary>${md(def.brief)}</details>` : `<details class="panel md lr-brief"><summary><b>The brief</b></summary>${md(def.brief)}</details>`}
+      ${(run.part === 0 && !run.passed.size) || (emb && run.part > 0) ? `${emb && run.part > 0 ? `<p class="tiny">The earlier parts are already configured with their reference solutions. Start from part ${run.part + 1}.</p>` : ""}<details class="panel md lr-brief" open><summary><b>The brief</b></summary>${md(def.brief)}</details>` : `<details class="panel md lr-brief"><summary><b>The brief</b></summary>${md(def.brief)}</details>`}
       ${run.parts.length > 1 ? `<ol class="lr-parts">${run.parts.map((q, i) => `<li class="${run.passed.has(q.id) ? "done" : i === run.part ? "on" : ""}">${run.passed.has(q.id) ? "✓ " : ""}${esc(q.title || "Part " + (i + 1))}</li>`).join("")}</ol>` : ""}
       <section class="panel lr-part">
         ${run.parts.length > 1 ? `<div class="tiny">Part ${run.part + 1} of ${run.parts.length}</div><h3 style="margin-top:2px">${esc(p.title || "")}</h3>` : ""}
@@ -205,18 +237,19 @@ function mount(main, run) {
         ${note || ""}
         ${res ? `<ul class="lr-checks">${res.map((r) => `<li class="${r.pass ? "ok" : "no"}"><b>${r.pass ? "✓" : "✗"}</b><div><span class="small">${inline(r.text)}</span><span class="tiny">${esc(r.detail || "")}</span></div></li>`).join("")}</ul>` : `<p class="tiny">The checklist stays hidden until you press Check. It tests what the network does, not what you typed.</p>`}
         ${run.revealed[p.id] ? solutionHtml(p) : ""}
-        ${run.passed.has(p.id) ? `<div class="call why md"><b>Why it works</b>${md(p.explain || "")}</div>${run.part < run.parts.length - 1 ? `<button class="primary" data-next>Next part →</button>` : ""}` : ""}
+        ${run.passed.has(p.id) ? `<div class="call why md"><b>Why it works</b>${md(p.explain || "")}</div>${emb ? `<button class="primary" data-cont>Continue</button>` : run.part < run.parts.length - 1 ? `<button class="primary" data-next>Next part →</button>` : ""}` : ""}
       </section>`;
-    $$("[data-ans]", side).forEach((i) => (i.oninput = () => { run.answers[i.dataset.ans] = i.value; store(run); }));
+    $$("[data-ans]", side).forEach((i) => (i.oninput = () => { run.answers[i.dataset.ans] = i.value; store(run, k); }));
     $("[data-check]", side).onclick = doCheck;
-    const hb = $("[data-hint]", side); if (hb) hb.onclick = () => { run.hint(p.id); store(run); renderSide(); };
+    const hb = $("[data-hint]", side); if (hb) hb.onclick = () => { run.hint(p.id); store(run, k); renderSide(); };
     const rv = $("[data-reveal]", side);
-    if (rv) rv.onclick = () => { if (run.revealed[p.id] || confirm("Reveal the reference solution? This part's score drops to 20 points.")) { run.revealed[p.id] = true; store(run); renderSide(); } };
+    if (rv) rv.onclick = () => { if (run.revealed[p.id] || confirm("Reveal the reference solution? This part's score drops to 20 points.")) { run.revealed[p.id] = true; store(run, k); renderSide(); } };
     $$("[data-apply]", side).forEach((b) => (b.onclick = () => {
       const dev = b.dataset.apply;
       for (const line of String(p.solution[dev]).split("\n")) if (line.trim()) { selectDev(dev); exec(line.trim()); }
     }));
-    const nx = $("[data-next]", side); if (nx) nx.onclick = () => { run.advance(); store(run); renderSide(); };
+    const nx = $("[data-next]", side); if (nx) nx.onclick = () => { run.advance(); store(run, k); renderSide(); };
+    const ct = $("[data-cont]", side); if (ct) ct.onclick = () => opts.finish({ passed: true, hints: run.hints[p.id] || 0, revealed: !!run.revealed[p.id], ms: run.elapsed });
   };
   const doCheck = () => {
     const was = new Set(run.passed);
@@ -224,14 +257,18 @@ function mount(main, run) {
     const p = run.current;
     let note = "";
     if (run.passed.has(p.id) && !was.has(p.id)) {
-      record("lab_part", { lab: def.id, part: p.id, hints: run.hints[p.id] || 0, revealed: !!run.revealed[p.id] });
-      if (run.finished()) {
+      const hints = run.hints[p.id] || 0, revealed = !!run.revealed[p.id];
+      record("lab_part", { lab: def.id, part: p.id, hints, revealed, ...(emb ? { sortie: true, exam: !!opts.exam, ms: run.elapsed } : {}) });
+      // the part becomes a review item: revealed = Again, hints = Hard, clean = Good
+      record("review", { item: partItemId(def.id, p.id), kind: "labpart", module: (def.modules || [])[0], rating: revealed ? 1 : hints ? 2 : 3 });
+      if (emb) note = `<div class="verdict ok">Part complete.</div>`;
+      else if (run.finished()) {
         const score = run.score();
         record("lab_done", { lab: def.id, kind: def.kind, track: def.track, tier: def.tier, score, elapsed: run.elapsed, exam: !!run.exam });
         note = `<div class="verdict ok"><b>Lab complete: ${score} points.</b> ${run.exam ? "Exam mode bonus applied." : ""}</div>`;
       } else note = `<div class="verdict ok">Part complete.</div>`;
     }
-    store(run);
+    store(run, k);
     renderSide(res, note);
     topo();
   };
@@ -240,10 +277,11 @@ function mount(main, run) {
     if (!document.body.contains(el)) { clearInterval(tick); return; }
     if (!document.hidden && !run.finished()) run.elapsed += 1000;
     const t = $("[data-timer]", el); if (t) t.textContent = mmss(run.elapsed) + ` / ${def.par || 30}:00`;
-    if (run.elapsed % 15000 === 0) store(run);
+    if (run.elapsed % 15000 === 0) store(run, k);
   }, 1000);
-  $("[data-exam]", el).onchange = (e) => { run.exam = e.target.checked; store(run); renderSide(); };
-  $("[data-reset]", el).onclick = () => { if (confirm("Reset this lab to its starting state? Your configuration and progress in it are lost.")) { forget(def.id); labView(main, def.id); } };
+  const ex = $("[data-exam]", el); if (ex) ex.onchange = (e) => { run.exam = e.target.checked; store(run, k); renderSide(); };
+  $("[data-reset]", el).onclick = () => { if (confirm("Reset this lab to its starting state? Your configuration and progress in it are lost.")) { if (emb) opts.reset(); else { forget(def.id); labView(main, def.id); } } };
+  const lv = $("[data-leave]", el); if (lv) lv.onclick = () => opts.finish(null);
 
   devTabs(); paint(); topo(); renderSide();
 }

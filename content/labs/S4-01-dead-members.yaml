@@ -1,5 +1,6 @@
 id: S4.01
 track: sdwan
+modules: [M8.03]
 tier: 4
 order: 31
 kind: ticket

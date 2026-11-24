@@ -6,6 +6,7 @@ A lab file holds one lab. Topologies can come from content/labs/_templates.yaml:
 Single-part labs may put tasks/checks/hints/solution at the top level; they become parts[0].
 Usage: python3 tools/build_labs.py [--check]
 """
+import re
 import json, sys, glob, os, copy
 import yaml
 
@@ -84,7 +85,7 @@ def lint(labs):
     errs, ids = [], set()
     for lab in labs:
         lid = lab.get("id", "?")
-        for k in ("id", "title", "track", "tier", "order", "kind", "brief", "topology", "parts"):
+        for k in ("id", "title", "track", "modules", "tier", "order", "kind", "brief", "topology", "parts"):
             if k not in lab:
                 errs.append(f"{lid}: missing {k}")
         if lid in ids:
@@ -92,6 +93,9 @@ def lint(labs):
         ids.add(lid)
         if lab.get("track") not in TRACKS:
             errs.append(f"{lid}: unknown track {lab.get('track')}")
+        for m in lab.get("modules") or []:
+            if not re.fullmatch(r"M\d+\.\d\d", str(m)):
+                errs.append(f"{lid}: module id {m} should look like M4.09")
         if lab.get("kind") not in KINDS:
             errs.append(f"{lid}: unknown kind {lab.get('kind')}")
         devs = {d["id"] for d in lab["topology"].get("devices", [])}

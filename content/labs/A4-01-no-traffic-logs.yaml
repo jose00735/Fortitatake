@@ -1,5 +1,6 @@
 id: A4.01
 track: fortianalyzer
+modules: [M6.01, M6.02]
 tier: 4
 order: 51
 kind: ticket

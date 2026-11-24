@@ -1,5 +1,6 @@
 id: V4.05
 track: vpn
+modules: [M4.09, M3.03]
 tier: 4
 order: 25
 kind: ticket

@@ -1,5 +1,6 @@
 id: M2.01
 track: fortimanager
+modules: [M5.01, M5.03]
 tier: 2
 order: 45
 kind: project

@@ -1,5 +1,6 @@
 id: B4.06
 track: fortigate
+modules: [M1.03, M4.12]
 tier: 4
 order: 6
 kind: ticket

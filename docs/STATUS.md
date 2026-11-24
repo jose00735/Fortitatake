@@ -98,6 +98,13 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.6.1 adds (labs in sorties)
+
+- Every lab carries `modules:` (curriculum ids it teaches; required by `build_labs.py`).
+- Sorties: **Apply** ends with one emulated-CLI lab part for the module (projects and drills, unpassed and lower tier first), **PS Arena** ends with a live ticket, **Boss** ends with a ticket in exam mode as the final strike (it counts toward the 80 % pass).
+- Lab parts are review items (`LAB.<lab>.<part>`): passing a part records a review (revealed = Again, hints = Hard, clean = Good), so struggled parts come back in Warm-up and Review.
+- Sortie and review runs use their own save slot and start mid-lab with the earlier parts' reference solutions applied (`LabRun.jumpTo`), so they never disturb the catalogue run.
+
 ### What v0.6.0 adds (Labs)
 
 - `utm.js`: security profiles on policies. SSL inspection (certificate / deep, wildcard-FQDN, address and regex exemptions; pinned sites and clients that don't trust the FortiGate CA give certificate errors under deep inspection), URL filter tables (simple, wildcard, regex; block, monitor, allow, exempt), antivirus on HTTP (EICAR test file). `curl` on lab hosts shows the block page, the AV alert or the certificate error. Traffic and UTM logs in FortiOS format.

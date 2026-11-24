@@ -1,5 +1,6 @@
 id: S2.02
 track: sdwan
+modules: [M8.03]
 tier: 2
 order: 11
 kind: project

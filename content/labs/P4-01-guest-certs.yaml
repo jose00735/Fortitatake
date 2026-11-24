@@ -1,5 +1,6 @@
 id: P4.01
 track: fortigate
+modules: [M4.07, M3.02]
 tier: 4
 order: 50
 kind: ticket

@@ -350,7 +350,8 @@ details summary { cursor: pointer; }
 .lab-state { font-size: .8rem; font-weight: 600; }
 .lab-state.done { color: var(--ok); }
 .lab-state.wip { color: var(--warn); }
-.main:has(.labrun) { padding: 0; }
+.main:has(.labrun:not(.embedded)) { padding: 0; }
+.labrun.embedded { height: calc(100vh - 190px); min-height: 620px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .labrun { display: grid; grid-template-rows: auto auto 1fr; height: 100vh; min-height: 560px; }
 .lr-head { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
 .lr-title { display: grid; flex: 1; min-width: 200px; }
@@ -419,6 +420,7 @@ details summary { cursor: pointer; }
 .lr-keys button { background: rgba(255, 255, 255, .08); color: var(--term-ink); border-color: transparent; font: 600 .8rem var(--mono); padding: 6px 10px; }
 @media (max-width: 900px) {
   .labrun { height: auto; min-height: calc(100vh - 60px); grid-template-rows: auto auto 1fr; }
+  .labrun.embedded { height: auto; min-height: 70vh; overflow: visible; }
   .lr-tabs { display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 3; }
   .lr-tabs button { flex: 1; justify-content: center; }
   .lr-tabs button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }

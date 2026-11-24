@@ -1,5 +1,6 @@
 id: H4.02
 track: ha
+modules: [M4.10, M8.05]
 tier: 4
 order: 42
 kind: ticket

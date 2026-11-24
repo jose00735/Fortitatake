@@ -2,17 +2,29 @@
 import { h, $, $$, esc, inline, md, shuffle, fmtMin } from "./core.js";
 import { S, record, dueItems } from "./state.js";
 import { flashcard, quiz, lab, scenario, drill, anyItem, setKeys } from "./widgets.js";
+import { labPart } from "./labs/view.js";
+
+// emulated-CLI lab parts that teach this module, freshest first (not yet passed, then lower tier)
+function labParts(m, test) {
+  const out = [];
+  for (const l of (S.labsByModule && S.labsByModule.get(m.id)) || []) {
+    if (!test(l)) continue;
+    l.parts.forEach((p, i) => out.push({ lab: l, part: p, i, done: S.p.labParts.has(l.id + ":" + p.id) }));
+  }
+  return out.sort((a, b) => (a.done - b.done) || (a.lab.tier - b.lab.tier) || (a.i - b.i) || a.lab.id.localeCompare(b.lab.id));
+}
+const isTicket = (l) => l.kind === "ticket" || l.kind === "investigation";
 
 export const BLOCKS = [
   { id: "warmup", name: "Warm-up", min: 20, desc: "Due reviews, overdue first" },
   { id: "pretest", name: "Pretest", min: 10, desc: "Ungraded guesses to prime your attention" },
   { id: "learn", name: "A · Learn", min: 50, desc: "Reading chunks with recall and why prompts, then first-pass cards" },
   { id: "break1", name: "Break", min: 10, brk: true },
-  { id: "apply", name: "B · Apply", min: 50, desc: "Quiz ladder and labs: worked, faded, solo" },
+  { id: "apply", name: "B · Apply", min: 50, desc: "Quiz ladder, written labs, then a part of an emulated-CLI lab" },
   { id: "break2", name: "Break", min: 10, brk: true },
-  { id: "arena", name: "C · PS Arena", min: 50, desc: "Consultant situations and raids" },
+  { id: "arena", name: "C · PS Arena", min: 50, desc: "Consultant situations and raids, then a live ticket" },
   { id: "break3", name: "Break", min: 10, brk: true },
-  { id: "boss", name: "D · Boss", min: 20, desc: "Timed, interleaved, no hints" },
+  { id: "boss", name: "D · Boss", min: 20, desc: "Timed, interleaved, no hints, with a ticket in exam mode as the final strike" },
   { id: "close", name: "Close", min: 10, desc: "Interview drills, reflection, your own cards" },
 ];
 
@@ -137,23 +149,29 @@ const RUN = {
     showUnit();
   },
 
-  apply(stage, m, done) {
+  apply(stage, m, done, s) {
     const qs = (m.quiz || []).filter((q) => !q.pretest);
     const low = qs.filter((q) => (q.tier || 1) <= 2);
     const high = qs.filter((q) => (q.tier || 1) >= 3).sort((a, b) => a.tier - b.tier);
     const steps = [...low.map((q) => ({ q })), ...(m.labs || []).map((l) => ({ l })), ...high.map((q) => ({ q }))];
     // Leftover cards from units read earlier get their first pass here too.
     const fresh = (m.cards || []).filter((c) => !S.p.items.has(c.id)).map((c) => ({ c }));
-    sequence(stage, [...fresh, ...steps], (x, label, next) => {
+    const lp = labParts(m, (l) => !isTicket(l))[0];
+    sequence(stage, [...fresh, ...steps, ...(lp ? [{ lp }] : [])], (x, label, next) => {
+      if (x.lp) return labPart(stage, x.lp.lab.id, x.lp.part.id, { label: `Apply ${label} · lab ${x.lp.lab.id}${x.lp.lab.parts.length > 1 ? " part " + (x.lp.i + 1) : ""}`, slot: s.sid }, next);
       if (x.c) return flashcard(stage, x.c.id, next, { label: "Card " + label });
       if (x.l) return lab(stage, x.l, m.id, next);
       return quiz(stage, x.q, m.id, next, { label: "Apply " + label });
     }, done, "No practice items in this module.");
   },
 
-  arena(stage, m, done) {
-    const scs = [...(m.scenarios || [])].sort((a, b) => (a.kind === "raid") - (b.kind === "raid"));
-    sequence(stage, scs, (sc, label, next) => scenario(stage, sc, m.id, next), done, "No PS situations in this module.");
+  arena(stage, m, done, s) {
+    const scs = [...(m.scenarios || [])].sort((a, b) => (a.kind === "raid") - (b.kind === "raid")).map((sc) => ({ sc }));
+    const t = labParts(m, isTicket)[0];
+    sequence(stage, [...scs, ...(t ? [{ t }] : [])], (x, label, next) => {
+      if (x.t) return labPart(stage, x.t.lab.id, x.t.part.id, { label: `Live ticket ${x.t.lab.id} · par ${x.t.lab.par || 20} min`, slot: s.sid }, next);
+      return scenario(stage, x.sc, m.id, next);
+    }, done, "No PS situations in this module.");
   },
 
   boss(stage, m, done, s) {
@@ -175,12 +193,21 @@ const RUN = {
         onAnswer: (ok) => { if (ok) hits++; const hp = Math.max(0, Math.round(100 - (hits / pool.length) * 100)); $(".hp .meter i", frame).style.width = hp + "%"; $("[data-hp]", frame).textContent = hp; },
       });
     };
+    // final strike: a ticket in exam mode (no hints, no solution), preferably one not used in the arena
+    const tickets = labParts(m, isTicket);
+    const strike = tickets[1] || tickets[0] || labParts(m, () => true)[0];
     const finish = () => {
-      const score = pool.length ? hits / pool.length : 0;
+      if (!strike) return verdict(null);
+      labPart($("[data-q]", frame), strike.lab.id, strike.part.id, { label: `Final strike · ${strike.lab.id}`, exam: true, slot: s.sid + "-boss" }, (r) => verdict(r));
+    };
+    const verdict = (lr) => {
+      const n = pool.length + (strike ? 1 : 0);
+      const got = hits + (lr && lr.passed ? 1 : 0);
+      const score = n ? got / n : 0;
       const passed = score >= 0.8;
-      record("boss_result", { sid: s.sid, module: m.id, score, passed, n: pool.length });
+      record("boss_result", { sid: s.sid, module: m.id, score, passed, n, lab: strike ? strike.lab.id + ":" + strike.part.id : undefined, labPassed: !!(lr && lr.passed) });
       stage.replaceChildren(h(`<div class="panel"><h2 style="margin-top:0">${passed ? "Boss down" : "The boss survives"}</h2>
-        <p>You landed <b class="num">${hits} / ${pool.length}</b> (${Math.round(score * 100)} %). ${passed ? "That counts toward L5 mastery when it is 85 % or higher." : "Missed items are already back in your review queue. Rematch in the next sortie."}</p>
+        <p>You landed <b class="num">${got} / ${n}</b> (${Math.round(score * 100)} %)${strike ? `, and the final-strike ticket ${lr && lr.passed ? "fell" : "held"}` : ""}. ${passed ? "That counts toward L5 mastery when it is 85 % or higher." : "Missed items are already back in your review queue. Rematch in the next sortie."}</p>
         <button class="primary">Continue</button></div>`));
       $("button", stage).onclick = done;
     };

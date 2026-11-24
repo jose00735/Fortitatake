@@ -1,5 +1,6 @@
 id: A2.02
 track: fortianalyzer
+modules: [M6.03, M6.04]
 tier: 2
 order: 41
 kind: investigation

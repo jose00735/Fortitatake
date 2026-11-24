@@ -1,4 +1,5 @@
 // Widgets: one study task each. Every widget records its own events and calls done().
+import { labPart } from "./labs/view.js";
 import { h, $, $$, esc, inline, md, shuffle, norm, download } from "./core.js";
 import { S, record } from "./state.js";
 
@@ -310,5 +311,6 @@ export function anyItem(root, id, done, opts = {}) {
   if (!ref) return done();
   if (ref.kind === "card") return flashcard(root, id, done, opts);
   if (ref.kind === "quiz") return quiz(root, ref.item, ref.module, done, { ...opts, mode: "review" });
+  if (ref.kind === "labpart") return labPart(root, ref.item.lab, ref.item.part, { label: `${opts.label || "Review"} · lab ${ref.item.lab}`, slot: "review" }, () => done());
   return drill(root, ref.item, ref.module, done, opts);
 }

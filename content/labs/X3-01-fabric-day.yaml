@@ -1,5 +1,6 @@
 id: X3.01
 track: integration
+modules: [M5.03, M6.03, M8.06, M11.02]
 tier: 3
 order: 60
 kind: project

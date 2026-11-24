@@ -1,5 +1,6 @@
 id: A2.01
 track: fortianalyzer
+modules: [M6.01, M6.02]
 tier: 2
 order: 40
 kind: project

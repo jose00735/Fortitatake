@@ -1,5 +1,6 @@
 id: C0.02
 track: fortigate
+modules: [M4.01]
 tier: 0
 order: 2
 kind: drill
