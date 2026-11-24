@@ -30,6 +30,8 @@ function one(lab, c, answers) {
   if (c.login) return loginCheck(lab, c.login);
   if (c.authserver) return authServerCheck(lab, c.authserver);
   if (c.fsso) return fssoCheck(lab, c.fsso);
+  if (c.ospf) return ospfCheck(lab, c.ospf);
+  if (c.bgp) return bgpCheck(lab, c.bgp);
   if (c.all) { const r = c.all.map((x) => one(lab, x, answers)); return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail }; }
   return { pass: false, detail: "Unknown check type" };
 }
@@ -87,6 +89,26 @@ function authServerCheck(lab, c) {
   if (!want && r.ok) return { pass: false, detail: `${c.server} still authenticates ${c.user}.` };
   if (want && c.group && !(r.groups || []).some((g) => g.toLowerCase().includes(c.group.toLowerCase()))) return { pass: false, detail: `${c.server} authenticates ${c.user} but returns no ${c.group} membership (got ${(r.groups || []).join(", ") || "none"}).` };
   return { pass: true, detail: want ? `${c.server} authenticates ${c.user}${r.groups && r.groups.length ? ` with ${r.groups.length} group(s)` : ""}.` : `${c.server} refuses ${c.user}.` };
+}
+
+function ospfCheck(lab, c) {
+  const o = lab.controlPlane().ospf.get(c.dev);
+  if (!o) return { pass: false, detail: `${c.dev} isn't running OSPF (no network statement covers an interface).` };
+  const n = o.nbrs.find((x) => x.peer.sp.id === c.neighbor);
+  if (!n) return { pass: false, detail: `${c.dev} has no OSPF neighbor ${c.neighbor}: no hellos on a shared segment (is the link's subnet in a network statement, and the interface not passive?).` };
+  const want = c.state || "Full";
+  if (n.state !== want) return { pass: false, detail: `${c.dev} ↔ ${c.neighbor} is ${n.state || "down"}${n.why ? `: ${n.why}` : ""}.` };
+  return { pass: true, detail: `${c.dev} ↔ ${c.neighbor} is ${n.state}${n.role ? "/" + n.role : ""}.` };
+}
+
+function bgpCheck(lab, c) {
+  const b = lab.controlPlane().bgp.get(c.dev);
+  if (!b) return { pass: false, detail: `${c.dev} isn't running BGP (no local AS).` };
+  const s = b.sessions.find((x) => x.n.ip === ipToInt(c.peer));
+  if (!s) return { pass: false, detail: `${c.dev} has no BGP neighbor ${c.peer}.` };
+  if (s.state !== (c.state || "Established")) return { pass: false, detail: `${c.dev} → ${c.peer} is ${s.state}${s.why ? `: ${s.why}` : ""}.` };
+  if (c.received !== undefined) { const n = ((b.adjIn.get(s.n.ip) || {}).routes || new Map()).size; if (n !== c.received) return { pass: false, detail: `${c.dev} receives ${n} prefixes from ${c.peer}, expected ${c.received}.` }; }
+  return { pass: true, detail: `${c.dev} → ${c.peer} is Established.` };
 }
 
 function fssoCheck(lab, c) {
@@ -197,9 +219,13 @@ function dhcpCheck(lab, c) {
 
 function routeCheck(lab, c) {
   const fg = getDev(lab, c.dev);
-  const { active } = lab.fgtRoutes(fg);
+  const active = fg instanceof FortiGate ? lab.fgtRoutes(fg).active : lab.routerDynamic(fg);
   const want = parsePrefix(c.dst);
-  const r = active.find((x) => x.dst.ip === want.ip && x.dst.len === want.len && (!c.via || x.gw === ipToInt(c.via)) && (!c.intf || x.dev === c.intf));
+  const r = active.find((x) => x.dst.ip === want.ip && x.dst.len === want.len && (!c.via || x.gw === ipToInt(c.via)) && (!c.intf || x.dev === c.intf) && (!c.type || x.type === c.type || (c.type === "O" && String(x.type).startsWith("O"))));
+  if (c.type && !c.absent && !r) {
+    const other = active.find((x) => x.dst.ip === want.ip && x.dst.len === want.len);
+    if (other) return { pass: false, detail: `${c.dst} is in the table on ${c.dev}, but as ${other.type} (distance ${other.distance}), not ${c.type}.` };
+  }
   if (c.absent) return r ? { pass: false, detail: `${c.dst} is still in the routing table.` } : { pass: true, detail: `${c.dst} is not in the routing table.` };
   return r ? { pass: true, detail: `${prefixStr(r.dst)} is active via ${r.gw ? intToIp(r.gw) : r.dev}.` } : { pass: false, detail: `No active route to ${c.dst}${c.via ? ` via ${c.via}` : ""}.` };
 }

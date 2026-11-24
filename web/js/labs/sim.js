@@ -90,7 +90,7 @@ export class Lab {
       else if (d.kind === "cloud") dev = new Cloud(d);
       else dev = new Host(d, this);
       // directory data can change during a lab (events), so each run gets its own copy
-      dev.spec = d.directory ? { ...d, directory: JSON.parse(JSON.stringify(d.directory)) } : d;
+      dev.spec = d.directory || d.ospf || d.bgp ? JSON.parse(JSON.stringify(d)) : d;
       this.devices.set(d.id, dev);
       this.order.push(d.id);
     }
@@ -236,6 +236,7 @@ export class Lab {
       if (dst && i && i.up) routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw: ipToInt(fg.one("system route", r, "gateway") || "0.0.0.0"), dev: i.name, distance: 10, priority: 0 });
     }
     routes.push(...this.extraRoutes(fg, intfs));
+    routes.push(...this.dynRoutes(fg));
     // RIB: for each prefix keep the lowest distance; FIB = those
     const best = new Map();
     for (const r of routes) {
@@ -466,7 +467,8 @@ export class Lab {
         return this.forwardOnSeg(this.segOf(r.id, i.name), pkt.dst, pkt, res, r.id);
       }
     }
-    const cands = r.routes.filter((x) => inPrefix(pkt.dst, x.dst)).sort((a, b) => b.dst.len - a.dst.len);
+    const dyn = this.routerDynamic(r).map((x) => ({ dst: x.dst, via: x.gw, dev: null, dyn: true }));
+    const cands = [...r.routes, ...dyn].filter((x) => inPrefix(pkt.dst, x.dst)).sort((a, b) => (b.dst.len - a.dst.len) || ((a.dyn ? 1 : 0) - (b.dyn ? 1 : 0)));
     const rt = cands[0];
     if (!rt || (r.dropPrivate && isPrivate(pkt.dst) && rt.dst.len === 0)) { res.drop = { dev: r.id, reason: `no route to ${intToIp(pkt.dst)}` }; return null; }
     if (rt.dev === "internet" || rt.via === null) {
@@ -816,6 +818,8 @@ Lab.prototype.onCommit = function () {};
 Lab.prototype.postLoad = function () {};
 Lab.prototype.onDelete = function () {};
 Lab.prototype.authUser = function () { return null; };
+Lab.prototype.dynRoutes = function () { return []; };
+Lab.prototype.routerDynamic = function () { return []; };
 Lab.prototype.identityOk = function () { return false; };
 Lab.prototype.extraRefs = function () { return []; };
 Lab.prototype.clientTunnel = function (h, pkt, res) { res.drop = { dev: h.id, reason: "VPN not simulated" }; return null; };

@@ -1,0 +1,295 @@
+id: M8.02
+title: "Advanced routing on FortiGate: OSPF and BGP configuration, debugging, BFD"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 156
+est_sessions: 1.5
+objectives:
+  - Configure OSPF on FortiOS with areas, network statements, passive interfaces, authentication and default origination
+  - Configure eBGP and iBGP on FortiOS with update-source, multihop, next-hop-self, filters and route maps
+  - Redistribute between protocols safely
+  - Troubleshoot with get router info, the routing database and the protocol debugs
+  - Use BFD for fast failure detection
+sources:
+  - "FortiOS 8.0.2 Admin Guide: OSPF (pp. 698–716) with the basic example and outputs (pp. 699–707)"
+  - "FortiOS 8.0.2 Admin Guide: BGP (pp. 716–805): basic example (p. 718), neighbor password (p. 727), network prefixes (p. 749)"
+  - "FortiOS 8.0.2 Admin Guide: BFD (pp. 806–816), routing objects (p. 817)"
+
+units:
+  - id: M8.02.u1
+    title: OSPF on FortiOS
+    tier: 2
+    est_min: 14
+    body: |
+      :::cli
+      config router ospf
+          set router-id 10.20.255.1
+          set default-information-originate enable
+          set passive-interface "port2"
+          config area
+              edit 0.0.0.0
+              next
+          end
+          config network
+              edit 1
+                  set prefix 10.20.50.0 255.255.255.248
+                  set area 0.0.0.0
+              next
+              edit 2
+                  set prefix 10.20.10.0 255.255.255.0
+                  set area 0.0.0.0
+              next
+          end
+          config ospf-interface
+              edit "CORE"
+                  set interface "port5"
+                  set network-type point-to-point
+                  set authentication message-digest
+                  config md5-keys
+                      edit 1
+                          set key-string <key>
+                      next
+                  end
+              next
+          end
+      end
+      :::
+
+      - **network** statements enable OSPF on every interface whose IP falls inside the prefix and put it in that area.
+      - **passive-interface**: advertise the subnet, send no hellos (user LANs).
+      - **ospf-interface**: per-interface cost, network type, timers, authentication, MTU handling.
+      - **default-information-originate**: `enable` advertises a default (external) only while the FortiGate has one;
+        `always` advertises it regardless.
+      - **redistribute** connected/static/bgp with a metric and metric type; `default-metric` applies when you set
+        none.
+
+      :::recall
+      Q: Why put the user LAN in a network statement and also make it passive?
+      A: The network statement advertises the subnet; passive stops hellos to PCs, so nobody on the LAN can form an adjacency and inject routes.
+      :::
+  - id: M8.02.u2
+    title: BGP on FortiOS
+    tier: 2
+    est_min: 14
+    body: |
+      :::cli
+      config router bgp
+          set as 65010
+          set router-id 10.20.255.1
+          config neighbor
+              edit "10.255.0.1"
+                  set remote-as 64600
+                  set password <md5>
+                  set prefix-list-in "ANDES-ONLY"
+                  set bfd enable
+              next
+              edit "10.20.255.2"
+                  set remote-as 65010
+                  set update-source "loopback0"
+                  set next-hop-self enable
+              next
+          end
+          config network
+              edit 1
+                  set prefix 10.20.10.0 255.255.255.0
+              next
+          end
+      end
+      :::
+
+      | Setting | Why |
+      |---|---|
+      | `update-source` | iBGP between loopbacks: the session survives a link failure if the IGP reroutes |
+      | `ebgp-enforce-multihop` | eBGP to a non-connected address (loopback peering) |
+      | `next-hop-self` | iBGP peers can't reach the eBGP next hop |
+      | `route-reflector-client` | Avoid an iBGP full mesh |
+      | `password` | TCP MD5 on the session (p. 727) |
+      | `network-import-check` | Default enable: advertise a network only if it exists in the RIB (p. 749) |
+
+      Distances: eBGP 20, iBGP 200 (`distance-external`, `distance-internal`).
+  - id: M8.02.u3
+    title: Troubleshooting dynamic routing
+    tier: 3
+    est_min: 14
+    body: |
+      | Question | Command |
+      |---|---|
+      | Is the adjacency Full / session Established? | `get router info ospf neighbor` · `get router info bgp summary` |
+      | Why not? | `get router info ospf interface <port>` · `get router info bgp neighbors <ip>` · `diagnose ip router ospf all enable` / `diagnose ip router bgp all enable` + `diagnose debug enable` |
+      | What did I learn / send? | `get router info ospf database` · `get router info bgp network` · `get router info bgp neighbors <ip> received-routes|advertised-routes` |
+      | Which route is used? | `get router info routing-table all` · `… details <ip>` · `… database` |
+      | Apply a filter change | `execute router clear bgp ip <peer> soft in|out` |
+
+      ## Symptom → cause cheat sheet
+
+      - OSPF neighbor missing: timers, area, mask, authentication, passive, or no network statement covering the port.
+      - OSPF ExStart: MTU.
+      - BGP Active: no route to the peer, wrong neighbor IP or update-source, MD5 mismatch, TCP 179 blocked.
+      - BGP Idle with Bad Peer AS: wrong remote-as.
+      - Prefix in BGP table but not installed: next hop unreachable, or a better distance from another protocol.
+      - Advertised nothing: network-import-check, outbound filters.
+
+      :::pitfall
+      Redistributing BGP into OSPF and OSPF back into BGP at two points creates feedback loops. Tag routes when you
+      redistribute and filter the tag on the way back, or redistribute in one direction only.
+      :::
+  - id: M8.02.u4
+    title: BFD and convergence
+    tier: 3
+    est_min: 10
+    body: |
+      Protocol timers are slow: OSPF's default dead interval is 40 s; BGP's hold timer is 180 s by default. **BFD**
+      sends lightweight packets at a negotiated rate and tells the routing protocol the moment the neighbor stops
+      answering (p. 806).
+
+      FortiOS: enable BFD globally, per VDOM or per interface (`config system settings` / `set bfd enable` with
+      `bfd-desired-min-tx`, `bfd-required-min-rx`, `bfd-detect-mult`), then on the protocol (`set bfd enable` on a BGP
+      neighbor or in OSPF). Echo mode and authentication aren't supported for BFD on FortiGate (p. 806).
+
+      :::why
+      Q: Why use BFD instead of setting OSPF hello to 1 s?
+      A: BFD is light and hardware-friendly, works for several protocols at once, and doesn't require both sides to agree on aggressive OSPF timers (a mismatch kills the adjacency).
+      :::
+
+      :::ps
+      In a change window, capture `get router info routing-table all` and the neighbor summaries **before** you start.
+      The comparison after the change is your acceptance test.
+      :::
+
+cards:
+  - {id: M8.02.c01, unit: M8.02.u1, tier: 2, front: "What does an OSPF network statement do on FortiOS?", back: "Enables OSPF on interfaces whose IP falls inside the prefix, in that area."}
+  - {id: M8.02.c02, unit: M8.02.u1, tier: 2, front: "default-information-originate enable vs always", back: "enable: only while the FortiGate has a default route. always: unconditionally."}
+  - {id: M8.02.c03, unit: M8.02.u1, tier: 2, front: "Where do OSPF MD5 keys live on FortiOS?", back: "config router ospf → config ospf-interface → set authentication message-digest → config md5-keys."}
+  - {id: M8.02.c04, unit: M8.02.u2, tier: 2, front: "iBGP between loopbacks needs…", back: "update-source loopback on both sides and IGP routes to the loopbacks."}
+  - {id: M8.02.c05, unit: M8.02.u2, tier: 2, front: "BGP session password on FortiOS", back: "set password under the neighbor (TCP MD5)."}
+  - {id: M8.02.c06, unit: M8.02.u3, tier: 2, front: "See what a BGP neighbor sent you", back: "get router info bgp neighbors <ip> received-routes (needs soft-reconfiguration for pre-policy)."}
+  - {id: M8.02.c07, unit: M8.02.u3, tier: 2, front: "Turn on OSPF debug", back: "diagnose ip router ospf all enable, then diagnose debug enable."}
+  - {id: M8.02.c08, unit: M8.02.u3, tier: 3, front: "Route in BGP table but not installed: two causes", back: "Next hop unreachable; another protocol has a better distance for that prefix."}
+  - {id: M8.02.c09, unit: M8.02.u4, tier: 2, front: "Default BGP hold time and OSPF dead interval", back: "180 s and 40 s."}
+  - {id: M8.02.c10, unit: M8.02.u4, tier: 2, front: "BFD features not supported on FortiGate", back: "Echo mode and authentication."}
+  - {id: M8.02.c11, unit: M8.02.u3, tier: 3, front: "Prevent redistribution loops", back: "Tag routes when redistributing and filter the tag on the way back (or one-way redistribution)."}
+
+quiz:
+  - id: M8.02.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A FortiGate should advertise the HQ LAN in OSPF without any PC forming an adjacency. You…"
+    options:
+      - {id: a, text: "Include the LAN in a network statement and make port2 passive", correct: true}
+      - {id: b, text: "Redistribute connected only", why_wrong: "Works, but makes it an external E2 route."}
+      - {id: c, text: "Leave the LAN out of OSPF", why_wrong: "Then nobody learns it."}
+      - {id: d, text: "Set port2 network-type point-to-point", why_wrong: "Still sends hellos."}
+    explanation: "Network statement + passive interface."
+  - id: M8.02.q02
+    type: single
+    tier: 2
+    stem: "iBGP between loopbacks stays Active. Both sides have the neighbor and remote-as right. Most likely missing?"
+    options:
+      - {id: a, text: "update-source loopback (or IGP routes to the loopbacks)", correct: true}
+      - {id: b, text: "ebgp-enforce-multihop", why_wrong: "That's for eBGP."}
+      - {id: c, text: "next-hop-self", why_wrong: "Affects routes, not session setup."}
+      - {id: d, text: "network-import-check", why_wrong: "Affects origination."}
+    explanation: "Sessions source from the egress interface unless update-source is set."
+  - id: M8.02.q03
+    type: multi
+    tier: 3
+    stem: "Which commands show why a BGP session isn't up? Select all that apply."
+    options:
+      - {id: a, text: "get router info bgp summary", correct: true}
+      - {id: b, text: "get router info bgp neighbors <ip>", correct: true}
+      - {id: c, text: "diagnose ip router bgp all enable + diagnose debug enable", correct: true}
+      - {id: d, text: "get router info ospf database", why_wrong: "OSPF LSDB."}
+    explanation: "State, neighbor detail, live debug."
+  - id: M8.02.q04
+    type: single
+    tier: 2
+    stem: "What does BFD give a routing design?"
+    options:
+      - {id: a, text: "Sub-second failure detection that the routing protocol acts on", correct: true}
+      - {id: b, text: "Encryption of routing updates", why_wrong: "BFD doesn't encrypt (and FortiGate BFD has no authentication)."}
+      - {id: c, text: "Load balancing", why_wrong: "That's ECMP."}
+      - {id: d, text: "Route filtering", why_wrong: "Prefix lists and route maps."}
+    explanation: "Fast liveness detection."
+    source: "FortiOS 8.0.2 Admin Guide p. 806"
+  - id: M8.02.q05
+    type: text
+    tier: 2
+    stem: "Command to apply a new inbound BGP filter without resetting the session (start of the command)?"
+    accept: ["execute router clear bgp", "exec router clear bgp"]
+    explanation: "execute router clear bgp ip <peer> soft in."
+
+labs:
+  - id: M8.02.lab1
+    title: The routing acceptance test
+    goal: "Write the before/after checks for a change that moves a site from static routes to OSPF and BGP."
+    worked:
+      config: |
+        # BEFORE the change (save to the change record)
+        get router info routing-table all
+        get router info routing-table database
+        get router info ospf neighbor
+        get router info bgp summary
+        # AFTER the change
+        get router info ospf neighbor              # every neighbor Full
+        get router info bgp summary                # every session with a prefix count, not a state
+        get router info bgp neighbors <pe> advertised-routes   # only our prefixes
+        get router info routing-table all          # expected O / B routes, no leftover statics winning
+        execute ping-options source <lan-ip>
+        execute ping <remote-lan-host>
+      notes:
+        - "Compare before/after line by line."
+        - "Test from user subnets, not only from the FortiGate."
+    faded:
+      template: |
+        get router info ospf {{neighbor}}
+        get router info bgp {{summary}}
+        get router info bgp neighbors <pe> {{advertised-routes}}
+        get router info routing-table {{database}}
+    solo:
+      prompt: "Write one command per line that answers: OSPF adjacency state, BGP session state, what we advertise to the PE, all candidate routes."
+      required: ["ospf neighbor", "bgp summary", "advertised-routes", "routing-table database"]
+      solution: |
+        get router info ospf neighbor
+        get router info bgp summary
+        get router info bgp neighbors 10.255.0.1 advertised-routes
+        get router info routing-table database
+      notes: "Save before and after."
+
+scenarios:
+  - id: M8.02.sc1
+    kind: raid
+    tier: 3
+    title: The migration window is closing
+    situation: |
+      23:40, window ends at 00:00. You migrated a site from static routes to BGP with the carrier. The session is
+      Established, but the remote site still can't reach HQ. HQ's routing table shows no route to the site.
+    ask: "Your next 15 minutes?"
+    right_thinking:
+      - "Check what the site advertises (advertised-routes) and what HQ receives"
+      - "Likely network-import-check or an outbound filter"
+      - "If not fixed by 23:55, roll back to the statics as planned"
+    what: "A fast, evidence-based check with a rollback ready."
+    why: "A good MOP has a decision point before the window ends."
+    how: ["advertised-routes", "fix", "test", "rollback decision"]
+    model_answer: |
+      "First, advertised-routes on the site's FortiGate toward the PE: if it's empty, the network statement doesn't
+      match a route in its table, the classic network-import-check issue. Fix the prefix, check HQ receives it, test
+      from a user PC. If I can't prove it works by 23:55, I re-enable the old static routes as the MOP says, and we
+      schedule the BGP part again."
+    best_way: "Evidence, fix, test, or roll back on time."
+    rubric: ["right first command", "knows import-check", "respects rollback point"]
+
+interview:
+  - id: M8.02.t01
+    stage: technical
+    question: "BGP is Established but the remote prefix isn't in the routing table. Walk me through it."
+    testing: "BGP troubleshooting depth"
+    framework: "Advertised → received → valid → installed"
+    model_answer: |
+      "I follow the route: on the remote side, is it advertised (advertised-routes; if not, network-import-check or an
+      outbound filter)? On my side, is it received and accepted (received-routes, inbound filters)? Is it valid
+      (next hop reachable)? Is it best and installed, or does another protocol win on distance? Each step has its
+      command, so it's quick."
+    best_way: "Four stages, one command each."
+    target: "0:45"

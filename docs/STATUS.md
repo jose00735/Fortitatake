@@ -98,6 +98,15 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.6.3 adds (dynamic routing)
+
+- `routing.js`: a control plane computed per config version. OSPF: network statements, areas (regular/stub), passive interfaces, ospf-interface (cost, network type, hello/dead, text/MD5 auth, MTU, mtu-ignore, priority), adjacency rules (mask, area, timers, stub flag, auth, router ID, network type, MTU → ExStart), DR/BDR display, SPF with O / O IA / O E1 / O E2, redistribution, default-information-originate. BGP: eBGP/iBGP sessions (update-source, multihop, MD5, remote-as checks with FSM states and reasons), network statements with network-import-check, redistribution, prefix lists (ge/le), route maps (local preference, weight, MED, AS-path prepend), iBGP split horizon, route reflectors, next-hop-self, recursive next hops, best-path selection, distances 20/200.
+- Lab routers can speak OSPF/BGP (`ospf:` / `bgp:` specs) and forward on learned routes; `show ip ospf neighbor`, `show ip bgp summary`, `show ip bgp`.
+- FortiGate: `get router info ospf neighbor|interface|database`, `get router info bgp summary|network|neighbors [ip advertised-routes|received-routes]`, routing table with O/B codes and recursive next hops, `diagnose ip router ospf|bgp all enable`, `execute router clear bgp`.
+- Grader: `ospf` and `bgp` checks; `route` checks take `type` and work on routers. Part events can patch a router's OSPF/BGP spec.
+- Topologies `andes-ospf` (CORE-SW campus) and `andes-bgp` (carrier PE in AS 64600). Track "Routing".
+- Labs: O2.01 (3 parts), O4.01–O4.03, G2.01 (3 parts), G4.01–G4.02. Modules: M2.01 OSPF, M2.02 BGP, M4.05 Routing on FortiGate, M8.02 Advanced routing.
+
 ### What v0.6.2 adds (identity)
 
 - `auth.js`: directory servers are lab hosts with a `directory:` spec (users, groups, LDAP bind account and TLS requirements, NPS RADIUS clients and secret, FSSO collector agent with monitored groups and logons). LDAP (simple/anonymous/regular binds, cnid, DN, LDAPS/STARTTLS, server-identity-check against the certificate name, FQDN servers), RADIUS (client IP, shared secret, Fortinet-Group-Name groups, NPS policy), local users, `user group` with `match` entries, FSSO agents and `fsso-service` groups.

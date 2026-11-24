@@ -1,0 +1,87 @@
+id: O4.02
+track: routing
+modules: [M2.01, M8.02]
+tier: 4
+order: 11
+kind: ticket
+title: "\"OSPF never comes up after the 'fast convergence' change\""
+customer: Andes Logistics
+par: 20
+skills: [hello and dead intervals, ospf-interface]
+brief: |
+  **Ticket 8133, priority 2.** A consultant tuned OSPF on the FortiGate "for faster failover" last Friday. Since then
+  FGT-BOG shows no OSPF neighbors at all and the campus is unreachable. CORE-SW wasn't changed (hello 10 / dead 40).
+topology:
+  use: andes-ospf
+  devices:
+    FGT-BOG:
+      config: |
+        config router ospf
+        set router-id 10.20.255.1
+        set default-information-originate enable
+        config area
+        edit 0.0.0.0
+        next
+        end
+        config network
+        edit 1
+        set prefix 10.20.50.0 255.255.255.248
+        set area 0.0.0.0
+        next
+        edit 2
+        set prefix 10.20.10.0 255.255.255.0
+        set area 0.0.0.0
+        next
+        end
+        set passive-interface port2
+        end
+        config firewall policy
+        edit 4
+        set name "Campus-Internet"
+        set srcintf port5
+        set dstintf port1
+        set srcaddr CAMPUS
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+        config router ospf
+        config ospf-interface
+        edit CORE
+        set interface port5
+        set hello-interval 2
+        set dead-interval 8
+        next
+        end
+        end
+tasks:
+  - "Find why there's no neighbor at all."
+  - "Restore the adjacency (the switch keeps its timers)."
+  - "Answer the root cause."
+checks:
+  - text: "FGT-BOG and CORE-SW are Full"
+    ospf: {dev: FGT-BOG, neighbor: CORE-SW}
+  - text: "HQ-PC reaches the camera recorder"
+    probe: {from: HQ-PC, to: 10.20.70.10, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~hello|dead|timer|interval"], sample: "Hello/dead intervals 2/8 on the FortiGate vs 10/40 on the switch", hint: "What must match in every hello for two routers to even list each other?", why: "Hello and dead intervals are carried in each hello and must match; otherwise the hello is discarded and the neighbor never appears. Fast failover is better done with BFD than by shrinking timers on one side."}
+hints:
+  - "`get router info ospf interface port5` shows the timers; the switch uses 10/40."
+  - "`config router ospf` / `config ospf-interface` / `edit CORE` / `set hello-interval 10` / `set dead-interval 40` (or unset both for the defaults)."
+solution:
+  FGT-BOG: |
+    get router info ospf interface port5
+    config router ospf
+    config ospf-interface
+    edit CORE
+    set hello-interval 10
+    set dead-interval 40
+    next
+    end
+    end
+explain: |
+  Unlike an MTU mismatch (stuck in ExStart), a timer mismatch means the hello is dropped, so the neighbor never shows
+  up at all. If the customer wants sub-second failover, use BFD on both sides rather than tiny hello timers.

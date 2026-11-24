@@ -1,0 +1,142 @@
+id: O2.01
+track: routing
+modules: [M2.01, M4.05, M8.02]
+tier: 2
+order: 10
+kind: project
+title: "Andes HQ campus: OSPF with the new core switch"
+customer: Andes Logistics
+par: 60
+skills: [OSPF area 0, router-id, network statements, default-information-originate, MD5 authentication]
+brief: |
+  **SOW 2026-140, campus refresh.** Andes installed a core L3 switch (**CORE-SW**) for the warehouse (VLAN 60,
+  10.20.60.0/24) and the cameras (VLAN 70, 10.20.70.0/24). It's connected to FGT-BOG **port5** on the transit
+  10.20.50.0/29 and already runs OSPF in **area 0** (router ID 10.20.255.2, hello 10 / dead 40, its VLANs passive).
+
+  Andes doesn't want static routes for every new VLAN: the FortiGate must learn them, and the switch must learn its
+  way out from the FortiGate.
+
+  Design decisions from the HLD: FortiGate router ID **10.20.255.1**; only the transit in OSPF on the FortiGate side;
+  the FortiGate is the campus's way to the Internet.
+topology: {use: andes-ospf}
+parts:
+  - id: a
+    title: The adjacency
+    tasks:
+      - "OSPF on FGT-BOG: router ID 10.20.255.1, the transit 10.20.50.0/29 in area 0."
+      - "Advertise the HQ LAN (10.20.10.0/24) too, without sending OSPF hellos to the PCs."
+      - "Check `get router info ospf neighbor` and the routing table."
+      - "From HQ-PC: `tnc 10.20.70.10 -port 443` (the camera recorder)."
+    checks:
+      - text: "FGT-BOG and CORE-SW are Full neighbors"
+        ospf: {dev: FGT-BOG, neighbor: CORE-SW}
+      - text: "FGT-BOG learns the warehouse VLAN by OSPF"
+        route: {dev: FGT-BOG, dst: 10.20.60.0/24, type: O}
+      - text: "HQ-PC opens the camera recorder"
+        probe: {from: HQ-PC, to: 10.20.70.10, proto: tcp, port: 443}
+      - text: "No OSPF hellos on the HQ LAN"
+        config: {dev: FGT-BOG, path: router ospf, attr: passive-interface, has: port2, fail: "port2 sends OSPF hellos to the PCs: make it passive."}
+    hints:
+      - "`config router ospf` / `set router-id 10.20.255.1` / `config area` / `edit 0.0.0.0` / `next` / `end` / `config network` / `edit 1` / `set prefix 10.20.50.0 255.255.255.248` / `set area 0.0.0.0`."
+      - "A network statement enables OSPF on every interface whose IP falls inside it. Add 10.20.10.0/24 as a second network and make port2 passive: `set passive-interface port2`."
+    solution:
+      FGT-BOG: |
+        config router ospf
+        set router-id 10.20.255.1
+        config area
+        edit 0.0.0.0
+        next
+        end
+        config network
+        edit 1
+        set prefix 10.20.50.0 255.255.255.248
+        set area 0.0.0.0
+        next
+        edit 2
+        set prefix 10.20.10.0 255.255.255.0
+        set area 0.0.0.0
+        next
+        end
+        set passive-interface port2
+        end
+        get router info ospf neighbor
+    explain: |
+      The adjacency forms because both sides agree on area, subnet and mask, hello/dead timers, authentication and
+      area type, and their router IDs differ. Passive interfaces (the HQ LAN here, the VLANs on the switch) are
+      advertised but send no hellos, so no PC can become a neighbor. Without the HQ LAN in OSPF, the switch would
+      have no route back to 10.20.10.0/24 and the recorder's replies would die there.
+  - id: b
+    title: A way out for the campus
+    tasks:
+      - "Let CORE-SW learn a default route from FGT-BOG through OSPF (FGT-BOG keeps its static default to ETB)."
+      - "Policy CAMPUS → Internet with NAT; test from WH-PC with `curl https://www.google.com`."
+    checks:
+      - text: "CORE-SW has a default route learned from OSPF"
+        route: {dev: CORE-SW, dst: 0.0.0.0/0, type: O}
+      - text: "The warehouse browses the Internet"
+        probe: {from: WH-PC, to: www.google.com, proto: tcp, port: 443}
+      - text: "HQ still opens the recorder"
+        probe: {from: HQ-PC, to: 10.20.70.10, proto: tcp, port: 443}
+    hints:
+      - "`config router ospf` / `set default-information-originate enable`: the FortiGate advertises 0.0.0.0/0 as an external route because it has a default route itself (`always` advertises it even without one)."
+      - "Then a normal policy port5 → port1, source CAMPUS, NAT enabled."
+    solution:
+      FGT-BOG: |
+        config router ospf
+        set default-information-originate enable
+        end
+        config firewall policy
+        edit 4
+        set name "Campus-Internet"
+        set srcintf port5
+        set dstintf port1
+        set srcaddr CAMPUS
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    explain: |
+      `default-information-originate enable` injects 0.0.0.0/0 as an external (E2) LSA only while the FortiGate has a
+      default route of its own, so if the ETB route disappears the campus stops sending traffic to a dead end. The
+      return traffic for the HQ LAN works the same way: the switch follows its default to the FortiGate.
+  - id: c
+    title: Authenticate the adjacency
+    events:
+      - {router: CORE-SW, ospf: {interfaces: [{name: uplink, auth: {type: md5, id: 1, key: "Andes-OSPF-26"}}]}}
+    brief: |
+      **Security audit finding.** OSPF without authentication lets any device on the transit inject routes. The network
+      team has just enabled **MD5** on CORE-SW's uplink: key ID **1**, key `Andes-OSPF-26`. The campus is down until the
+      FortiGate matches.
+    tasks:
+      - "See the adjacency fail (`get router info ospf neighbor`, `diagnose ip router ospf all enable`)."
+      - "Configure MD5 authentication on FGT-BOG's port5 with the same key ID and key."
+    checks:
+      - text: "The adjacency is Full again"
+        ospf: {dev: FGT-BOG, neighbor: CORE-SW}
+      - text: "The warehouse browses again"
+        probe: {from: WH-PC, to: www.google.com, proto: tcp, port: 443}
+    hints:
+      - "Authentication is per interface: `config router ospf` / `config ospf-interface` / `edit CORE` / `set interface port5` / `set authentication message-digest`."
+      - "Then `config md5-keys` / `edit 1` / `set key-string Andes-OSPF-26`. Key ID and key must match the switch."
+    solution:
+      FGT-BOG: |
+        config router ospf
+        config ospf-interface
+        edit CORE
+        set interface port5
+        set authentication message-digest
+        config md5-keys
+        edit 1
+        set key-string Andes-OSPF-26
+        next
+        end
+        next
+        end
+        end
+    explain: |
+      With MD5 each OSPF packet carries a hash of the packet plus the key, so a device without the key can't form an
+      adjacency or inject routes. Both the key ID and the key must match. Roll keys out in a maintenance window, or the
+      adjacency drops between the first and the second side's change, as you just saw.

@@ -1,0 +1,165 @@
+id: G2.01
+track: routing
+modules: [M2.02, M8.02]
+tier: 2
+order: 20
+kind: project
+title: "Andes Logistics: BGP with the MPLS carrier"
+customer: Andes Logistics
+par: 60
+skills: [eBGP, network statements, network-import-check, prefix lists, inbound filtering]
+brief: |
+  **SOW 2026-152.** The carrier is migrating Andes's MPLS service from static routing to **BGP**, like most managed
+  L3VPNs. The carrier's PE (AS **64600**) is already configured:
+
+  | Site | FortiGate | AS | FortiGate MPLS IP | PE IP |
+  |---|---|---|---|---|
+  | Bogotá HQ | FGT-BOG (port3) | 65010 | 10.255.0.2 | 10.255.0.1 |
+  | Cali | FGT-CLO (wan2) | 65020 | 10.255.0.6 | 10.255.0.5 |
+
+  Site-to-site policies over MPLS are already in place on both FortiGates. Router IDs: 10.20.255.1 (BOG) and
+  10.30.255.1 (CLO).
+topology: {use: andes-bgp}
+parts:
+  - id: a
+    title: Bring up both sessions
+    tasks:
+      - "eBGP from each FortiGate to the PE."
+      - "Check `get router info bgp summary` on both."
+    checks:
+      - text: "FGT-BOG ↔ PE is Established"
+        bgp: {dev: FGT-BOG, peer: 10.255.0.1}
+      - text: "FGT-CLO ↔ PE is Established"
+        bgp: {dev: FGT-CLO, peer: 10.255.0.5}
+    hints:
+      - "`config router bgp` / `set as 65010` / `set router-id 10.20.255.1` / `config neighbor` / `edit 10.255.0.1` / `set remote-as 64600`."
+      - "Same on FGT-CLO with AS 65020, router ID 10.30.255.1 and neighbor 10.255.0.5."
+    solution:
+      FGT-BOG: |
+        config router bgp
+        set as 65010
+        set router-id 10.20.255.1
+        config neighbor
+        edit 10.255.0.1
+        set remote-as 64600
+        next
+        end
+        end
+      FGT-CLO: |
+        config router bgp
+        set as 65020
+        set router-id 10.30.255.1
+        config neighbor
+        edit 10.255.0.5
+        set remote-as 64600
+        next
+        end
+        end
+    explain: |
+      eBGP between directly connected neighbors needs only the right IPs and AS numbers on both sides. The session runs
+      over TCP 179; the FortiGate accepts it without a firewall policy because it's traffic to the FortiGate itself.
+  - id: b
+    title: Advertise the LANs
+    tasks:
+      - "Advertise HQ's LAN (10.20.10.0/24) and Cali's LAN (10.30.0.0/24) to the carrier."
+      - "Test from CLO-PC: `tnc 10.20.10.20 -port 443` (the ERP)."
+    checks:
+      - text: "FGT-CLO learns the HQ LAN by BGP"
+        route: {dev: FGT-CLO, dst: 10.20.10.0/24, type: B}
+      - text: "FGT-BOG learns the Cali LAN by BGP"
+        route: {dev: FGT-BOG, dst: 10.30.0.0/24, type: B}
+      - text: "Cali opens the ERP over MPLS"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443, egress: wan2}
+    hints:
+      - "`config router bgp` / `config network` / `edit 1` / `set prefix 10.20.10.0 255.255.255.0`."
+      - "FortiOS only advertises a network if the exact prefix is in its routing table (network-import-check). The connected LAN is, so the prefix must match it exactly."
+    solution:
+      FGT-BOG: |
+        config router bgp
+        config network
+        edit 1
+        set prefix 10.20.10.0 255.255.255.0
+        next
+        end
+        end
+      FGT-CLO: |
+        config router bgp
+        config network
+        edit 1
+        set prefix 10.30.0.0 255.255.255.0
+        next
+        end
+        end
+    explain: |
+      The carrier carries each site's prefix to the other with the AS path 64600 650x0. On the FortiGate the learned
+      route is a "B" route with distance 20 (eBGP). The next hop is the PE, which is directly connected, so no recursion
+      is needed.
+  - id: c
+    title: Only accept Andes routes
+    brief: |
+      **Carrier mistake.** `get router info bgp network` shows the PE also announces **172.16.40.0/24** and
+      **10.99.0.0/16**: other customers' prefixes, leaked into Andes's VRF. Until the carrier fixes it, Andes wants
+      their FortiGates to accept only Andes prefixes (anything inside 10.20.0.0/16 or 10.30.0.0/16, up to /24).
+    tasks:
+      - "A prefix list ANDES-ONLY that permits 10.20.0.0/16 and 10.30.0.0/16 with any length up to /24."
+      - "Apply it inbound on both FortiGates' PE neighbors."
+    checks:
+      - text: "FGT-BOG no longer has 172.16.40.0/24"
+        route: {dev: FGT-BOG, dst: 172.16.40.0/24, absent: true}
+      - text: "FGT-CLO no longer has 10.99.0.0/16"
+        route: {dev: FGT-CLO, dst: 10.99.0.0/16, absent: true}
+      - text: "The sites still reach each other"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+    hints:
+      - "`config router prefix-list` / `edit ANDES-ONLY` / `config rule` / `edit 1` / `set prefix 10.20.0.0 255.255.0.0` / `set le 24` / `next` / `edit 2` / `set prefix 10.30.0.0 255.255.0.0` / `set le 24`."
+      - "On the neighbor: `set prefix-list-in ANDES-ONLY`. Everything a prefix list doesn't permit is denied."
+    solution:
+      FGT-BOG: |
+        config router prefix-list
+        edit ANDES-ONLY
+        config rule
+        edit 1
+        set prefix 10.20.0.0 255.255.0.0
+        set le 24
+        next
+        edit 2
+        set prefix 10.30.0.0 255.255.0.0
+        set le 24
+        next
+        end
+        next
+        end
+        config router bgp
+        config neighbor
+        edit 10.255.0.1
+        set prefix-list-in ANDES-ONLY
+        next
+        end
+        end
+      FGT-CLO: |
+        config router prefix-list
+        edit ANDES-ONLY
+        config rule
+        edit 1
+        set prefix 10.20.0.0 255.255.0.0
+        set le 24
+        next
+        edit 2
+        set prefix 10.30.0.0 255.255.0.0
+        set le 24
+        next
+        end
+        next
+        end
+        config router bgp
+        config neighbor
+        edit 10.255.0.5
+        set prefix-list-in ANDES-ONLY
+        next
+        end
+        end
+    explain: |
+      Filtering what you accept from a provider is basic BGP hygiene: a leak or a hijack upstream shouldn't rewrite
+      your routing table. `le 24` means "this prefix or anything more specific, down to /24"; without ge/le a rule
+      matches only the exact prefix. On a production change you'd use `execute router clear bgp ip <peer> soft in`
+      to apply the new filter without resetting the session.

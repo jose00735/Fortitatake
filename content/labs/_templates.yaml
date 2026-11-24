@@ -996,3 +996,172 @@ andes-id:
     - {id: bog-lan, label: HQ LAN 10.20.10.0/24, members: ["FGT-BOG:port2", HQ-PC, FIN-PC]}
     - {id: bog-srv, label: Servers 10.20.40.0/24, members: ["FGT-BOG:port4", DC-01, ERP-SRV]}
   layout: {seg:bog-lan: [340, 425], HQ-PC: [285, 500], FIN-PC: [405, 500], seg:bog-srv: [90, 425], DC-01: [25, 500], ERP-SRV: [150, 500]}
+
+# ---------------------------------------------------------------------------
+# Andes HQ campus: a core L3 switch (CORE-SW) behind FGT-BOG port5 routes the warehouse and camera VLANs.
+# CORE-SW speaks OSPF (area 0); its VLANs are passive. Nothing is routed between them yet.
+andes-ospf:
+  extends: andes
+  devices:
+    FGT-BOG:
+      ports: [{name: port1, role: wan}, {name: port2, role: lan}, {name: port3, role: wan}, {name: port4, role: dmz}, {name: port5, role: lan}]
+      config: |
+        config system interface
+        edit port5
+        set ip 10.20.50.1 255.255.255.248
+        set allowaccess ping
+        set alias "CORE"
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+        config firewall address
+        edit HQ-LAN
+        set subnet 10.20.10.0 255.255.255.0
+        next
+        edit WH-VLAN
+        set subnet 10.20.60.0 255.255.255.0
+        next
+        edit CAM-VLAN
+        set subnet 10.20.70.0 255.255.255.0
+        next
+        end
+        config firewall addrgrp
+        edit CAMPUS
+        set member WH-VLAN CAM-VLAN
+        next
+        end
+        config firewall policy
+        edit 1
+        set name "HQ-Internet"
+        set srcintf port2
+        set dstintf port1
+        set srcaddr HQ-LAN
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        edit 2
+        set name "HQ-to-Campus"
+        set srcintf port2
+        set dstintf port5
+        set srcaddr HQ-LAN
+        set dstaddr CAMPUS
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 3
+        set name "Campus-to-HQ"
+        set srcintf port5
+        set dstintf port2
+        set srcaddr CAMPUS
+        set dstaddr HQ-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+  add_devices:
+    - id: CORE-SW
+      kind: router
+      label: Core L3 switch
+      drop_private: false
+      ifaces: [{name: uplink, ip: 10.20.50.2/29}, {name: vlan60, ip: 10.20.60.1/24}, {name: vlan70, ip: 10.20.70.1/24}]
+      routes: []
+      ospf:
+        router_id: 10.20.255.2
+        interfaces:
+          - {name: uplink, area: 0.0.0.0, cost: 10, hello: 10, dead: 40, mtu: 1500}
+          - {name: vlan60, area: 0.0.0.0, passive: true}
+          - {name: vlan70, area: 0.0.0.0, passive: true}
+    - {id: WH-PC, kind: host, os: windows, hostname: BODEGA-01, nic: {ip: 10.20.60.30/24, gw: 10.20.60.1, dns: [8.8.8.8]}}
+    - {id: NVR, kind: server, os: linux, hostname: nvr-camaras, nic: {ip: 10.20.70.10/24, gw: 10.20.70.1}, services: [tcp/443, tcp/554]}
+  add_segments:
+    - {id: core, label: Core 10.20.50.0/29, members: ["FGT-BOG:port5", "CORE-SW:uplink"]}
+    - {id: wh, label: Warehouse VLAN 60, members: ["CORE-SW:vlan60", WH-PC]}
+    - {id: cam, label: Cameras VLAN 70, members: ["CORE-SW:vlan70", NVR]}
+  layout: {CORE-SW: [45, 370], WH-PC: [-25, 505], NVR: [105, 505], ERP-SRV: [235, 505], HQ-PC: [355, 505], seg:bog-lan: [295, 430]}
+
+# ---------------------------------------------------------------------------
+# Andes over the carrier's MPLS with BGP: the PE (AS 64600) peers with each site's FortiGate.
+# Site policies over MPLS are in place; no routes are exchanged yet.
+andes-bgp:
+  extends: andes
+  devices:
+    MPLS-PE:
+      routes: []
+      bgp:
+        as: 64600
+        router_id: 10.255.255.1
+        neighbors:
+          - {ip: 10.255.0.2, remote_as: 65010}
+          - {ip: 10.255.0.6, remote_as: 65020}
+        internet: [172.16.40.0/24, 10.99.0.0/16]
+    FGT-BOG:
+      config: |
+        config firewall address
+        edit HQ-LAN
+        set subnet 10.20.10.0 255.255.255.0
+        next
+        edit CLO-LAN
+        set subnet 10.30.0.0 255.255.255.0
+        next
+        end
+        config firewall policy
+        edit 10
+        set name "HQ-to-Cali"
+        set srcintf port2
+        set dstintf port3
+        set srcaddr HQ-LAN
+        set dstaddr CLO-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 11
+        set name "Cali-to-HQ"
+        set srcintf port3
+        set dstintf port2
+        set srcaddr CLO-LAN
+        set dstaddr HQ-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+    FGT-CLO:
+      config: |
+        config firewall address
+        edit HQ-LAN
+        set subnet 10.20.10.0 255.255.255.0
+        next
+        edit CLO-LAN
+        set subnet 10.30.0.0 255.255.255.0
+        next
+        end
+        config firewall policy
+        edit 10
+        set name "Cali-to-HQ"
+        set srcintf internal
+        set dstintf wan2
+        set srcaddr CLO-LAN
+        set dstaddr HQ-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 11
+        set name "HQ-to-Cali"
+        set srcintf wan2
+        set dstintf internal
+        set srcaddr HQ-LAN
+        set dstaddr CLO-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end

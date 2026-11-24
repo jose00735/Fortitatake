@@ -6,7 +6,7 @@ import { drawTopology } from "./topo.js";
 import { FortiGate } from "./fgt.js";
 
 const TIERS = ["Console", "Fundamentals", "Core PS", "Advanced", "Break-fix", "SecOps", "Capstones"];
-const TRACK = { fortigate: "FortiGate", fortimanager: "FortiManager", fortianalyzer: "FortiAnalyzer", fortiswitch: "FortiSwitch", fortisiem: "FortiSIEM", fortiedr: "FortiEDR", secops: "SecOps", integration: "Multi-product", sdwan: "SD-WAN", vpn: "VPN", ha: "HA" };
+const TRACK = { fortigate: "FortiGate", routing: "Routing", identity: "Identity", fortimanager: "FortiManager", fortianalyzer: "FortiAnalyzer", fortiswitch: "FortiSwitch", fortisiem: "FortiSIEM", fortiedr: "FortiEDR", secops: "SecOps", integration: "Multi-product", sdwan: "SD-WAN", vpn: "VPN", ha: "HA" };
 const KIND = { project: "Project", ticket: "Ticket", drill: "Drill", capstone: "Capstone", investigation: "Investigation" };
 
 let catalog = null, schemas = null;
@@ -107,7 +107,7 @@ function mount(main, run, opts = {}) {
   const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket" };
   for (const d of devs) { ui.buf[d.id] = []; ui.hist[d.id] = []; }
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
-  else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ISP router. Try: show ip interface brief` : `${d.id} (${d.os}) · type help`, "");
+  else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ${d.label || "router"}. Type help for its commands.` : `${d.id} (${d.os}) · type help`, "");
 
   const el = h(`<div class="labrun${emb ? " embedded" : ""}" data-view="ticket">
     <header class="lr-head">

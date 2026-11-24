@@ -1,0 +1,342 @@
+id: M2.02
+title: "BGP: sessions, attributes and best-path selection"
+stage: S2
+stage_title: "S2 · Routing and WAN protocols"
+order: 152
+est_sessions: 1.5
+objectives:
+  - Bring up eBGP and iBGP sessions and explain the FSM states you see when they fail
+  - Explain the iBGP split-horizon rule, next-hop handling and route reflectors
+  - Apply best-path selection (weight, local preference, AS path, origin, MED, eBGP over iBGP)
+  - Use prefix lists and route maps to filter and influence routing in and out
+  - Design dual-homed sites with local preference and AS-path prepending
+sources:
+  - "FortiOS 8.0.2 Admin Guide: BGP (pp. 716–805): basic example (p. 718), neighbor password (p. 727), network prefixes (p. 749), conditional advertisement (p. 751)"
+  - "FortiOS 8.0.2 Admin Guide: BFD (p. 806), routing objects: prefix lists, route maps (p. 817)"
+  - "Protocol knowledge: BGP-4 (RFC 4271), route reflection (RFC 4456)"
+
+units:
+  - id: M2.02.u1
+    title: Sessions and the finite-state machine
+    tier: 1
+    est_min: 12
+    body: |
+      BGP is a **path-vector** protocol between configured neighbors over **TCP 179**. Neighbors in different ASes are
+      **eBGP**; in the same AS, **iBGP**.
+
+      | State | Meaning | Usual cause when stuck |
+      |---|---|---|
+      | Idle | Not trying, or reset after an error | Admin shutdown, NOTIFICATION (e.g., Bad Peer AS) |
+      | Connect / Active | Trying to open TCP | No route, wrong IP, wrong update-source, TCP 179 blocked, MD5 mismatch |
+      | OpenSent / OpenConfirm | OPEN messages exchanged | AS or router-ID problems |
+      | **Established** | Exchanging routes | — |
+
+      In `get router info bgp summary` the last column shows the **state**, or the **number of prefixes received** once
+      Established.
+
+      ## eBGP vs iBGP rules
+
+      - eBGP peers are expected to be **directly connected** (TTL 1). Loopback peering needs multihop
+        (`ebgp-enforce-multihop` on FortiOS).
+      - iBGP usually peers between **loopbacks** with `update-source`, reached through the IGP.
+      - Both sides need a neighbor statement for the other's **exact source IP** and the right remote AS.
+
+      :::recall
+      Q: The session is Idle and the neighbor log says "Bad Peer AS". Where's the error?
+      A: A remote-as value on one side doesn't match the other side's local AS.
+      :::
+  - id: M2.02.u2
+    title: What gets advertised, and to whom
+    tier: 2
+    est_min: 14
+    body: |
+      ## Origination
+
+      - `network` statements: on FortiOS, with **network-import-check** (enabled by default) the exact prefix must be
+        in the routing table, or nothing is advertised (p. 749).
+      - Redistribution: connected, static, OSPF into BGP (origin incomplete, `?`).
+      - Aggregates: summaries, often anchored by a blackhole static route.
+
+      ## The rules of propagation
+
+      - eBGP: prepend your AS, set the **next hop to yourself**.
+      - iBGP: **don't** change the AS path, **don't** change the next hop (by default), and **never pass an iBGP-learned
+        route to another iBGP peer** (split horizon). Hence full mesh, or **route reflectors**: a RR may reflect routes
+        between clients and non-clients.
+      - Loop prevention: a router drops a route whose AS path contains its own AS.
+
+      ## The next-hop trap
+
+      An HQ router learns an Internet prefix from its ISP via eBGP and passes it by iBGP to a second router. The next
+      hop is still the ISP's IP. If the second router has no route to it, the BGP route is **invalid**: present in the
+      table, not installed. Fix: `next-hop-self` on the iBGP neighbor, or advertise the link into the IGP.
+
+      :::why
+      Q: Why doesn't iBGP just forward iBGP-learned routes like eBGP does?
+      A: iBGP doesn't modify the AS path, so the AS path can't detect loops inside the AS. Split horizon prevents them instead.
+      :::
+  - id: M2.02.u3
+    title: Best-path selection
+    tier: 2
+    est_min: 13
+    body: |
+      When several paths exist for the same prefix, the first difference decides:
+
+      1. Highest **weight** (local to the router; FortiOS gives locally originated routes 32768)
+      2. Highest **local preference** (default 100, shared across the AS)
+      3. Locally originated
+      4. Shortest **AS path**
+      5. Lowest **origin** (IGP < EGP < incomplete)
+      6. Lowest **MED** (compared only between paths from the same neighbor AS by default)
+      7. **eBGP over iBGP**
+      8. Lowest IGP metric to the next hop
+      9. Oldest path / lowest router ID / lowest neighbor IP
+
+      ## Influencing traffic
+
+      | You want to control | Attribute | Where |
+      |---|---|---|
+      | How **you** leave (outbound) | Local preference (AS-wide) or weight (one router) | Inbound route map on your routers |
+      | How **others** come in (inbound) | AS-path prepend, MED | Outbound route map toward the provider |
+
+      :::recall
+      Q: Two ISPs. You want all outbound traffic through ISP-A, and inbound to prefer ISP-A too. What do you set?
+      A: Higher local preference on routes from ISP-A (inbound route map), and prepend your AS a few times toward ISP-B (outbound route map).
+      :::
+  - id: M2.02.u4
+    title: Filtering with prefix lists and route maps
+    tier: 3
+    est_min: 12
+    body: |
+      ## Prefix lists
+
+      Ordered rules: `permit`/`deny` a prefix with optional `ge`/`le`. Without ge/le a rule matches **only that exact
+      prefix**; `10.20.0.0/16 le 24` matches the /16 and anything more specific down to /24. The end has an **implicit
+      deny**.
+
+      ## Route maps
+
+      Ordered rules that **match** (a prefix list, AS path, community…) and **set** (local preference, weight, MED,
+      AS-path prepend, community). A route map with no matching rule denies the route.
+
+      :::cli
+      config router route-map
+          edit "FROM-ISP-A"
+              config rule
+                  edit 1
+                      set set-local-preference 200
+                  next
+              end
+          next
+      end
+      config router bgp
+          config neighbor
+              edit "203.0.113.1"
+                  set route-map-in "FROM-ISP-A"
+              next
+          end
+      end
+      :::
+
+      Apply filter changes without dropping the session: `execute router clear bgp ip <peer> soft in|out`.
+
+      :::pitfall
+      Always filter what you accept from a provider and what you announce to it. A FortiGate announcing a full
+      table it learned from ISP-A to ISP-B makes your company a transit AS, and a route leak with your name on it.
+      :::
+
+cards:
+  - {id: M2.02.c01, unit: M2.02.u1, tier: 1, front: "BGP transport", back: "TCP 179."}
+  - {id: M2.02.c02, unit: M2.02.u1, tier: 2, front: "BGP stuck in Active: usual causes", back: "No route to the peer, wrong neighbor IP or update-source, TCP 179 blocked, MD5 password mismatch."}
+  - {id: M2.02.c03, unit: M2.02.u1, tier: 2, front: "Idle with 'Bad Peer AS'", back: "remote-as on one side doesn't match the other side's AS."}
+  - {id: M2.02.c04, unit: M2.02.u1, tier: 2, front: "eBGP to a loopback needs…", back: "Multihop (FortiOS: ebgp-enforce-multihop enable) plus a route to the loopback."}
+  - {id: M2.02.c05, unit: M2.02.u2, tier: 2, front: "network-import-check", back: "FortiOS advertises a network statement only if the exact prefix is in the routing table (enabled by default)."}
+  - {id: M2.02.c06, unit: M2.02.u2, tier: 2, front: "iBGP split horizon", back: "Routes learned from an iBGP peer aren't sent to other iBGP peers (unless via a route reflector)."}
+  - {id: M2.02.c07, unit: M2.02.u2, tier: 2, front: "iBGP next hop default", back: "Unchanged: the eBGP next hop is kept. Use next-hop-self or advertise the link in the IGP."}
+  - {id: M2.02.c08, unit: M2.02.u3, tier: 2, front: "First three best-path criteria", back: "Highest weight, highest local preference, locally originated."}
+  - {id: M2.02.c09, unit: M2.02.u3, tier: 1, front: "Default local preference", back: "100."}
+  - {id: M2.02.c10, unit: M2.02.u3, tier: 2, front: "Control outbound vs inbound traffic", back: "Outbound: local preference/weight. Inbound: AS-path prepend or MED toward providers."}
+  - {id: M2.02.c11, unit: M2.02.u3, tier: 2, front: "FortiOS default BGP distances", back: "eBGP 20, iBGP 200."}
+  - {id: M2.02.c12, unit: M2.02.u4, tier: 2, front: "Prefix list rule without ge/le matches…", back: "Only the exact prefix and length."}
+  - {id: M2.02.c13, unit: M2.02.u4, tier: 2, front: "Apply a new BGP filter without resetting the session", back: "execute router clear bgp ip <peer> soft in (or out)."}
+  - {id: M2.02.c14, unit: M2.02.u4, tier: 3, front: "Accidental transit AS: cause", back: "Announcing routes learned from one provider to another without outbound filtering."}
+
+quiz:
+  - id: M2.02.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which attribute do you raise to make all routers in your AS prefer ISP-A for outbound traffic?"
+    options:
+      - {id: a, text: "Local preference", correct: true}
+      - {id: b, text: "MED", why_wrong: "MED influences how a neighbor AS enters yours."}
+      - {id: c, text: "Weight", why_wrong: "Weight is local to one router."}
+      - {id: d, text: "AS-path prepend", why_wrong: "That influences inbound traffic."}
+    explanation: "Local preference is shared through iBGP across the AS."
+  - id: M2.02.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A FortiGate has `network 10.30.0.0/16`, but only 10.30.0.0/24 is in its routing table. What's advertised by default?"
+    options:
+      - {id: a, text: "Nothing", correct: true}
+      - {id: b, text: "10.30.0.0/16", why_wrong: "network-import-check requires the exact prefix."}
+      - {id: c, text: "10.30.0.0/24", why_wrong: "Network statements don't pick more specifics."}
+      - {id: d, text: "Both", why_wrong: "Neither condition holds."}
+    explanation: "Add a matching route (e.g., blackhole /16) or advertise the /24."
+    source: "FortiOS 8.0.2 Admin Guide p. 749"
+  - id: M2.02.q03
+    type: order
+    tier: 3
+    stem: "Order these best-path criteria."
+    items: ["Highest weight", "Highest local preference", "Shortest AS path", "Lowest origin", "Lowest MED", "eBGP over iBGP"]
+    explanation: "Weight, LP, locally originated, AS path, origin, MED, eBGP>iBGP, IGP metric, tie-breakers."
+  - id: M2.02.q04
+    type: single
+    tier: 2
+    stem: "Router B learns 8.8.8.0/24 over iBGP with next hop 203.0.113.1 (the ISP), but doesn't install it. Fix?"
+    options:
+      - {id: a, text: "next-hop-self on the router that peers with the ISP (toward B)", correct: true}
+      - {id: b, text: "Increase local preference", why_wrong: "The route is invalid, not just less preferred."}
+      - {id: c, text: "Enable ebgp-multihop on B", why_wrong: "B's session is iBGP."}
+      - {id: d, text: "Disable network-import-check", why_wrong: "That affects origination."}
+    explanation: "B can't resolve the ISP next hop."
+  - id: M2.02.q05
+    type: multi
+    tier: 2
+    stem: "Which can keep a BGP session in Active? Select all that apply."
+    options:
+      - {id: a, text: "MD5 password mismatch", correct: true}
+      - {id: b, text: "No route to the neighbor", correct: true}
+      - {id: c, text: "Wrong update-source", correct: true}
+      - {id: d, text: "A missing prefix list", why_wrong: "Filters act after the session is up."}
+    explanation: "Active means the TCP session can't be opened."
+  - id: M2.02.q06
+    type: text
+    tier: 2
+    stem: "Which prefix-list keyword lets 10.20.0.0/16 also match /17 to /24 subnets? (one word)"
+    accept: ["le"]
+    explanation: "`set le 24`."
+  - id: M2.02.q07
+    type: single
+    tier: 3
+    stem: "To make inbound traffic from the Internet prefer ISP-A, you…"
+    options:
+      - {id: a, text: "Prepend your AS on announcements to ISP-B", correct: true}
+      - {id: b, text: "Raise local preference on routes from ISP-A", why_wrong: "That changes outbound."}
+      - {id: c, text: "Raise weight on ISP-A routes", why_wrong: "Local and outbound."}
+      - {id: d, text: "Filter ISP-B's routes", why_wrong: "Outbound only, and loses redundancy."}
+    explanation: "Longer AS path through ISP-B makes others prefer ISP-A."
+
+labs:
+  - id: M2.02.lab1
+    title: Dual ISP policy with route maps
+    goal: "Prefer ISP-A both ways, keep ISP-B as backup, and filter what you send and accept."
+    worked:
+      config: |
+        config router prefix-list
+            edit "OUR-PREFIXES"
+                config rule
+                    edit 1
+                        set prefix 198.51.100.0 255.255.255.0
+                    next
+                end
+            next
+        end
+        config router route-map
+            edit "IN-ISP-A"
+                config rule
+                    edit 1
+                        set set-local-preference 200
+                    next
+                end
+            next
+            edit "OUT-ISP-B"
+                config rule
+                    edit 1
+                        set match-ip-address "OUR-PREFIXES"
+                        set set-aspath "65010 65010 65010"
+                    next
+                end
+            next
+        end
+        config router bgp
+            config neighbor
+                edit "203.0.113.1"
+                    set remote-as 64501
+                    set route-map-in "IN-ISP-A"
+                    set prefix-list-out "OUR-PREFIXES"
+                next
+                edit "192.0.2.1"
+                    set remote-as 64502
+                    set route-map-out "OUT-ISP-B"
+                next
+            end
+        end
+      notes:
+        - "Outbound filter on both neighbors: only your own prefixes."
+        - "OUT-ISP-B both filters (match) and prepends."
+        - "Soft-clear after changes."
+    faded:
+      template: |
+        # Prefer ISP-A outbound → set-local-preference {{200}} on routes {{in}} from ISP-A
+        # Prefer ISP-A inbound  → set-aspath prepend on routes {{out}} to ISP-B
+        # Never become transit  → prefix-list-{{out}} with only our prefixes
+    solo:
+      prompt: "Name the attribute for each goal, one per line: outbound across the AS, outbound on one router, inbound from the Internet, inbound from one neighbor AS."
+      required: ["local", "weight", "prepend", "med"]
+      solution: |
+        local preference
+        weight
+        AS-path prepend
+        MED
+      notes: "MED only compares between paths from the same neighbor AS by default."
+
+scenarios:
+  - id: M2.02.sc1
+    kind: situation
+    tier: 3
+    title: The carrier leaked someone else's routes
+    situation: |
+      During a BGP migration you notice the carrier's PE announces 172.16.40.0/24 into Andes's MPLS VRF. It doesn't
+      belong to Andes. The carrier's NOC says they'll look into it "this week".
+    ask: "What do you do now, and what do you tell the customer?"
+    right_thinking:
+      - "Protect the customer now: inbound prefix list with only Andes ranges"
+      - "Document evidence (bgp network output) for the carrier ticket"
+      - "Explain the risk calmly: traffic to those prefixes could be misrouted or intercepted"
+    what: "A filter in place, evidence sent, customer informed."
+    why: "Accepting everything a provider sends is how leaks become incidents."
+    how: ["Filter in", "Soft clear", "Evidence", "Communicate"]
+    model_answer: |
+      "I'd apply an inbound prefix list on both FortiGates that only accepts Andes's 10.20/16 and 10.30/16 ranges,
+      soft-clear the sessions, and confirm the routing tables. I'd send the carrier the bgp network output as evidence.
+      To the customer: the carrier made a configuration mistake that could have sent some traffic to another company's
+      network; we've filtered it on our side, so Andes is protected while they fix it."
+    best_way: "Protect, evidence, explain."
+    rubric: ["applies inbound filtering", "evidence-based escalation", "calm customer message"]
+
+interview:
+  - id: M2.02.t01
+    stage: technical
+    question: "Walk me through BGP best-path selection."
+    testing: "Core BGP knowledge"
+    framework: "List the order, then one example"
+    model_answer: |
+      "Highest weight, which is local; highest local preference, AS-wide; locally originated; shortest AS path;
+      lowest origin; lowest MED from the same neighbor AS; eBGP over iBGP; lowest IGP cost to the next hop; then
+      tie-breakers like router ID. In practice I use local preference to control how we leave and AS-path
+      prepending to influence how traffic comes in."
+    best_way: "Order, then how you use it."
+    target: "0:45"
+  - id: M2.02.t02
+    stage: technical
+    question: "An iBGP route is in the BGP table but not in the routing table. Why?"
+    testing: "Next-hop reachability"
+    framework: "Valid vs best vs installed"
+    model_answer: |
+      "Most likely the next hop isn't reachable: iBGP keeps the eBGP next hop, the ISP's IP, and this router has no
+      route to it. next-hop-self on the edge router, or advertising the link into the IGP, fixes it. I'd confirm with
+      the BGP table output, which shows the path isn't marked valid."
+    best_way: "Name the next-hop rule."
+    target: "0:35"

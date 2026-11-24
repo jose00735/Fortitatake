@@ -1,0 +1,278 @@
+id: M4.05
+title: "Routing on FortiGate: static, policy routes, ECMP and the routing database"
+stage: S4
+stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
+order: 154
+est_sessions: 1
+objectives:
+  - Read the routing table and the routing database and explain why a route is or isn't active
+  - Use distance and priority for primary/backup and ECMP designs
+  - Configure policy routes and know where they sit in the lookup order
+  - Build dual-Internet failover with a link health monitor
+  - Use blackhole routes and understand reverse path checks and asymmetric routing
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Routing concepts, default route, distance and priority (pp. 644–651)"
+  - "FortiOS 8.0.2 Admin Guide: Route look-up, blackhole routes, reverse path, asymmetric routing, routing changes (pp. 652–658)"
+  - "FortiOS 8.0.2 Admin Guide: Policy routes (pp. 659–664), ECMP (pp. 665–668), dual Internet connections and link health monitor (pp. 669–674)"
+
+units:
+  - id: M4.05.u1
+    title: Table vs database, distance vs priority
+    tier: 1
+    est_min: 12
+    body: |
+      - `get router info routing-table all` shows the **active** routes, the ones used for forwarding.
+      - `get router info routing-table database` shows **every** candidate, including those that lost (pp. 649–650).
+
+      ## Which route wins
+
+      1. **Longest prefix match**: a /24 beats a /16 regardless of protocol.
+      2. For the same prefix: lowest **administrative distance** (connected 0, static 10 by default, eBGP 20, OSPF
+         110, iBGP 200). The losers stay in the database only.
+      3. Same prefix and distance: static routes stay **all** in the table, and the lowest **priority** (default 1)
+         is preferred; equal priority means **ECMP** (pp. 646–648, 665).
+
+      :::cli
+      get router info routing-table details 10.20.70.10
+      :::
+
+      ## Floating static routes
+
+      A static route with a higher distance (say 20) sits in the database and becomes active only when the better
+      route disappears: the classic backup for an OSPF or BGP route.
+
+      :::recall
+      Q: OSPF learns 10.20.70.0/24 but an old static route to it still exists. Which one forwards traffic?
+      A: The static route (distance 10 beats OSPF's 110). The OSPF route is only in the database.
+      :::
+  - id: M4.05.u2
+    title: Policy routes and the lookup order
+    tier: 2
+    est_min: 12
+    body: |
+      **Policy routes** (PBR) match on incoming interface, source, destination, protocol and ports, and send traffic to a
+      specific gateway. The FortiGate walks the policy-route list first; if nothing matches it does a normal route
+      lookup (p. 660). SD-WAN rules are implemented as policy routes too, which is why they're checked before the
+      routing table.
+
+      | Order | What |
+      |---|---|
+      | 1 | Policy routes (including SD-WAN rules and ISDB routes) |
+      | 2 | Routing table (longest match, distance, priority) |
+
+      A policy route with action **Stop Policy Routing** sends matching traffic straight to the routing table: useful
+      to exempt internal destinations from a broad PBR rule.
+
+      :::pitfall
+      A policy route only forwards if its gateway is reachable through an active route on that interface. And the
+      firewall policy still has to allow the traffic: PBR chooses the path, it doesn't permit anything.
+      :::
+  - id: M4.05.u3
+    title: Dual Internet, ECMP and link health
+    tier: 2
+    est_min: 12
+    body: |
+      ## Failover (pp. 669–674)
+
+      Two default routes with **different distances** (or the same distance and different priorities), plus a **link
+      health monitor** on the primary. The monitor probes a server through the link; when it fails, the FortiGate
+      removes that route and the backup takes over.
+
+      :::cli
+      config system link-monitor
+          edit "ISP1"
+              set srcintf "wan1"
+              set server "8.8.8.8"
+              set gateway-ip 190.14.8.1
+          next
+      end
+      :::
+
+      ## ECMP (pp. 665–668)
+
+      Routes with the same destination and the same cost (for static routes: distance **and** priority) load-balance.
+      The algorithm is `v4-ecmp-mode` under `config system settings`: source-ip-based (default), weight-based,
+      usage-based or source-dest-ip-based. With SD-WAN enabled it moves to the SD-WAN `load-balance-mode`.
+
+      :::why
+      Q: Why doesn't a plain physical-link-down check catch most ISP failures?
+      A: The usual failure is upstream: the port stays up while the ISP's network is broken. Only probing through the link (link monitor or SD-WAN health checks) detects it.
+      :::
+  - id: M4.05.u4
+    title: Blackholes, RPF and asymmetric routing
+    tier: 3
+    est_min: 10
+    body: |
+      - **Blackhole routes** drop traffic for a prefix (p. 652). Typical uses: stop private ranges from leaking to the
+        Internet's default route when a VPN is down, and anchor BGP aggregates.
+      - **Reverse path forwarding (RPF)** check: when a session starts, the FortiGate checks it has a route back to the
+        source through the incoming interface (loose by default: any route back; strict with `src-check` strict mode).
+        A failed check drops the packet ("reverse path check fail") (p. 653).
+      - **Asymmetric routing**: request and reply cross different firewalls or interfaces. A stateful firewall that sees
+        only one direction drops the rest. Fix the routing, don't just enable `asymroute` (p. 654).
+      - **Routing changes and sessions**: existing sessions keep their route until a routing change marks them dirty;
+        with SNAT, `snat-route-change` forces a new lookup (p. 656).
+
+      :::ps
+      In migrations, list every static route on the old firewall and decide for each: keep, replace by dynamic
+      routing, or delete. A forgotten static with distance 10 beats OSPF and BGP for years.
+      :::
+
+cards:
+  - {id: M4.05.c01, unit: M4.05.u1, tier: 1, front: "Default static route distance on FortiOS", back: "10."}
+  - {id: M4.05.c02, unit: M4.05.u1, tier: 1, front: "Default static route priority", back: "1 (lower wins when distances are equal)."}
+  - {id: M4.05.c03, unit: M4.05.u1, tier: 1, front: "Route selection order", back: "Longest prefix → lowest distance → (static) lowest priority → ECMP."}
+  - {id: M4.05.c04, unit: M4.05.u1, tier: 2, front: "Where do you see routes that lost on distance?", back: "get router info routing-table database"}
+  - {id: M4.05.c05, unit: M4.05.u1, tier: 2, front: "Floating static route", back: "A static route with a higher distance that activates only when the preferred route disappears."}
+  - {id: M4.05.c06, unit: M4.05.u1, tier: 2, front: "Admin distances: connected, static, eBGP, OSPF, iBGP", back: "0, 10, 20, 110, 200."}
+  - {id: M4.05.c07, unit: M4.05.u2, tier: 2, front: "Policy routes vs routing table: which first?", back: "Policy routes (including SD-WAN rules), then the routing table."}
+  - {id: M4.05.c08, unit: M4.05.u2, tier: 2, front: "Policy route action to exempt traffic", back: "Stop Policy Routing: send it to the normal route lookup."}
+  - {id: M4.05.c09, unit: M4.05.u3, tier: 2, front: "ECMP conditions for static routes", back: "Same destination, same distance and same priority."}
+  - {id: M4.05.c10, unit: M4.05.u3, tier: 2, front: "Default ECMP algorithm", back: "source-ip-based (v4-ecmp-mode)."}
+  - {id: M4.05.c11, unit: M4.05.u3, tier: 2, front: "Why a link health monitor?", back: "Detects upstream failures while the port stays up, and removes the route."}
+  - {id: M4.05.c12, unit: M4.05.u4, tier: 2, front: "Blackhole route uses", back: "Stop leaks of private ranges when a tunnel is down; anchor BGP aggregates."}
+  - {id: M4.05.c13, unit: M4.05.u4, tier: 2, front: "RPF check failure means…", back: "No route back to the source through the incoming interface (loose) or not the best route (strict)."}
+
+quiz:
+  - id: M4.05.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Routes to 10.0.0.0/8 (static, distance 10) and 10.1.0.0/16 (OSPF). Traffic to 10.1.5.5 uses…"
+    options:
+      - {id: a, text: "The OSPF /16", correct: true}
+      - {id: b, text: "The static /8", why_wrong: "Longest prefix wins before distance."}
+      - {id: c, text: "ECMP across both", why_wrong: "Different prefixes."}
+      - {id: d, text: "Whichever was learned first", why_wrong: "No such rule."}
+    explanation: "Longest prefix match comes first."
+  - id: M4.05.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Two default routes, both distance 10: wan1 priority 1, wan2 priority 5. Result?"
+    options:
+      - {id: a, text: "Both in the table; wan1 is used", correct: true}
+      - {id: b, text: "ECMP across both", why_wrong: "Priorities differ."}
+      - {id: c, text: "Only wan1 is in the table", why_wrong: "Same-distance statics stay in the table."}
+      - {id: d, text: "wan2 is used", why_wrong: "Lower priority number wins."}
+    explanation: "Same distance keeps both; priority picks."
+    source: "FortiOS 8.0.2 Admin Guide pp. 646–648"
+  - id: M4.05.q03
+    type: single
+    tier: 2
+    stem: "Which is checked first for a new session?"
+    options:
+      - {id: a, text: "Policy routes / SD-WAN rules", correct: true}
+      - {id: b, text: "The static default route", why_wrong: "The routing table comes after policy routes."}
+      - {id: c, text: "OSPF routes", why_wrong: "Part of the routing table."}
+      - {id: d, text: "The firewall policy", why_wrong: "Routing decides the egress interface before the policy lookup."}
+    explanation: "PBR first, then the routing table."
+  - id: M4.05.q04
+    type: multi
+    tier: 2
+    stem: "Good uses of a blackhole route? Select all that apply."
+    options:
+      - {id: a, text: "Keep RFC 1918 traffic off the Internet when a VPN is down", correct: true}
+      - {id: b, text: "Anchor a BGP aggregate", correct: true}
+      - {id: c, text: "Load-balance two ISPs", why_wrong: "That's ECMP or SD-WAN."}
+      - {id: d, text: "Replace firewall policies", why_wrong: "Policies still control access."}
+    explanation: "Blackholes drop; they don't permit or balance."
+  - id: M4.05.q05
+    type: text
+    tier: 2
+    stem: "Which CLI shows all candidate routes, including inactive ones?"
+    accept: ["get router info routing-table database", "get router info routing-table data"]
+    explanation: "The routing database."
+  - id: M4.05.q06
+    type: single
+    tier: 3
+    stem: "The ISP's upstream fails but wan1 stays up. Without a link monitor, what happens?"
+    options:
+      - {id: a, text: "Traffic keeps going to wan1 and fails", correct: true}
+      - {id: b, text: "The FortiGate fails over to wan2", why_wrong: "Nothing removed the wan1 route."}
+      - {id: c, text: "ECMP starts", why_wrong: "Routes didn't change."}
+      - {id: d, text: "HA fails over", why_wrong: "The monitored port is up."}
+    explanation: "Only probing through the link detects it."
+
+labs:
+  - id: M4.05.lab1
+    title: Primary/backup Internet with a link monitor
+    goal: "Use wan1 normally and wan2 only when wan1's ISP fails."
+    worked:
+      config: |
+        config router static
+            edit 1
+                set gateway 190.14.8.1
+                set device "wan1"
+                set distance 10
+            next
+            edit 2
+                set gateway 181.49.0.1
+                set device "wan2"
+                set distance 20
+            next
+        end
+        config system link-monitor
+            edit "ISP1"
+                set srcintf "wan1"
+                set server "8.8.8.8" "1.1.1.1"
+                set gateway-ip 190.14.8.1
+                set failtime 3
+                set recoverytime 5
+            next
+        end
+        get router info routing-table database
+      notes:
+        - "Policies must allow traffic out of both WANs, with NAT."
+        - "Test by failing the primary ISP, not by unplugging the port."
+    faded:
+      template: |
+        # backup route: same dst, higher {{distance}}
+        # detect upstream failure: config system {{link-monitor}}
+        # see both routes: get router info routing-table {{database}}
+    solo:
+      prompt: "Write the four route-selection steps FortiOS uses, one per line, using: prefix, distance, priority, ecmp."
+      required: ["prefix", "distance", "priority", "ecmp"]
+      solution: |
+        longest prefix
+        lowest distance
+        lowest priority
+        ecmp
+      notes: "Policy routes come before all of this."
+
+scenarios:
+  - id: M4.05.sc1
+    kind: situation
+    tier: 3
+    title: Failover that never failed over
+    situation: |
+      A branch has two default routes (distance 10 and 20). During an ISP outage, users had no Internet for three
+      hours, though wan2 was fine. The port wan1 stayed up all along.
+    ask: "Explain and fix."
+    right_thinking:
+      - "Route removal only happens when the interface goes down or a monitor fails"
+      - "Add a link monitor (or move to SD-WAN with health checks)"
+      - "Test by simulating upstream failure"
+    what: "A root cause and a tested fix."
+    why: "Failover designs fail silently until the day they're needed."
+    how: ["Explain", "Configure monitor", "Test", "Document"]
+    model_answer: |
+      "The backup route only takes over when the primary disappears from the table, and it only disappears if wan1
+      goes down or a health check fails. The ISP failed upstream, wan1 stayed up, so the FortiGate kept using it. I'd
+      add a link monitor probing two Internet servers through wan1, or move the branch to SD-WAN with a health check,
+      and test it by breaking the ISP side, not the cable."
+    best_way: "Mechanism, fix, test."
+    rubric: ["explains route removal", "proposes probing", "tests realistically"]
+
+interview:
+  - id: M4.05.t01
+    stage: technical
+    question: "How does a FortiGate choose a route?"
+    testing: "Route selection order"
+    framework: "PBR → prefix → distance → priority → ECMP"
+    model_answer: |
+      "Policy routes and SD-WAN rules first. Then the routing table: longest prefix, then lowest administrative
+      distance between protocols, then for static routes the lowest priority, and equal ones are ECMP. I check
+      with get router info routing-table details for one destination, and the database view to see what lost."
+    best_way: "The order, then the commands."
+    target: "0:40"

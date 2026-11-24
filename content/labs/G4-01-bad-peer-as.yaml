@@ -1,0 +1,75 @@
+id: G4.01
+track: routing
+modules: [M2.02, M8.02]
+tier: 4
+order: 20
+kind: ticket
+title: "\"Cali's BGP session never comes up\""
+customer: Andes Logistics
+par: 20
+skills: [BGP FSM, OPEN errors, get router info bgp neighbors]
+brief: |
+  **Ticket 8202, priority 2.** HQ's session with the carrier is fine, Cali's has never established since the
+  migration. The carrier swears their side matches the order form: Cali is AS 65020, the PE is AS 64600.
+topology:
+  use: andes-bgp
+  devices:
+    FGT-BOG:
+      config: |
+        config router bgp
+        set as 65010
+        set router-id 10.20.255.1
+        config neighbor
+        edit 10.255.0.1
+        set remote-as 64600
+        next
+        end
+        config network
+        edit 1
+        set prefix 10.20.10.0 255.255.255.0
+        next
+        end
+        end
+    FGT-CLO:
+      config: |
+        config router bgp
+        set as 65020
+        set router-id 10.30.255.1
+        config neighbor
+        edit 10.255.0.5
+        set remote-as 64060
+        next
+        end
+        config network
+        edit 1
+        set prefix 10.30.0.0 255.255.255.0
+        next
+        end
+        end
+tasks:
+  - "Find out why the session doesn't establish (`get router info bgp summary`, `get router info bgp neighbors`)."
+  - "Fix it and check that Cali reaches the ERP."
+  - "Answer the root cause."
+checks:
+  - text: "FGT-CLO ↔ PE is Established"
+    bgp: {dev: FGT-CLO, peer: 10.255.0.5}
+  - text: "Cali reaches the ERP"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~64060|remote-as|peer as|bad peer|typo"], sample: "remote-as typed as 64060 instead of 64600: the OPEN is rejected (Bad Peer AS)", hint: "Compare the AS the FortiGate expects with the one in the carrier's OPEN.", why: "Each side checks the AS in the other's OPEN message against its configured remote-as. 64060 ≠ 64600, so the FortiGate sends a NOTIFICATION (Bad Peer AS) and the session falls back to Idle."}
+hints:
+  - "`get router info bgp neighbors` on FGT-CLO shows the last error."
+  - "`config router bgp` / `config neighbor` / `edit 10.255.0.5` / `set remote-as 64600`."
+solution:
+  FGT-CLO: |
+    get router info bgp neighbors
+    config router bgp
+    config neighbor
+    edit 10.255.0.5
+    set remote-as 64600
+    next
+    end
+    end
+explain: |
+  A session that flips between Idle and Active with an OPEN error is almost always AS numbers or the peer's IP. Copy
+  ASNs from the carrier's handover document, and read them back to them on the call.

@@ -23,6 +23,7 @@ Lab.prototype.diagnose = function (fg, toks, line) {
       if (r !== null && r !== undefined) return r;
     }
     if (this.haDiag) { const r = this.haDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
+    if (this.routingDiag && fg.kind === "fortigate") { const r = this.routingDiag(fg, rest, head); if (r !== null && r !== undefined) return r; }
     if (this.authDiag && fg.kind === "fortigate") { const r = this.authDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
     if (head === "get" && match(rest, ["vpn", "ipsec", "tunnel", "summary"]) && this.vpnSummary) return this.vpnSummary(fg);
     if (head === "get") return getCmd(this, fg, rest, toks.slice(1));
@@ -60,7 +61,7 @@ function getCmd(lab, fg, r, raw) {
       const ip = ipToInt(r[4]);
       const rt = lab.fgtLookup(fg, ip);
       if (!rt) return `Network not in table`;
-      return `Routing table for VRF=0\nRouting entry for ${prefixStr(rt.dst)}\n  Known via "${rt.type === "C" ? "connected" : "static"}", distance ${rt.distance}, metric 0, best\n  * ${rt.type === "C" ? `directly connected, ${rt.dev}` : `vrf 0 ${intToIp(rt.gw)}, via ${rt.dev}`}`;
+      return `Routing table for VRF=0\nRouting entry for ${prefixStr(rt.dst)}\n  Known via "${rt.type === "C" ? "connected" : rt.type === "B" ? "bgp" : rt.type.startsWith("O") ? "ospf" : "static"}", distance ${rt.distance}, metric ${rt.metric || 0}, best\n  * ${rt.type === "C" ? `directly connected, ${rt.dev}` : `vrf 0 ${intToIp(rt.gw)}, via ${rt.dev}`}`;
     }
     const list = "database".startsWith(what) ? all : active;
     const lines = [`Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP`, `       O - OSPF, IA - OSPF inter area`, `       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2`, `       E1 - OSPF external type 1, E2 - OSPF external type 2`, `       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area`, `       V - BGP VPNv4`, `       * - candidate default`, ``, `Routing table for VRF=0`];
@@ -70,6 +71,8 @@ function getCmd(lab, fg, r, raw) {
       const code = (x.type + (x.dst.len === 0 ? "*" : "")).padEnd(8);
       const mark = "database".startsWith(what) ? (isActive ? "*> " : "   ") : "";
       if (x.type === "C") lines.push(`${code}${mark}${prefixStr(x.dst)} is directly connected, ${x.dev}`);
+      else if (x.type === "B" && x.recursive) lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.nh)} (recursive via ${intToIp(x.gw)}, ${x.dev}), 00:12:41`);
+      else if (x.type.startsWith("O") || x.type === "B") lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}, ${x.dev}, 00:12:41`);
       else if (x.blackhole) lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/0] is a summary, Null, [${x.priority}/0]`);
       else lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/0] via ${intToIp(x.gw)}, ${x.dev}, [${x.priority}/0]`);
     }
@@ -430,8 +433,10 @@ function hostCurl(lab, h, args) {
 export function routerRun(lab, r, line) {
   const t = line.trim().toLowerCase();
   if (!t) return "";
+  if (t === "help" || t === "?") return `Commands: show ip interface brief, show ip route, ping <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}`;
   if (t.startsWith("show ip int")) return r.ifaces.map((i) => `${pad(i.name, 16)}${pad(i.prefix ? intToIp(i.prefix.ip) + "/" + i.prefix.len : "unassigned", 20)}${i.up ? "up" : "down"}`).join("\n");
-  if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] via ${x.via ? intToIp(x.via) : "Internet uplink"}`)).join("\n");
+  if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] via ${x.via ? intToIp(x.via) : "Internet uplink"}`)).concat(lab.routerDynamic(r).map((x) => `${x.type.padEnd(5)}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}`)).join("\n");
+  { const d = lab.routerShow && lab.routerShow(r, t); if (d !== null && d !== undefined) return d; }
   if (t.startsWith("ping")) {
     const ip = ipToInt(t.split(/\s+/)[1] || "");
     if (ip === null) return "% Invalid input";
@@ -439,5 +444,5 @@ export function routerRun(lab, r, line) {
     for (let i = 0; i < 5; i++) if (lab.probe(r.id, { dst: ip, proto: 1, src: r.ifaces.find((x) => x.prefix && inPrefix(ip, x.prefix))?.prefix.ip ?? r.ifaces[0].prefix.ip }).ok) ok++;
     return `Type escape sequence to abort.\nSending 5, 100-byte ICMP Echos to ${intToIp(ip)}, timeout is 2 seconds:\n${"!".repeat(ok)}${".".repeat(5 - ok)}\nSuccess rate is ${ok * 20} percent (${ok}/5)`;
   }
-  return `This is the ISP's router: you only have read access. Try: show ip interface brief, show ip route, ping <ip>`;
+  return `This router is read-only for you. Try: show ip interface brief, show ip route, ping <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}`;
 }

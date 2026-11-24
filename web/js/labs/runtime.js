@@ -7,6 +7,7 @@ import "./ha.js";
 import "./utm.js";
 import "./mgmt.js";
 import "./auth.js";
+import "./routing.js";
 import { hostRun, routerRun } from "./diag.js";
 import { runChecks } from "./grader.js";
 import { FortiGate } from "./fgt.js";
@@ -41,7 +42,20 @@ export class LabRun {
         const [dev, port] = ev.link.split(":");
         for (const sg of this.lab.segments) for (const m of sg.members) if (m.dev === dev && (m.port === port || (!m.port && !port))) { m.down = !!ev.down; changed = true; }
       }
-      if (ev.router) { const r = this.lab.dev(ev.router); if (r) { if (ev.quality) r.quality = ev.quality; if (ev.mtu) r.mtu = ev.mtu; changed = true; } }
+      if (ev.router) {
+        const r = this.lab.dev(ev.router);
+        if (r) {
+          if (ev.quality) r.quality = ev.quality;
+          if (ev.mtu) r.mtu = ev.mtu;
+          if (ev.ospf && r.spec.ospf) {
+            const { interfaces, ...rest } = ev.ospf;
+            Object.assign(r.spec.ospf, rest);
+            for (const pi of interfaces || []) { const x = r.spec.ospf.interfaces.find((y) => y.name === pi.name); if (x) Object.assign(x, pi); else r.spec.ospf.interfaces.push(pi); }
+          }
+          if (ev.bgp && r.spec.bgp) Object.assign(r.spec.bgp, ev.bgp);
+          changed = true;
+        }
+      }
       if (ev.cli) { const d = this.lab.dev(ev.cli.dev); if (d && d.load) { d.load(ev.cli.lines); changed = true; } }
       if (ev.traffic) {
         if (changed) { this.lab.dirty(); changed = false; }

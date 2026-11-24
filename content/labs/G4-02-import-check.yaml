@@ -1,0 +1,75 @@
+id: G4.02
+track: routing
+modules: [M2.02, M8.02]
+tier: 4
+order: 21
+kind: ticket
+title: "\"The session is up, but HQ never learns Cali's network\""
+customer: Andes Logistics
+par: 20
+skills: [network-import-check, advertised-routes]
+brief: |
+  **Ticket 8217, priority 2.** Both BGP sessions are Established. HQ's LAN reaches Cali's routing table, but HQ never
+  learns Cali's 10.30.0.0/24. The previous engineer "advertised the whole Cali range so future VLANs are covered".
+topology:
+  use: andes-bgp
+  devices:
+    FGT-BOG:
+      config: |
+        config router bgp
+        set as 65010
+        set router-id 10.20.255.1
+        config neighbor
+        edit 10.255.0.1
+        set remote-as 64600
+        next
+        end
+        config network
+        edit 1
+        set prefix 10.20.10.0 255.255.255.0
+        next
+        end
+        end
+    FGT-CLO:
+      config: |
+        config router bgp
+        set as 65020
+        set router-id 10.30.255.1
+        config neighbor
+        edit 10.255.0.5
+        set remote-as 64600
+        next
+        end
+        config network
+        edit 1
+        set prefix 10.30.0.0 255.255.0.0
+        next
+        end
+        end
+tasks:
+  - "Check what FGT-CLO advertises: `get router info bgp neighbors 10.255.0.5 advertised-routes`."
+  - "Fix it so HQ learns Cali's LAN (without advertising anything that doesn't exist)."
+  - "Answer the root cause."
+checks:
+  - text: "FGT-BOG learns 10.30.0.0/24"
+    route: {dev: FGT-BOG, dst: 10.30.0.0/24, type: B}
+  - text: "HQ-PC reaches CLO-PC"
+    probe: {from: HQ-PC, to: 10.30.0.20}
+  - text: "Root cause"
+    answer: {accept: ["~import|exact|not in.*table|/16|routing table"], sample: "network-import-check: 10.30.0.0/16 isn't in FGT-CLO's routing table (only the /24 is), so it's never advertised", hint: "Which routes does FortiOS agree to put into BGP from a network statement?", why: "With network-import-check enabled (the default), FortiOS advertises a network statement only if that exact prefix is in the routing table. The /16 doesn't exist, so nothing goes out."}
+hints:
+  - "The advertised-routes list is empty. Compare the network statement with `get router info routing-table all`."
+  - "`config router bgp` / `config network` / `edit 1` / `set prefix 10.30.0.0 255.255.255.0` (or add a blackhole static /16 if you really want the summary)."
+solution:
+  FGT-CLO: |
+    get router info bgp neighbors 10.255.0.5 advertised-routes
+    config router bgp
+    config network
+    edit 1
+    set prefix 10.30.0.0 255.255.255.0
+    next
+    end
+    end
+explain: |
+  To advertise a summary that has no matching route, create one: a blackhole static route for 10.30.0.0/16 makes the
+  prefix exist (and drops traffic to unused parts of the range), which is the usual way to anchor an aggregate.
