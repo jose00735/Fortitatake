@@ -1,0 +1,154 @@
+id: S5.02
+track: secops
+modules: [M10.01, M10.03, M10.04]
+tier: 5
+order: 20
+kind: project
+title: "FortiEDR: from silent collectors to a blocked attack"
+customer: Andes Logistics
+par: 80
+skills: [collector connectivity, event triage, flow analyzer, remediation, isolation, prevention mode]
+brief: |
+  **SOW 2026-191, EDR phase.** FortiEDR (**FEDR-01**, 10.20.40.60) is deployed in **simulation** mode, as usual for
+  the first weeks. Collectors on DC-01, FIN-PC and HQ-PC report to it on **TCP 8081**.
+
+  The FortiEDR console takes GUI actions as commands: type `help` on FEDR-01.
+topology: {use: andes-secops}
+parts:
+  - id: a
+    title: Every collector reporting
+    tasks:
+      - "Check the inventory on FEDR-01. Find out why the HQ LAN collectors are Disconnected and fix it on FGT-BOG (only what the collectors need)."
+    checks:
+      - text: "FIN-PC's collector is connected"
+        edr: {dev: FEDR-01, collector: FIN-PC}
+      - text: "HQ-PC's collector is connected"
+        edr: {dev: FEDR-01, collector: HQ-PC}
+      - text: "The HQ LAN still can't reach the FortiEDR console port"
+        probe: {from: HQ-PC, to: 10.20.40.60, proto: tcp, port: 443, expect: fail}
+    hints:
+      - "DC-01 is on the same segment as FEDR-01, so it doesn't cross the FortiGate. HQ-PC and FIN-PC do."
+      - "A policy port2 → port4, HQ-LAN → FEDR-01, service FortiEDR-8081 (it exists)."
+    solution:
+      FGT-BOG: |
+        config firewall policy
+        edit 5
+        set name "EDR-collectors"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr FEDR-01
+        set action accept
+        set schedule always
+        set service FortiEDR-8081
+        next
+        end
+      FEDR-01: |
+        inventory
+    explain: |
+      EDR collectors talk to the aggregator (TCP 8081 here); a missing firewall rule leaves endpoints unprotected
+      without anyone noticing, because the endpoint looks fine. Check the inventory on day one and alert on
+      disconnected collectors.
+  - id: b
+    title: Triage the alert
+    events:
+      - story:
+          - {at: "10:12:03", host: FIN-PC, edr: {process: Factura_Nov.pdf.exe, path: "C:\\Users\\jperez\\AppData\\Local\\Temp\\Factura_Nov.pdf.exe", parent: OUTLOOK.EXE, chain: [explorer.exe, OUTLOOK.EXE, Factura_Nov.pdf.exe, powershell.exe], cmd: "powershell -nop -w hidden -enc SQBFAFgA...", hash: "9f1c2a7e44b0d3c6a1e5f2b8c9d04e7a61b3c2d1", signed: "no", policy: Ransomware Prevention, rule: "File Encryptor", classification: Malicious, dst: "185.220.101.47:443", target: "\\\\FS01\\Contabilidad\\*.xlsx → *.xlsx.lockd"}}
+    brief: |
+      **10:14.** FEDR-01 raised a Malicious event on FIN-PC (Juan Pérez, Finance). Policies are still in simulation,
+      so nothing was blocked.
+    tasks:
+      - "Read the event and its flow analyzer view."
+      - "Contain: kill the process and delete the file, and isolate FIN-PC."
+      - "Answer the questions."
+    checks:
+      - text: "The event is remediated"
+        edr: {dev: FEDR-01, event: Factura_Nov.pdf.exe, handled: true}
+      - text: "FIN-PC is isolated"
+        edr: {dev: FEDR-01, isolated: true, host: FIN-PC}
+      - text: "Isolated FIN-PC can't reach the Internet"
+        probe: {from: FIN-PC, to: www.google.com, proto: tcp, port: 443, expect: fail}
+      - text: "How did it start?"
+        answer: {accept: ["~outlook|email|mail|attach"], sample: "From an email attachment: OUTLOOK.EXE started Factura_Nov.pdf.exe", hint: "Look at the parent in forensics.", why: "The flow analyzer shows OUTLOOK.EXE → Factura_Nov.pdf.exe: a double-extension attachment opened from email."}
+      - text: "Which external IP should the FortiGate block?"
+        answer: {accept: ["~185\\.220\\.101\\.47"], sample: "185.220.101.47", hint: "Destinations in the event details.", why: "The payload connected to 185.220.101.47:443, its command-and-control server."}
+    hints:
+      - "`events`, then `event <id>` and `forensics <id>`."
+      - "`remediate <id> kill`, `remediate <id> delete`, then `isolate FIN-PC`."
+    solution:
+      FEDR-01: |
+        events
+        forensics 1001
+        remediate 1001 kill
+        remediate 1001 delete
+        isolate FIN-PC
+    explain: |
+      Isolation keeps the host talking only to the EDR manager, so you can still investigate and remediate while it
+      can't spread or reach its C2. The flow analyzer answers the two questions every incident report needs: how it
+      got in, and where it talked to.
+  - id: c
+    title: Switch to prevention
+    tasks:
+      - "Put Ransomware Prevention and Execution Prevention in prevention mode."
+      - "Block 185.220.101.47 on FGT-BOG for all outbound traffic (address + a deny policy above the Internet policy)."
+    checks:
+      - text: "Ransomware Prevention is in prevention mode"
+        edr: {dev: FEDR-01, policy: Ransomware Prevention, mode: Prevention}
+      - text: "Execution Prevention is in prevention mode"
+        edr: {dev: FEDR-01, policy: Execution Prevention, mode: Prevention}
+      - text: "HQ can't reach the C2 any more"
+        probe: {from: HQ-PC, to: 185.220.101.47, proto: tcp, port: 443, expect: fail}
+      - text: "HQ still browses"
+        probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443}
+    hints:
+      - "`policy \"Ransomware Prevention\" prevention`, same for Execution Prevention."
+      - "Address C2-185.220.101.47, a deny policy port2 → port1 to it, moved above policy 1 (`move 6 before 1`)."
+    solution:
+      FEDR-01: |
+        policy "Ransomware Prevention" prevention
+        policy "Execution Prevention" prevention
+      FGT-BOG: |
+        config firewall address
+        edit C2-185.220.101.47
+        set subnet 185.220.101.47 255.255.255.255
+        next
+        end
+        config firewall policy
+        edit 6
+        set name "Block-C2"
+        set srcintf port2
+        set dstintf port1
+        set srcaddr all
+        set dstaddr C2-185.220.101.47
+        set action deny
+        set schedule always
+        set service ALL
+        set logtraffic all
+        next
+        move 6 before 1
+        end
+    explain: |
+      Simulation mode is for learning what's normal; after a real incident, the business case for prevention writes
+      itself. Blocking the C2 on the firewall adds a network-layer stop for hosts without a collector.
+  - id: d
+    title: The second attempt
+    allow_pre_pass: true
+    events:
+      - story:
+          - {at: "15:31:40", host: HQ-PC, edr: {process: Factura_Dic.pdf.exe, path: "C:\\Users\\mrojas\\Downloads\\Factura_Dic.pdf.exe", parent: OUTLOOK.EXE, chain: [explorer.exe, OUTLOOK.EXE, Factura_Dic.pdf.exe], hash: "2b7d9e0c1a4f63e8d5c2b1a0f9e8d7c6b5a49382", signed: "no", policy: Ransomware Prevention, rule: "File Encryptor", classification: Malicious, dst: "185.220.101.47:443"}}
+    brief: |
+      **15:32.** The same campaign hits María Rojas on HQ-PC.
+    tasks:
+      - "Check the new event: what did FortiEDR do this time?"
+    checks:
+      - text: "The new attempt was blocked"
+        edr: {dev: FEDR-01, event: Factura_Dic.pdf.exe, action: Blocked}
+    hints:
+      - "`events host=HQ-PC`."
+      - "If it says Simulated Block, check part c."
+    solution:
+      FEDR-01: |
+        events host=HQ-PC
+    explain: |
+      Same technique, different outcome: prevention mode stops the encryption attempt on the endpoint, and the
+      firewall drops the C2 call. That before/after is the story to tell the customer's management.

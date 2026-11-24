@@ -1,0 +1,118 @@
+id: S5.01
+track: secops
+modules: [M9.01, M9.03]
+tier: 5
+order: 10
+kind: project
+title: "Andes Logistics: FortiSIEM goes live"
+customer: Andes Logistics
+par: 70
+skills: [FortiGate syslog to FortiSIEM, CMDB, analytics, rules, incidents, tuning with exceptions]
+brief: |
+  **SOW 2026-190, SOC phase.** Andes bought a FortiSIEM (**FSIEM-01**, 10.20.40.50). DC-01 already ships its Windows
+  security log through the FortiSIEM agent. The FortiGate isn't sending anything yet.
+
+  The FortiSIEM console takes GUI actions as commands: type `help` on FSIEM-01.
+topology: {use: andes-secops}
+parts:
+  - id: a
+    title: Get the FortiGate in
+    tasks:
+      - "Send FGT-BOG's logs to FSIEM-01 by syslog (UDP 514)."
+      - "Check the CMDB on FSIEM-01: both FGT-BOG-HQ and DC01 should be there."
+    checks:
+      - text: "FSIEM-01 receives FGT-BOG's events"
+        siem: {dev: FSIEM-01, cmdb: FGT-BOG-HQ}
+      - text: "…and DC-01's Windows events"
+        siem: {dev: FSIEM-01, cmdb: DC01}
+    hints:
+      - "`config log syslogd setting` / `set status enable` / `set server 10.20.40.50`."
+      - "Syslog is local-out traffic from the FortiGate: it needs a route to 10.20.40.50 (it has one: port4 is connected), not a policy."
+    solution:
+      FGT-BOG: |
+        config log syslogd setting
+        set status enable
+        set server 10.20.40.50
+        end
+      FSIEM-01: |
+        cmdb
+    explain: |
+      FortiSIEM learns devices from what they send: a FortiGate that starts sending syslog appears in the CMDB with its
+      type parsed from the log format. Windows hosts come in through the agent (or WMI/WinRM pulling), which is how
+      DC01 was already there.
+  - id: b
+    title: The morning's incidents
+    events:
+      - story:
+          - {at: "02:00:05", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "02:00:22", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "02:00:39", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "02:01:05", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "02:01:22", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "02:01:39", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "02:02:05", host: DC-01, win: {id: 4625, user: administrator, src: 10.20.40.30, ws: NESSUS-SCAN, logon_type: 3}}
+          - {at: "08:41:00", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:41:13", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:41:26", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:41:39", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:41:52", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:42:05", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:42:18", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:42:31", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:42:44", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:42:57", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:43:10", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:43:23", host: DC-01, win: {id: 4625, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:43:41", host: DC-01, win: {id: 4624, user: jperez, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+          - {at: "08:47:02", host: DC-01, win: {id: 7045, user: jperez, src: 10.20.10.66, service: PSEXESVC}}
+    brief: |
+      **09:15.** FortiSIEM shows new incidents. Triage them.
+    tasks:
+      - "List the incidents and open the high-severity one."
+      - "Use analytics to build the timeline (e.g. `analytics srcIpAddr=10.20.10.66`)."
+      - "Assign the high-severity incident to yourself and answer the questions."
+    checks:
+      - text: "The brute-force-then-success incident is assigned"
+        siem: {dev: FSIEM-01, incident: Successful Logon After Multiple Failures, owner: true}
+      - text: "Which account was compromised?"
+        answer: {accept: ["~jperez"], sample: "jperez", hint: "The 4624 after the failures names the user.", why: "Twelve failed logons for jperez from 10.20.10.66, then a success at 08:43:41."}
+      - text: "From which IP and machine?"
+        answer: {accept: ["~10\\.20\\.10\\.66"], sample: "10.20.10.66 (LT-CONTRATISTA)", hint: "srcIpAddr and hostName in the events.", why: "The contractor laptop LT-CONTRATISTA on the HQ LAN."}
+      - text: "What did the attacker do four minutes later, and why does it matter?"
+        answer: {accept: ["~psexe|service|7045|lateral"], sample: "Installed the PSEXESVC service (event 7045): remote execution with PsExec, a sign of lateral movement", hint: "Search all events from that source after the success.", why: "PSEXESVC is the service PsExec installs to run commands remotely. Its rule is disabled by default, so only the analytics search shows it."}
+    hints:
+      - "`incidents`, then `incident <id>` for the HIGH one. `incident <id> assign <your name>`."
+      - "`analytics srcIpAddr=10.20.10.66` shows every event from the laptop, in order."
+    solution:
+      FSIEM-01: |
+        incidents
+        incident 7231 assign jose
+        analytics srcIpAddr=10.20.10.66
+    explain: |
+      A burst of failures followed by a success is the classic password-guessing pattern; the correlation rule turns
+      13 events into one high-severity incident. The service installation right after shows why triage doesn't stop
+      at the incident: the timeline from analytics tells you what the attacker did next.
+  - id: c
+    title: Tune out the nightly scanner
+    brief: |
+      **SOC review.** Every night the vulnerability scanner (NESSUS-SCAN, 10.20.40.30) trips "Excessive Windows Logon
+      Failures" against DC01. It's authorized, scheduled and noisy. Andes asks you to stop the noise without blinding
+      the rule.
+    tasks:
+      - "Add an exception for the scanner's source IP to that rule. Don't disable the rule."
+    checks:
+      - text: "No more failures incident for the scanner"
+        siem: {dev: FSIEM-01, incident: Excessive Windows Logon Failures, attrs: {srcIpAddr: 10.20.40.30}, exists: false}
+      - text: "The contractor laptop is still detected"
+        siem: {dev: FSIEM-01, incident: Excessive Windows Logon Failures, attrs: {srcIpAddr: 10.20.10.66}}
+    hints:
+      - "`rules`, then `rule \"Excessive Windows Logon Failures\" exception srcIpAddr=10.20.40.30`."
+      - "Disabling the rule would also hide the real attack you just triaged."
+    solution:
+      FSIEM-01: |
+        rule "Excessive Windows Logon Failures" exception srcIpAddr=10.20.40.30
+        incidents
+    explain: |
+      Tuning means narrowing, not silencing: an exception for one known source keeps the rule working for everything
+      else. Document every exception (who asked, why, review date): unreviewed exceptions are how attackers hide in
+      plain sight.

@@ -122,6 +122,7 @@ export class Lab {
     this.haSyncAll();
     this.renewAll();
     this.ready = true;
+    if (def.story && this.playStory) this.playStory(def.story);
   }
 
   wireFgt(dev, kind) {
@@ -489,6 +490,8 @@ export class Lab {
   }
   hostProcess(h, inPort, pkt, res, origin) {
     const me = h.addr();
+    const iso = this.edrIsolated(h);
+    if (iso && pkt.dst !== iso.ip() && pkt.src !== iso.ip()) { res.drop = { dev: h.id, reason: `${h.id} is isolated by FortiEDR` }; return null; }
     if (origin) {
       if (!me) { res.drop = { dev: h.id, reason: "no IP address (DHCP failed)" }; return null; }
       if (h.vpn && h.vpn.up && pkt.src === h.vpn.ip) { const t = this.clientTunnel(h, pkt, res); if (t) return t; }
@@ -868,6 +871,7 @@ Lab.prototype.authUser = function () { return null; };
 Lab.prototype.dynRoutes = function () { return []; };
 Lab.prototype.switchSegments = function () { return []; };
 Lab.prototype.loadVdoms = function () {};
+Lab.prototype.edrIsolated = function () { return null; };
 Lab.prototype.routerDynamic = function () { return []; };
 Lab.prototype.identityOk = function () { return false; };
 Lab.prototype.extraRefs = function () { return []; };

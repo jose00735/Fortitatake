@@ -10,6 +10,7 @@ import "./auth.js";
 import "./routing.js";
 import "./vdom.js";
 import "./switch.js";
+import "./soc.js";
 import { hostRun, routerRun } from "./diag.js";
 import { runChecks } from "./grader.js";
 import { FortiGate } from "./fgt.js";
@@ -72,6 +73,7 @@ export class LabRun {
           D._norm = null; changed = true;
         }
       }
+      if (ev.story) { if (changed) { this.lab.dirty(); changed = false; } this.lab.playStory(ev.story); }
       if (ev.dns) { for (const [n, ip] of Object.entries(ev.dns)) this.lab.names.set(n.toLowerCase(), ipToInt(ip)); changed = true; }
     }
     if (changed) this.lab.dirty();
@@ -95,6 +97,8 @@ export class LabRun {
       out = m !== null && m !== undefined ? m : d.run(line);
       if (/^\s*(diag|exec|get)/i.test(line)) this.verified++;
     } else if (d.kind === "router") out = routerRun(this.lab, d, line);
+    else if (d.kind === "fortisiem") { d.history.push({ line, ts: this.lab.clock }); out = this.lab.siemConsole(d, line); }
+    else if (d.kind === "fortiedr") { d.history.push({ line, ts: this.lab.clock }); out = this.lab.edrConsole(d, line); }
     else if (d.kind === "fortiswitch") { d.history.push({ line, ts: this.lab.clock }); out = this.lab.switchConsole(d, line); }
     else { out = hostRun(this.lab, d, line); if (/^(ping|curl|tracert|traceroute|nslookup|tnc|nc)/i.test(line.trim())) this.verified++; }
     if (record) this.log.push({ dev: devId, line });
@@ -105,6 +109,8 @@ export class LabRun {
     if (d instanceof FortiGate) return this.lab.mgmtPrompt(d) || d.prompt();
     if (d.kind === "router") return `${d.id}> `;
     if (d.kind === "fortiswitch") return `${d.id} # `;
+    if (d.kind === "fortisiem") return `FortiSIEM ${d.id}> `;
+    if (d.kind === "fortiedr") return `FortiEDR ${d.id}> `;
     return d.os === "windows" ? `C:\\Users\\${d.hostname.toLowerCase()}> ` : `${d.hostname.toLowerCase()}@lab:~$ `;
   }
   // async output (debug flow, sniffer) collected per FortiGate since last call

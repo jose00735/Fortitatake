@@ -33,6 +33,9 @@ function one(lab, c, answers) {
   if (c.ospf) return ospfCheck(lab, c.ospf);
   if (c.bgp) return bgpCheck(lab, c.bgp);
   if (c.fsw) return fswCheck(lab, c.fsw);
+  if (c.siem) return siemCheck(lab, c.siem);
+  if (c.edr) return edrCheck(lab, c.edr);
+  if (c.fazinc) return fazIncCheck(lab, c.fazinc);
   if (c.all) { const r = c.all.map((x) => one(lab, x, answers)); return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail }; }
   return { pass: false, detail: "Unknown check type" };
 }
@@ -110,6 +113,37 @@ function bgpCheck(lab, c) {
   if (s.state !== (c.state || "Established")) return { pass: false, detail: `${c.dev} → ${c.peer} is ${s.state}${s.why ? `: ${s.why}` : ""}.` };
   if (c.received !== undefined) { const n = ((b.adjIn.get(s.n.ip) || {}).routes || new Map()).size; if (n !== c.received) return { pass: false, detail: `${c.dev} receives ${n} prefixes from ${c.peer}, expected ${c.received}.` }; }
   return { pass: true, detail: `${c.dev} → ${c.peer} is Established.` };
+}
+
+function siemCheck(lab, c) {
+  const siem = getDev(lab, c.dev);
+  if (c.cmdb) { const ok = lab.siemEvents(siem).some((e) => e.reptDevName === c.cmdb); return ok ? { pass: true, detail: `${c.cmdb} is sending events to ${c.dev}.` } : { pass: false, detail: `${c.dev} has received nothing from ${c.cmdb}.` }; }
+  if (c.events) { const n = lab.siemEvents(siem).filter((e) => Object.entries(c.events).every(([k, v]) => String(e[k] ?? "") === String(v))).length; return n ? { pass: true, detail: `${n} matching event(s) in ${c.dev}.` } : { pass: false, detail: `No events in ${c.dev} match ${Object.entries(c.events).map(([k, v]) => `${k}=${v}`).join(" ")}.` }; }
+  const inc = lab.siemIncidents(siem).filter((i) => i.rule === c.incident && Object.entries(c.attrs || {}).every(([k, v]) => String(i.attrs[k]) === String(v)));
+  if (c.exists === false) return inc.filter((i) => !c.status || i.status === c.status).length ? { pass: false, detail: `${c.dev} still raises "${c.incident}"${inc[0] ? ` (incident ${inc[0].id})` : ""}.` } : { pass: true, detail: `No "${c.incident}" incident.` };
+  if (!inc.length) return { pass: false, detail: `${c.dev} has no "${c.incident}" incident${c.attrs ? ` for ${Object.entries(c.attrs).map(([k, v]) => `${k}=${v}`).join(" ")}` : ""}.` };
+  if (c.status && !inc.some((i) => i.status === c.status)) return { pass: false, detail: `Incident ${inc[0].id} is ${inc[0].status}, not ${c.status}.` };
+  if (c.owner && !inc.some((i) => i.owner)) return { pass: false, detail: `Incident ${inc[0].id} isn't assigned to anyone.` };
+  return { pass: true, detail: `Incident ${inc[0].id} (${c.incident}) is ${inc[0].status}.` };
+}
+
+function edrCheck(lab, c) {
+  const edr = getDev(lab, c.dev);
+  if (c.collector) { const x = lab.edrCollectors(edr).find((y) => y.h.id === c.collector); if (!x) return { pass: false, detail: `${c.collector} has no FortiEDR collector.` }; return x.connected ? { pass: true, detail: `${c.collector}'s collector is connected.` } : { pass: false, detail: `${c.collector}'s collector can't reach ${c.dev} on TCP 8081.` }; }
+  const st = edr.edr || { modes: {}, isolated: new Set(), exceptions: [], cls: new Map(), done: new Map() };
+  if (c.isolated !== undefined) { const is = st.isolated && st.isolated.has(c.host); return is === c.isolated ? { pass: true, detail: `${c.host} is ${is ? "" : "not "}isolated.` } : { pass: false, detail: `${c.host} is ${is ? "" : "not "}isolated.` }; }
+  if (c.policy) { const m = (st.modes || {})[c.policy] || "Simulation"; return m === c.mode ? { pass: true, detail: `${c.policy} is in ${m} mode.` } : { pass: false, detail: `${c.policy} is in ${m} mode, not ${c.mode}.` }; }
+  if (c.exception) { const ok = (st.exceptions || []).some((x) => x.process === c.exception && (!c.rule || x.rule === c.rule) && (!c.scope || (c.scope === "host" ? x.host !== "*" : x.host === "*"))); return ok ? { pass: true, detail: `An exception covers ${c.exception}.` } : { pass: false, detail: `No exception for ${c.exception}${c.rule ? ` on "${c.rule}"` : ""}.` }; }
+  if (c.event) { const e = lab.edrEvents(edr).find((x) => x.process === c.event); if (!e) return { pass: false, detail: `No event for ${c.event} in ${c.dev}.` }; if (c.classification && e.classification !== c.classification) return { pass: false, detail: `${c.event} is classified ${e.classification}.` }; if (c.handled && !e.handled) return { pass: false, detail: `${c.event} hasn't been remediated.` }; if (c.action && e.action !== c.action) return { pass: false, detail: `${c.event} was ${e.action}, not ${c.action}.` }; return { pass: true, detail: `${c.event}: ${e.classification}, ${e.action}${e.handled ? `, ${e.handled}` : ""}.` }; }
+  return { pass: false, detail: "Unknown EDR check." };
+}
+
+function fazIncCheck(lab, c) {
+  const faz = getDev(lab, c.dev);
+  const inc = ((faz.soc && faz.soc.inc) || []).filter((i) => (!c.handler || i.handler === c.handler) && (!c.srcip || i.srcip === c.srcip));
+  if (!inc.length) return { pass: false, detail: `${c.dev} has no incident${c.handler ? ` from "${c.handler}"` : ""}${c.srcip ? ` for ${c.srcip}` : ""}.` };
+  if (c.assigned && inc[0].assign === "unassigned") return { pass: false, detail: `Incident ${inc[0].id} isn't assigned.` };
+  return { pass: true, detail: `Incident ${inc[0].id} (${inc[0].handler}) exists${inc[0].assign !== "unassigned" ? `, assigned to ${inc[0].assign}` : ""}.` };
 }
 
 function fswCheck(lab, c) {

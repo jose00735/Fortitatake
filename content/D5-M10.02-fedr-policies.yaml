@@ -1,0 +1,177 @@
+id: M10.02
+title: "FortiEDR security policies, exceptions and exclusions"
+stage: S10
+stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
+order: 192
+est_sessions: 1
+objectives:
+  - Explain the security policies (execution, exfiltration, ransomware, device control) and their rules
+  - Choose simulation vs prevention per policy and collector group
+  - Handle false positives with narrow exceptions instead of weakening policies
+sources:
+  - "FortiEDR 7.2.5 Admin Guide: Profiles and security policies (pp. 203–263), Exception Manager (p. 213)"
+  - "FortiEDR 7.2.5 Admin Guide: Event Viewer action values (p. 92)"
+
+units:
+  - id: M10.02.u1
+    title: The policies
+    tier: 1
+    est_min: 12
+    body: |
+      | Policy | Stops |
+      |---|---|
+      | **Execution Prevention** | Malicious files and unconfirmed executables from running |
+      | **Exfiltration Prevention** | Malicious outbound connection establishment |
+      | **Ransomware Prevention** | Malware that blocks users from their own systems/files (encryption) |
+      | **Device Control** | USB and other external devices |
+
+      (p. 204). Each policy has **rules** (e.g. "File Encryptor" under Ransomware Prevention) that can be enabled
+      individually, and policies are assigned to **collector groups**.
+
+      :::recall
+      Q: A payload encrypts files on a share and calls home. Which two policies apply?
+      A: Ransomware Prevention (the encryption) and Exfiltration Prevention (the outbound connection).
+      :::
+  - id: M10.02.u2
+    title: Simulation vs prevention
+    tier: 2
+    est_min: 11
+    body: |
+      - **Simulation**: FortiEDR detects and reports what it **would** have blocked. In the Event Viewer the action
+        reads "Simulated Block": the policy was in simulation, so the attempt was not blocked (p. 92).
+      - **Prevention**: matching actions are blocked.
+
+      Out of the box, policies log; you move groups to prevention once you've reviewed the events and added exceptions
+      (p. 18). Do it per group: IT and pilot users first, servers last.
+
+      :::pitfall
+      Leaving policies in simulation for months is the most common EDR deployment failure: the dashboards fill with
+      "would have blocked" while nothing is blocked.
+      :::
+  - id: M10.02.u3
+    title: Exceptions done right
+    tier: 2
+    est_min: 11
+    body: |
+      When a legitimate application triggers a rule:
+
+      1. Confirm it's legitimate: signer, path, parent process, hash reputation, the vendor's documentation.
+      2. Create an **exception** in the Exception Manager (p. 213) scoped as narrowly as possible: this process (path or
+         hash), this rule, these groups or collectors.
+      3. Classify the event (Likely Safe / Safe) so the history is clear.
+      4. Never fix a false positive by switching the whole policy back to simulation.
+
+      Exclusions for other security products (and vice versa) are part of deployment hygiene, agreed with the other
+      vendors' guidance.
+
+      :::ps
+      Keep an exception register: event, process, rule, scope, who approved, review date. Auditors and the next
+      engineer will ask.
+      :::
+
+cards:
+  - {id: M10.02.c01, unit: M10.02.u1, tier: 1, front: "Four FortiEDR security policies", back: "Execution, Exfiltration, Ransomware Prevention; Device Control."}
+  - {id: M10.02.c02, unit: M10.02.u1, tier: 2, front: "Ransomware Prevention rule for encryption", back: "File Encryptor."}
+  - {id: M10.02.c03, unit: M10.02.u2, tier: 1, front: "Simulation mode", back: "Detects and reports what it would block (Simulated Block), blocks nothing."}
+  - {id: M10.02.c04, unit: M10.02.u2, tier: 2, front: "When to move to prevention", back: "Per group, after reviewing events and adding exceptions."}
+  - {id: M10.02.c05, unit: M10.02.u3, tier: 2, front: "Scope of a good exception", back: "This process, this rule, these groups/collectors."}
+  - {id: M10.02.c06, unit: M10.02.u3, tier: 2, front: "Wrong fix for a false positive", back: "Switching the whole policy to simulation."}
+
+quiz:
+  - id: M10.02.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "The Event Viewer shows 'Simulated Block'. What happened?"
+    options:
+      - {id: a, text: "The policy was in simulation; the action was not blocked", correct: true}
+      - {id: b, text: "The action was blocked in a sandbox", why_wrong: "Not blocked."}
+      - {id: c, text: "The Collector was offline", why_wrong: "Then no event."}
+      - {id: d, text: "A test event", why_wrong: "It's real activity."}
+    explanation: "Simulation reports, doesn't block."
+    source: "FortiEDR 7.2.5 Admin Guide p. 92"
+  - id: M10.02.q02
+    type: single
+    tier: 2
+    stem: "A signed vendor updater is blocked by 'Unconfirmed Executable' every night. Best fix?"
+    options:
+      - {id: a, text: "An exception for that process and rule", correct: true}
+      - {id: b, text: "Put Execution Prevention in simulation", why_wrong: "Removes protection everywhere."}
+      - {id: c, text: "Uninstall the Collector on that PC", why_wrong: "Unprotected endpoint."}
+      - {id: d, text: "Ignore it", why_wrong: "The business is broken."}
+    explanation: "Narrow exception."
+  - id: M10.02.q03
+    type: multi
+    tier: 2
+    stem: "Before creating an exception, what do you verify? Select all that apply."
+    options:
+      - {id: a, text: "Signer and hash reputation", correct: true}
+      - {id: b, text: "Path and parent process", correct: true}
+      - {id: c, text: "That the vendor documents the behavior", correct: true}
+      - {id: d, text: "That the user wants it", why_wrong: "Not sufficient evidence."}
+    explanation: "Evidence that it's legitimate."
+
+labs:
+  - id: M10.02.lab1
+    title: From simulation to prevention
+    goal: "Plan the move to prevention for a 3-group deployment."
+    worked:
+      config: |
+        # Week 1-2 all groups simulation; review events daily
+        # For each event: legit? → exception (process+rule+group) + classify Likely Safe; malicious? → incident
+        # Week 3 IT group → prevention (all four policies)
+        # Week 4 Office users → prevention
+        # Week 6 Servers → prevention after app-owner sign-off; maintenance window
+        # Ongoing: exception register reviewed monthly
+      notes:
+        - "Keep a rollback: a group can return to simulation quickly if something critical breaks."
+    faded:
+      template: |
+        # legit event → {{exception}} scoped to process + rule
+        # move per {{group}} to prevention
+    solo:
+      prompt: "List the four FortiEDR security policies, one per line."
+      required: ["execution", "exfiltration", "ransomware", "device control"]
+      solution: |
+        Execution Prevention
+        Exfiltration Prevention
+        Ransomware Prevention
+        Device Control
+      notes: "Mobile policies exist when enabled for the organization."
+
+scenarios:
+  - id: M10.02.sc1
+    kind: situation
+    tier: 3
+    title: "\"Turn it off, it's blocking production\""
+    situation: |
+      At 7 a.m. the plant manager calls: FortiEDR blocks the label-printing app on all packing stations. He wants
+      FortiEDR uninstalled.
+    ask: "What do you do?"
+    right_thinking:
+      - "Restore production fast with a narrow exception (or that group to simulation temporarily)"
+      - "Verify the app is legitimate"
+      - "Follow up: root cause, permanent exception, communication"
+    what: "Production restored in minutes without losing protection elsewhere."
+    why: "Speed and precision keep the customer trusting the tool."
+    how: ["Event", "Exception", "Verify", "Follow up"]
+    model_answer: |
+      "I'd open the event, confirm the label app's signer and path, and create an exception for that process and rule
+      on the packing group. That restores printing in minutes. If I can't confirm quickly, I'd put only the packing
+      group in simulation for the day. Then I explain what happened and make the exception permanent after the vendor
+      confirms the behavior."
+    best_way: "Narrow and fast, then verify."
+    rubric: ["restores quickly", "keeps protection elsewhere", "follows up"]
+
+interview:
+  - id: M10.02.t01
+    stage: technical
+    question: "How do you handle EDR false positives?"
+    testing: "EDR operations"
+    framework: "Verify → narrow exception → classify → register"
+    model_answer: |
+      "I verify the process is legitimate: signer, path, parent, hash reputation, vendor docs. Then I create the
+      narrowest exception, that process and that rule, for the affected group, classify the event as likely safe, and
+      record it with an owner and a review date. I never put a policy back into simulation to silence one app."
+    best_way: "Evidence, then narrow."
+    target: "0:30"

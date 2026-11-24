@@ -1,0 +1,173 @@
+id: M8.04
+title: "Threat prevention at scale: IPS, custom signatures, overrides, offload"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 208
+est_sessions: 1
+objectives:
+  - Tune IPS sensors for performance and accuracy
+  - Write custom IPS/application signatures for specific needs
+  - Use web filter and application overrides safely
+  - Explain NP/CP offload and what it means for inspection
+sources:
+  - "FortiOS 8.0.2 Admin Guide: IPS (p. 2812+), custom signatures (p. 3092+), overrides (p. 3104+)"
+
+units:
+  - id: M8.04.u1
+    title: IPS that doesn't hurt
+    tier: 2
+    est_min: 12
+    body: |
+      An **IPS sensor** selects signatures by filters (severity, target OS, application, protocol) and actions
+      (pass, monitor, block, reset, quarantine). Tuning principles:
+
+      - Protect what you have: filter by the OS and applications behind that policy (a Linux web farm doesn't need
+        Windows client signatures).
+      - Start critical/high in **block**, medium in **monitor**, review, then tighten.
+      - Use per-policy sensors: Internet → DMZ servers is different from users → Internet.
+      - Watch CPU and sessions after changes; the IPS engine works per session.
+
+      :::recall
+      Q: Why not apply "all signatures, block" to every policy?
+      A: More signatures cost CPU and raise false positives on irrelevant traffic; filtering to the protected assets is faster and more accurate.
+      :::
+  - id: M8.04.u2
+    title: Custom signatures and overrides
+    tier: 2
+    est_min: 12
+    body: |
+      **Custom signatures** (p. 3092): you can create application groups, application signatures and IPS signatures,
+      and apply them in policies. Typical uses: detect an internal app's traffic, block a specific exploit pattern
+      before an official signature exists, or match a header used by malware.
+
+      **Overrides** (p. 3104): web filter and application overrides let specific users or groups temporarily bypass a
+      block (for example, a manager allowed a blocked category for an hour), and signature overrides change the action
+      of a single IPS signature in a sensor.
+
+      :::pitfall
+      Custom signatures run on every session the sensor inspects; a careless pattern (very short, unanchored) costs CPU
+      and false positives. Anchor on protocol and context.
+      :::
+  - id: M8.04.u3
+    title: Hardware acceleration
+    tier: 3
+    est_min: 11
+    body: |
+      FortiGates use **SPUs**: **NP** (network processors) offload firewall sessions, IPsec and NAT after the first
+      packets are inspected; **CP** (content processors) accelerate crypto and pattern matching.
+
+      - Offloaded sessions don't pass through the CPU, so some features (certain logging, per-packet inspection,
+        debug flow after the first packets) don't see them.
+      - Disabling offload (`set auto-asic-offload disable` on a policy) is a troubleshooting tool, not a fix: it moves
+        load to the CPU.
+      - IPS and proxy-based inspection need the CPU/CP path; sizing must account for which policies use them.
+
+      :::ps
+      When sizing, ask for "threat protection throughput" (IPS + app control + malware) from the datasheet, not
+      firewall throughput. Customers buy the box for the inspection they'll actually enable.
+      :::
+
+cards:
+  - {id: M8.04.c01, unit: M8.04.u1, tier: 2, front: "IPS sensor tuning principle", back: "Filter signatures to the protected OS/apps; block high severity, monitor the rest first."}
+  - {id: M8.04.c02, unit: M8.04.u1, tier: 2, front: "IPS actions", back: "Pass, monitor, block, reset, quarantine."}
+  - {id: M8.04.c03, unit: M8.04.u2, tier: 2, front: "Custom signature types", back: "Application groups, application signatures, IPS signatures."}
+  - {id: M8.04.c04, unit: M8.04.u2, tier: 2, front: "Web filter override", back: "Lets specific users/groups bypass a block temporarily."}
+  - {id: M8.04.c05, unit: M8.04.u3, tier: 2, front: "NP vs CP", back: "NP: offloads sessions/IPsec/NAT. CP: crypto and pattern matching."}
+  - {id: M8.04.c06, unit: M8.04.u3, tier: 3, front: "Disabling ASIC offload on a policy", back: "Troubleshooting aid; moves load to CPU."}
+  - {id: M8.04.c07, unit: M8.04.u3, tier: 2, front: "Sizing number to use", back: "Threat protection throughput, not firewall throughput."}
+
+quiz:
+  - id: M8.04.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A DMZ policy protects Linux web servers. Best IPS sensor?"
+    options:
+      - {id: a, text: "Server-side signatures filtered to Linux and web apps", correct: true}
+      - {id: b, text: "All signatures, block", why_wrong: "Costly and noisy."}
+      - {id: c, text: "Client-side Windows signatures", why_wrong: "Wrong target."}
+      - {id: d, text: "No IPS on DMZ", why_wrong: "DMZ is exposed."}
+    explanation: "Match signatures to assets."
+  - id: M8.04.q02
+    type: single
+    tier: 3
+    stem: "Debug flow shows only the first packets of a session, then nothing. Why?"
+    options:
+      - {id: a, text: "The session was offloaded to the NP", correct: true}
+      - {id: b, text: "The policy denied it", why_wrong: "Then no session."}
+      - {id: c, text: "Logging is off", why_wrong: "Unrelated to debug flow."}
+      - {id: d, text: "IPS blocked it", why_wrong: "You'd see a drop."}
+    explanation: "Offloaded packets bypass the CPU."
+  - id: M8.04.q03
+    type: multi
+    tier: 2
+    stem: "Uses of custom signatures? Select all that apply."
+    options:
+      - {id: a, text: "Identify an in-house application", correct: true}
+      - {id: b, text: "Block an exploit pattern before an official signature", correct: true}
+      - {id: c, text: "Replace firewall policies", why_wrong: "No."}
+      - {id: d, text: "Speed up NP offload", why_wrong: "No."}
+    explanation: "Detection for specific needs."
+    source: "FortiOS 8.0.2 Admin Guide p. 3092"
+
+labs:
+  - id: M8.04.lab1
+    title: IPS rollout without outages
+    goal: "Plan IPS for a data center with web, database and AD servers."
+    worked:
+      config: |
+        # Sensor WEB-DMZ:   server, Linux + Apache/Nginx/PHP, critical/high → block, medium → monitor
+        # Sensor DB-INT:    server, database apps, critical/high → block
+        # Sensor AD-INT:    server, Windows, critical/high → block
+        # Users-Internet:   client-side default, critical/high → block
+        # Week 1 review monitor hits; promote to block; signature overrides for confirmed false positives
+        # Watch CPU and threat protection throughput vs datasheet
+      notes:
+        - "Change one sensor at a time with a rollback."
+    faded:
+      template: |
+        # filter signatures to the protected {{OS}} and apps
+        # new medium signatures start in {{monitor}}
+    solo:
+      prompt: "Write the two FortiGate processor types and what they accelerate, one per line."
+      required: ["np", "cp"]
+      solution: |
+        NP: sessions, NAT, IPsec offload
+        CP: crypto and pattern matching
+      notes: "IPS still uses the CPU path."
+
+scenarios:
+  - id: M8.04.sc1
+    kind: situation
+    tier: 3
+    title: "\"IPS made everything slow\""
+    situation: |
+      After enabling IPS with all signatures on every policy, CPU is at 95 % and users complain.
+    ask: "What do you do?"
+    right_thinking:
+      - "Roll back to the previous state if business impact is high"
+      - "Per-policy sensors filtered to assets; trusted east-west flows may not need IPS"
+      - "Check sizing vs threat protection throughput"
+    what: "Performance back with protection kept where it matters."
+    why: "Security that breaks the business gets removed."
+    how: ["Stabilize", "Tune", "Size"]
+    model_answer: |
+      "First stabilize: revert the busiest policies to the previous sensors. Then build per-policy sensors filtered to
+      the servers and clients behind each, keep critical and high in block, and remove IPS from trusted high-volume
+      flows like backups if the risk is accepted. If CPU is still high, compare traffic with the model's threat
+      protection throughput: it may be undersized for the inspection they want."
+    best_way: "Stabilize, tune, then size."
+    rubric: ["stabilizes", "tunes sensors", "addresses sizing"]
+
+interview:
+  - id: M8.04.t01
+    stage: technical
+    question: "How do you deploy IPS on a busy FortiGate without hurting performance?"
+    testing: "IPS at scale"
+    framework: "Scope → filter → phase → measure"
+    model_answer: |
+      "Per-policy sensors filtered to the assets behind each policy, critical and high in block, the rest monitored and
+      promoted after review. I phase it in policy by policy, watch CPU and sessions, and size against threat protection
+      throughput. Confirmed false positives get signature overrides, not a disabled sensor."
+    best_way: "Targeted and phased."
+    target: "0:35"

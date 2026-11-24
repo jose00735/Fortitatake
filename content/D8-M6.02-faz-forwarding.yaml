@@ -1,0 +1,178 @@
+id: M6.02
+title: "FortiAnalyzer devices, log forwarding, fetching and HA"
+stage: S6
+stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
+order: 198
+est_sessions: 1
+objectives:
+  - Add and authorize devices and check that logs arrive
+  - Choose between forwarding and aggregation modes for log forwarding
+  - Use log fetching for historical investigations
+  - Explain FortiAnalyzer HA and its purpose
+sources:
+  - "FortiAnalyzer 8.0.2 Admin Guide: Device Manager (pp. 95–111)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Log Forwarding (pp. 573–584), Log Fetching (p. 585), SIEM Collector (p. 534)"
+
+units:
+  - id: M6.02.u1
+    title: Devices and log arrival
+    tier: 1
+    est_min: 10
+    body: |
+      A FortiGate pointed at FortiAnalyzer (`config log fortianalyzer setting`) appears in **Device Manager** as
+      unauthorized; you authorize it into an ADOM, and only then are its logs stored and indexed (pp. 95–111).
+
+      Checks when logs don't arrive:
+
+      - On the FortiGate: `diagnose log test`, `get log fortianalyzer setting`, the source IP and route to the FAZ
+        (`source-ip` matters over VPNs).
+      - On the FortiAnalyzer: device authorized? In the right ADOM? Disk quota not exhausted?
+
+      :::recall
+      Q: Logs from a branch FortiGate over IPsec never reach the FortiAnalyzer, though the HQ FortiGate's do. First suspect?
+      A: The source IP: logs leave from the WAN interface unless source-ip is set to an address covered by the tunnel.
+      :::
+  - id: M6.02.u2
+    title: Forwarding and aggregation
+    tier: 2
+    est_min: 12
+    body: |
+      FortiAnalyzer can forward logs to another FortiAnalyzer, a syslog server or a CEF server, or through output
+      plugins to public cloud services, and always keeps its local copy (p. 573). Two modes:
+
+      | | Forwarding (default) | Aggregation |
+      |---|---|---|
+      | When | Real time (max ~5 min delay) | Once a day at a set time |
+      | To | FortiAnalyzer, syslog, CEF, plugins | FortiAnalyzer only |
+      | Configured | GUI or CLI, client side only | CLI; the server must accept |
+      | Filters | Device and log filters, field exclusion, masking | Device filter |
+
+      (pp. 573–574). Typical use: forward security logs in real time to a SIEM (FortiSIEM or a third-party SIEM via
+      syslog/CEF), aggregate daily to a central FortiAnalyzer for long retention.
+
+      :::pitfall
+      Forwarding everything to a third-party SIEM multiplies its licence cost. Use log filters on the forwarding rule
+      to send what the SIEM's use cases need.
+      :::
+  - id: M6.02.u3
+    title: Fetching, HA and collector mode
+    tier: 2
+    est_min: 10
+    body: |
+      - **Log fetching** retrieves archived logs for a device and time period from one FortiAnalyzer to another, which
+        indexes them for queries and reports: useful for forensics on old data. Both units must run the same firmware,
+        and only one fetching session runs at a time between two units (p. 585).
+      - **Collector mode** FortiAnalyzers receive and forward logs (typically to an analyzer-mode FortiAnalyzer); the
+        analyzer does the analytics.
+      - **HA**: a FortiAnalyzer cluster keeps logging available when a unit fails and synchronizes logs and
+        configuration between members.
+
+      :::ps
+      For a regulated customer, write the log path end to end in the design: source → FortiAnalyzer (retention X
+      months) → SIEM (security subset) → archive (aggregation, Y years). Auditors ask exactly that.
+      :::
+
+cards:
+  - {id: M6.02.c01, unit: M6.02.u1, tier: 1, front: "Logs are stored only after…", back: "The device is authorized in Device Manager (into an ADOM)."}
+  - {id: M6.02.c02, unit: M6.02.u1, tier: 2, front: "Branch logs over VPN don't arrive: suspect", back: "Source IP (set source-ip so the tunnel carries them)."}
+  - {id: M6.02.c03, unit: M6.02.u2, tier: 1, front: "Log forwarding modes", back: "Forwarding (real time) and aggregation (daily, FAZ to FAZ only)."}
+  - {id: M6.02.c04, unit: M6.02.u2, tier: 2, front: "Forwarding destinations", back: "FortiAnalyzer, syslog, CEF, output plugins to cloud services."}
+  - {id: M6.02.c05, unit: M6.02.u2, tier: 2, front: "Does the forwarding FAZ keep its logs?", back: "Yes, it keeps a local copy."}
+  - {id: M6.02.c06, unit: M6.02.u3, tier: 2, front: "Log fetching requirement", back: "Both FortiAnalyzers on the same firmware; one session at a time between two units."}
+
+quiz:
+  - id: M6.02.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "You need logs in a third-party SIEM within minutes. Which FortiAnalyzer mode?"
+    options:
+      - {id: a, text: "Log forwarding (forwarding mode) via syslog/CEF", correct: true}
+      - {id: b, text: "Aggregation", why_wrong: "Daily, FAZ-to-FAZ only."}
+      - {id: c, text: "Log fetching", why_wrong: "Retrieves archives between FAZs."}
+      - {id: d, text: "Reports", why_wrong: "Not a log stream."}
+    explanation: "Forwarding is near real time."
+    source: "FortiAnalyzer 8.0.2 Admin Guide p. 573"
+  - id: M6.02.q02
+    type: multi
+    tier: 2
+    stem: "Which are true of aggregation mode? Select all that apply."
+    options:
+      - {id: a, text: "Only between two FortiAnalyzers", correct: true}
+      - {id: b, text: "Runs at a set time each day", correct: true}
+      - {id: c, text: "Configured in the CLI", correct: true}
+      - {id: d, text: "Works with CEF servers", why_wrong: "Syslog/CEF aren't supported."}
+    explanation: "Daily FAZ-to-FAZ."
+  - id: M6.02.q03
+    type: single
+    tier: 2
+    stem: "An investigator needs last year's logs that live on an archive FortiAnalyzer. Feature?"
+    options:
+      - {id: a, text: "Log fetching", correct: true}
+      - {id: b, text: "Log forwarding", why_wrong: "For new logs."}
+      - {id: c, text: "FortiView", why_wrong: "Views local data."}
+      - {id: d, text: "HA", why_wrong: "Availability."}
+    explanation: "Fetch, index, query."
+    source: "FortiAnalyzer 8.0.2 Admin Guide p. 585"
+
+labs:
+  - id: M6.02.lab1
+    title: The log path for a regulated customer
+    goal: "Design retention and forwarding for a bank branch network."
+    worked:
+      config: |
+        # FortiGates → FAZ-HQ (analyzer): all logs, 12 months online
+        # FAZ-HQ → FortiSIEM: forwarding mode, filter: UTM, denies, VPN, admin events (security use cases)
+        # FAZ-HQ → FAZ-ARCHIVE: aggregation daily 02:00, 7 years
+        # Investigations on old data: log fetching from FAZ-ARCHIVE
+        # Branch FortiGates: source-ip = LAN IP so logs ride the IPsec tunnel
+      notes:
+        - "Size disk quotas per ADOM from measured log rates."
+    faded:
+      template: |
+        # real time to SIEM: {{forwarding}} mode
+        # daily to archive FAZ: {{aggregation}}
+        # old data for forensics: log {{fetching}}
+    solo:
+      prompt: "Name the three FortiAnalyzer features for moving logs, one per line: real-time out, daily FAZ-to-FAZ, historical retrieval."
+      required: ["forwarding", "aggregation", "fetching"]
+      solution: |
+        log forwarding (forwarding mode)
+        log forwarding (aggregation mode)
+        log fetching
+      notes: "The local copy stays on the client."
+
+scenarios:
+  - id: M6.02.sc1
+    kind: situation
+    tier: 3
+    title: The SIEM bill doubled
+    situation: |
+      After enabling log forwarding from FortiAnalyzer to the customer's cloud SIEM, its monthly ingestion bill doubled.
+    ask: "What do you propose?"
+    right_thinking:
+      - "Identify which log types dominate (traffic accept logs)"
+      - "Filter the forwarding rule to the SIEM's use cases; exclude fields"
+      - "Keep full logs in FortiAnalyzer for investigations"
+    what: "Lower cost without losing detections."
+    why: "SIEM cost follows volume."
+    how: ["Measure", "Filter", "Verify detections"]
+    model_answer: |
+      "Most of that volume is likely accepted-traffic logs, which the SIEM's rules rarely use. I'd filter the
+      forwarding rule to UTM events, denies, VPN and admin events, exclude fields the SIEM doesn't need, and keep the
+      full logs in FortiAnalyzer, where storage is cheap and investigations can still reach them."
+    best_way: "Use cases decide what crosses."
+    rubric: ["identifies volume source", "filters forwarding", "keeps full logs locally"]
+
+interview:
+  - id: M6.02.t01
+    stage: technical
+    question: "How would you send FortiGate logs to both FortiAnalyzer and a SIEM?"
+    testing: "Log architecture"
+    framework: "Source → FAZ → SIEM"
+    model_answer: |
+      "FortiGates log to FortiAnalyzer, which keeps everything for investigations and reports. FortiAnalyzer then
+      forwards a filtered subset to the SIEM in real time via syslog or CEF, so the SIEM gets what its rules need
+      without paying for every accepted session."
+    best_way: "One collection point, filtered forwarding."
+    target: "0:30"

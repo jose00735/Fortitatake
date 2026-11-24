@@ -1,0 +1,89 @@
+id: S5.04
+track: fortianalyzer
+modules: [M6.04, M8.06]
+tier: 5
+order: 40
+kind: investigation
+title: "FortiAnalyzer SOC: the night the VPN portal was probed"
+customer: Andes Logistics
+par: 45
+skills: [event handlers, alerts, incidents, custom handlers with thresholds, log evidence]
+brief: |
+  **Morning shift, 07:30.** FGT-BOG and FGT-CLO log to **FAZ-BOG**. Overnight, something hit the HQ VPN portal
+  (200.31.20.2). Use FortiAnalyzer's SOC features: event handlers turn logs into events (alerts), and you raise
+  incidents from them.
+
+  FAZ GUI actions: `handlers`, `handler create|enable|disable`, `alerts`, `incident create <event id> assign=<user>`,
+  `incidents`, plus `logview`.
+topology: {use: andes-soc-live}
+parts:
+  - id: a
+    title: The IPS alert
+    events:
+      - {cli: {dev: FAZ-BOG, lines: "authorize FGT-BOG-HQ\nauthorize FGT-CLO-BR"}}
+      - story:
+          - {at: "03:10:00", fgt: FGT-BOG, log: {type: utm, subtype: ips, eventtype: signature, severity: critical, attack: "Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow", srcip: 45.155.205.233, dstip: 200.31.20.2, dstport: 443, service: HTTPS, action: dropped, ref: "http://www.fortinet.com/ids/VID52942", msg: "applications3: Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow"}}
+          - {at: "03:11:01", fgt: FGT-BOG, log: {type: utm, subtype: ips, eventtype: signature, severity: critical, attack: "Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow", srcip: 45.155.205.233, dstip: 200.31.20.2, dstport: 443, service: HTTPS, action: dropped, ref: "http://www.fortinet.com/ids/VID52942", msg: "applications3: Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow"}}
+          - {at: "03:12:02", fgt: FGT-BOG, log: {type: utm, subtype: ips, eventtype: signature, severity: critical, attack: "Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow", srcip: 45.155.205.233, dstip: 200.31.20.2, dstport: 443, service: HTTPS, action: dropped, ref: "http://www.fortinet.com/ids/VID52942", msg: "applications3: Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow"}}
+          - {at: "04:20:03", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: admin, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:20:12", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: vpn, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:20:21", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: test, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:20:30", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: jgomez, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:20:39", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: administrator, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:20:48", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: guest, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:21:03", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: support, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:21:12", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: backup, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:21:21", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: admin, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:21:30", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: jperez, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:21:39", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: scanner, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:21:48", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: root, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:22:03", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: user1, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+          - {at: "04:22:12", fgt: FGT-BOG, log: {type: event, subtype: vpn, level: alert, logdesc: "SSL VPN login fail", action: ssl-login-fail, user: ftpuser, srcip: 103.145.13.21, dstip: 200.31.20.2, reason: sslvpn_login_unknown_user, msg: "SSL user failed to logged in"}}
+    tasks:
+      - "Check the alerts on FAZ-BOG, raise an incident from the IPS one and assign it to yourself."
+      - "Answer from the evidence."
+    checks:
+      - text: "An incident exists for the IPS alert, assigned"
+        fazinc: {dev: FAZ-BOG, handler: IPS - Critical Severity, assigned: true}
+      - text: "Which source IP, and what was it trying?"
+        answer: {accept: ["~45\\.155\\.205\\.233"], sample: "45.155.205.233, exploiting the FortiOS SSL-VPN heap overflow (dropped by IPS)", hint: "logview utm subtype=ips", why: "Three critical IPS hits from 45.155.205.233 for Fortinet.FortiOS.SSL-VPN.Heap.Buffer.Overflow, all dropped."}
+      - text: "Was it blocked?"
+        answer: {accept: ["~drop|block|yes"], sample: "Yes: action=dropped", hint: "The action field.", why: "The IPS sensor dropped every attempt."}
+    hints:
+      - "`alerts`, then `incident create <id> assign=<you>`."
+      - "`logview utm subtype=ips` shows the signature and action."
+    solution:
+      FAZ-BOG: |
+        alerts
+        logview utm subtype=ips
+        incident create 100 assign=jose
+    explain: |
+      An IPS drop is good news, but an exploitation attempt against the VPN portal deserves an incident: it means the
+      portal is being targeted, and the next attempt may use something the IPS doesn't know. Check the firmware is
+      patched against that CVE.
+  - id: b
+    title: The quieter attack
+    brief: |
+      The SSL VPN also logged a stream of failed logins overnight. There's no handler for it yet, and a single failure
+      is normal.
+    tasks:
+      - "Create a handler \"SSL-VPN brute force\" for SSL VPN login failures that only fires at 10 or more from one source."
+      - "Raise an incident from its event."
+    checks:
+      - text: "An incident exists from your handler"
+        fazinc: {dev: FAZ-BOG, handler: SSL-VPN brute force}
+      - text: "Which source, and how many attempts?"
+        answer: {accept: ["~103\\.145\\.13\\.21"], sample: "103.145.13.21, 14 attempts with common usernames", hint: "The handler's event shows the source and count.", why: "14 failures from 103.145.13.21 trying admin, test, root… a password-spraying pattern."}
+    hints:
+      - "`logview event subtype=vpn` shows the field values (action=ssl-login-fail)."
+      - "`handler create \"SSL-VPN brute force\" type=event subtype=vpn action=ssl-login-fail threshold=10`, then `alerts` and `incident create <id>`."
+    solution:
+      FAZ-BOG: |
+        logview event subtype=vpn
+        handler create "SSL-VPN brute force" type=event subtype=vpn action=ssl-login-fail threshold=10
+        alerts
+        incident create 101 assign=jose
+    explain: |
+      Thresholds turn noise into signal: one failed login is a typo, 14 from one IP with dictionary usernames is
+      spraying. Next steps for the customer: MFA on the VPN, geo or reputation blocking for the portal, and a lockout
+      policy.

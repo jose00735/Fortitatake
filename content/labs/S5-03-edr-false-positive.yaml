@@ -1,0 +1,56 @@
+id: S5.03
+track: secops
+modules: [M10.02, M10.03]
+tier: 5
+order: 30
+kind: ticket
+title: "\"FortiEDR blocks our ERP client updater every night\""
+customer: Andes Logistics
+par: 25
+skills: [false positives, exceptions, classification, keeping prevention on]
+brief: |
+  **Ticket 9310, priority 2.** Since FortiEDR went to prevention, Finance's ERP client fails to update every night.
+  The ERP vendor says their updater is "safe, just add it to the antivirus whitelist". The customer's IT lead suggests
+  putting Execution Prevention back in simulation.
+topology:
+  use: andes-secops
+  devices:
+    FEDR-01: {fortiedr: {modes: {Execution Prevention: Prevention, Ransomware Prevention: Prevention}}}
+    FGT-BOG:
+      config: |
+        config firewall policy
+        edit 5
+        set name "EDR-collectors"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr FEDR-01
+        set action accept
+        set schedule always
+        set service FortiEDR-8081
+        next
+        end
+  story:
+    - {at: "02:10:12", host: FIN-PC, edr: {process: ErpClientUpdate.exe, path: "C:\\ProgramData\\ERPVendor\\Temp\\ErpClientUpdate.exe", parent: ErpUpdateSvc.exe, chain: [services.exe, ErpUpdateSvc.exe, ErpClientUpdate.exe], hash: "7c4e0a9b2d1f3e5c6b8a9d0e1f2a3b4c5d6e7f80", signed: "ERP Andina S.A.S.", policy: Execution Prevention, rule: "Unconfirmed Executable", classification: Suspicious}}
+tasks:
+  - "Look at the event, decide whether it's a false positive, and fix it without weakening the policy."
+  - "Answer the root cause."
+checks:
+  - text: "An exception covers the updater for that rule"
+    edr: {dev: FEDR-01, exception: ErpClientUpdate.exe, rule: Unconfirmed Executable}
+  - text: "Execution Prevention stays in prevention mode"
+    edr: {dev: FEDR-01, policy: Execution Prevention, mode: Prevention}
+  - text: "Root cause"
+    answer: {accept: ["~unconfirmed|temp|signed|vendor|false positive"], sample: "A signed vendor updater running from a Temp folder triggers the Unconfirmed Executable rule: a false positive", hint: "Who signed it, where does it run from, and which rule fired?", why: "The updater is signed by the ERP vendor and launched by their service, but it runs from a Temp path that the rule treats as suspicious. An exception for that process and rule fixes it; simulation mode would remove protection for everything."}
+hints:
+  - "`events`, `event <id>`, `forensics <id>`: parent ErpUpdateSvc.exe, signed by the vendor."
+  - "`exception <id>` creates a process + rule exception; optionally `classify <id> likely-safe`."
+solution:
+  FEDR-01: |
+    events
+    event 1001
+    classify 1001 likely-safe
+    exception 1001
+explain: |
+  Narrow exceptions (this process, this rule) are how you keep prevention on. Turning a policy back to simulation for
+  one false positive leaves every endpoint unprotected against everything that policy covers.

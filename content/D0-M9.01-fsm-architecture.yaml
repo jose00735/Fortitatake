@@ -1,0 +1,207 @@
+id: M9.01
+title: "FortiSIEM architecture, licensing and the CMDB"
+stage: S9
+stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
+order: 180
+est_sessions: 1
+objectives:
+  - Describe Supervisor, Worker, Collector and Manager roles and when you add each
+  - Explain how FortiSIEM is licensed (devices, agents, EPS) and what "Unmanaged" means
+  - Explain multi-tenancy with Organizations
+  - Get devices into the CMDB through discovery and log reception
+sources:
+  - "FortiSIEM 7.6.1 User Guide: Key concepts: clustering, licensing, multi-tenancy, discovery and CMDB (pp. 365–384)"
+  - "FortiSIEM 7.6.1 User Guide: Setup (pp. 409–487), CMDB (pp. 857–898)"
+
+units:
+  - id: M9.01.u1
+    title: Nodes and scale
+    tier: 1
+    est_min: 12
+    body: |
+      FortiSIEM runs as one all-in-one **Supervisor** in small deployments, or as a cluster (pp. 365–366):
+
+      | Node | Role |
+      |---|---|
+      | **Supervisor** | GUI, application server, configuration database; master of the analysis tasks |
+      | **Worker** | Heavy lifting: indexing, searching, rule correlation, baselines |
+      | **Collector** | Near the devices (remote sites, other networks): collects, parses, compresses, sends to Workers over HTTPS |
+      | **Manager** | Separately licensed: monitors several FortiSIEM instances and their incidents |
+
+      Event storage options: local disk (appliances, all-in-one), FortiSIEM's NoSQL database on NFS, or Elasticsearch
+      (p. 366). The guide also lists the five analysis tasks the cluster splits up: indexing, searching, streaming
+      correlation, the identity and location database, and baselines.
+
+      :::recall
+      Q: A customer has 12 branches behind firewalls and one data center. Where do Collectors go?
+      A: At the branches (or per network segment) so devices send to a local Collector, which forwards compressed, parsed data to the Workers over HTTPS.
+      :::
+  - id: M9.01.u2
+    title: Licensing and tenants
+    tier: 2
+    est_min: 11
+    body: |
+      FortiSIEM is licensed by (p. 367):
+
+      - **number of devices** it monitors or receives logs from,
+      - **number of Windows and Linux agents** (collectors),
+      - aggregate **events per second (EPS)**.
+
+      Not by storage. The CMDB can hold unlimited devices, but only the licensed number are **Managed**; the rest are
+      tagged **Unmanaged**. EPS is measured over 3-minute intervals; unused EPS accumulates and can be used for bursts
+      during attacks (p. 367).
+
+      **Multi-tenancy** (Service Provider install): **Organizations** separate devices, users and logs at the
+      application layer. A device belongs to an Organization through its Collector, or by IP ranges assigned to the
+      Organization (p. 368).
+
+      :::pitfall
+      Sizing on "how many firewalls" alone misses EPS: one busy FortiGate with traffic logging on every policy can
+      produce more EPS than 200 servers. Estimate EPS per source type before quoting.
+      :::
+  - id: M9.01.u3
+    title: Getting data in and the CMDB
+    tier: 2
+    est_min: 12
+    body: |
+      Devices enter the CMDB two ways:
+
+      1. **Discovery**: FortiSIEM logs in with credentials (SNMP, WMI/WinRM, SSH, APIs) and builds device records:
+         hardware, software, interfaces, running services, relationships.
+      2. **Log reception**: a device that starts sending syslog (a FortiGate, a switch) is recognized from its log
+         format and added.
+
+      Windows and Linux servers usually use **agents** (host collectors), which ship event logs reliably and add file
+      integrity and process data.
+
+      The CMDB gives incidents context: which business service a host belongs to, who owns it, whether it's a domain
+      controller. Rules and reports can use CMDB groups ("all domain controllers").
+
+      :::cli
+      config log syslogd setting
+          set status enable
+          set server 10.20.40.50
+      end
+      :::
+
+      :::ps
+      In a SIEM project, onboarding is 70 % of the work: list every source, its method (syslog, agent, API), the
+      expected EPS and an owner, and track it like a migration. Rules are useless on data that never arrived.
+      :::
+
+cards:
+  - {id: M9.01.c01, unit: M9.01.u1, tier: 1, front: "FortiSIEM node types", back: "Supervisor, Worker, Collector (and the separately licensed Manager)."}
+  - {id: M9.01.c02, unit: M9.01.u1, tier: 2, front: "What does a Collector do?", back: "Collects from nearby devices, parses, compresses, sends to Workers over HTTPS."}
+  - {id: M9.01.c03, unit: M9.01.u1, tier: 2, front: "Event storage options", back: "Local disk, FortiSIEM NoSQL on NFS, Elasticsearch."}
+  - {id: M9.01.c04, unit: M9.01.u2, tier: 1, front: "FortiSIEM licence dimensions", back: "Devices, Windows/Linux agents, EPS. Not storage."}
+  - {id: M9.01.c05, unit: M9.01.u2, tier: 2, front: "Unmanaged device", back: "In the CMDB but beyond the device licence: not monitored/collected."}
+  - {id: M9.01.c06, unit: M9.01.u2, tier: 2, front: "Organizations", back: "Multi-tenancy: logical separation of devices, users and logs; assigned via Collector or IP range."}
+  - {id: M9.01.c07, unit: M9.01.u3, tier: 2, front: "Two ways devices enter the CMDB", back: "Discovery with credentials; recognition from received logs."}
+  - {id: M9.01.c08, unit: M9.01.u3, tier: 2, front: "Why agents on Windows servers?", back: "Reliable event shipping plus host data (FIM, processes) without remote pulling."}
+
+quiz:
+  - id: M9.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which is NOT a FortiSIEM licence dimension?"
+    options:
+      - {id: a, text: "Storage capacity", correct: true}
+      - {id: b, text: "Number of devices", why_wrong: "It is."}
+      - {id: c, text: "EPS", why_wrong: "It is."}
+      - {id: d, text: "Number of agents", why_wrong: "It is."}
+    explanation: "Storage isn't licensed."
+    source: "FortiSIEM 7.6.1 User Guide p. 367"
+  - id: M9.01.q02
+    type: single
+    tier: 2
+    stem: "Branch devices sit behind NAT, far from the data center. Best design?"
+    options:
+      - {id: a, text: "A Collector per branch sending to Workers over HTTPS", correct: true}
+      - {id: b, text: "Open syslog from every branch device to the Supervisor across the Internet", why_wrong: "Unencrypted, unreliable, many firewall holes."}
+      - {id: c, text: "More Workers in the data center", why_wrong: "Doesn't solve collection."}
+      - {id: d, text: "A Manager per branch", why_wrong: "Manager is for multiple instances."}
+    explanation: "Collectors are for distributed collection."
+  - id: M9.01.q03
+    type: multi
+    tier: 2
+    stem: "How can a device be assigned to an Organization? Select all that apply."
+    options:
+      - {id: a, text: "Through the Collector it reports to", correct: true}
+      - {id: b, text: "By IP ranges defined for the Organization", correct: true}
+      - {id: c, text: "By its hostname prefix", why_wrong: "Not a documented method."}
+      - {id: d, text: "By EPS", why_wrong: "Unrelated."}
+    explanation: "Collector or IP range."
+    source: "FortiSIEM 7.6.1 User Guide p. 368"
+  - id: M9.01.q04
+    type: text
+    tier: 2
+    stem: "Over how many minutes does FortiSIEM measure EPS for licensing?"
+    accept: ["3", "three"]
+    explanation: "Events over 3 minutes divided by 180."
+
+labs:
+  - id: M9.01.lab1
+    title: Onboarding plan for a SIEM project
+    goal: "Build the data-source table for a 2-site customer."
+    worked:
+      config: |
+        # Source            Method                 Collector     Est. EPS   Owner
+        # FortiGate HQ      syslog UDP 514         Supervisor    150        Network
+        # FortiGate Cali    syslog                 Collector-CLO 40         Network
+        # DC-01, DC-02      Windows agent          Supervisor    30 each    AD team
+        # ERP (Linux)       Linux agent            Supervisor    10         ERP team
+        # FortiEDR          API / syslog           Supervisor    5          SecOps
+        # Switches          syslog + SNMP discovery Supervisor   5          Network
+        # Total ≈ 270 EPS → licence 500 EPS with headroom; devices 9 + agents 3
+      notes:
+        - "Measure real EPS during the pilot, then adjust the licence."
+    faded:
+      template: |
+        # licensed by: devices, {{agents}}, {{EPS}}
+        # remote networks: add a {{Collector}}
+    solo:
+      prompt: "Write the four FortiSIEM node types, one per line."
+      required: ["supervisor", "worker", "collector", "manager"]
+      solution: |
+        Supervisor
+        Worker
+        Collector
+        Manager
+      notes: "Manager is separately licensed."
+
+scenarios:
+  - id: M9.01.sc1
+    kind: situation
+    tier: 3
+    title: "\"We'll just send everything\""
+    situation: |
+      The customer wants all FortiGate traffic logs (every allowed session) in FortiSIEM, on a 500 EPS licence.
+    ask: "What do you advise?"
+    right_thinking:
+      - "Estimate EPS of full traffic logging; likely far above 500"
+      - "Send security-relevant logs (UTM, denies, VPN, admin events) to FortiSIEM; keep full traffic in FortiAnalyzer"
+      - "Or upsize the licence with a cost/benefit discussion"
+    what: "A data strategy matched to licence and use cases."
+    why: "SIEM cost grows with ingested data; value grows with relevant data."
+    how: ["Estimate", "Tier the data", "Decide"]
+    model_answer: |
+      "Full traffic logging from a busy FortiGate can be thousands of EPS on its own. I'd send FortiSIEM what drives
+      detections: UTM events, denies, VPN and admin events, and keep full traffic logs in FortiAnalyzer, where storage
+      is cheap and you can still pull them into an investigation. If they need full traffic in the SIEM for a use case,
+      we size the EPS licence for it."
+    best_way: "Use cases decide the data."
+    rubric: ["estimates EPS impact", "proposes tiering", "ties to use cases"]
+
+interview:
+  - id: M9.01.t01
+    stage: technical
+    question: "Explain FortiSIEM's architecture to a customer's IT manager."
+    testing: "Architecture clarity"
+    framework: "Roles → scale → licence"
+    model_answer: |
+      "The Supervisor is the brain and the console. Workers add processing power for searches and correlation as
+      volume grows. Collectors sit close to devices, in branches or other networks, and send parsed, compressed data
+      securely to the Workers. You pay for devices, agents and events per second, not for storage."
+    best_way: "Three roles, then the licence."
+    target: "0:35"

@@ -98,6 +98,17 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.7.0 adds (SecOps)
+
+- `soc.js`: lab stories (`story:` on templates and parts) play timed events: FortiGate logs go through the normal log path (FortiAnalyzer, and FortiSIEM over syslog), Windows events land on hosts, EDR events get sequential ids from 1001 and record the policy mode at event time.
+- FortiSIEM console: `cmdb`, `analytics … group-by=`, `rules`, `rule "<name>" enable|disable|threshold|exception`, `incidents`, `incident <id> [assign|clear]`. Events need a path: syslog from devices, Windows Agent over TCP 443. Default rules with thresholds and exceptions; incidents have deterministic ids.
+- FortiEDR console: `inventory`, `policies`/`policy`, `events`, `event`, `forensics`, `classify`, `exception`, `remediate`, `isolate`/`unisolate`. Collectors need TCP 8081 to the manager; isolation is enforced on the host; simulation mode shows "Simulated Block".
+- FortiAnalyzer SOC: `handlers`, `handler create|enable|disable`, `alerts`, `incident create <alert> assign=`, `incidents`.
+- Grader: `siem`, `edr`, `fazinc` checks. Topology `andes-secops` (FSIEM-01, FEDR-01, CONTRACTOR-LT, collectors on DC-01/FIN-PC/HQ-PC) with a baseline story.
+- Labs (track SecOps): S5.01 FortiSIEM go-live, S5.02 FortiEDR ransomware (4 parts), S5.03 EDR false positive, S5.04 FortiAnalyzer SOC. 71 labs, 107 parts.
+- Modules: M9.01–M9.04 (S9 FortiSIEM), M10.01–M10.04 (S10 FortiEDR), M5.02 FMG Device Manager, M5.05 FMG operations, M6.02 FAZ devices and forwarding, M6.05 FAZ reports, M8.01 Security Fabric and automation, M8.04 Threat prevention at scale, M8.06 Central management at scale, M8.07 Troubleshooting master. Bundle: 967 cards and questions.
+- Next (v0.8.0): capstone labs with sub-labs, modules S12, S0, S1, S3 and the rest of S11.
+
 ### What v0.6.4 adds (VDOMs, FortiSwitch, overlay)
 
 - VDOMs (`fgt.js` + `vdom.js`): `set vdom-mode multi-vdom`, `config vdom` / `edit <name>` (creates VDOMs), `config global`; each VDOM is its own FortiGate instance (id `FGT[VDOM]`) sharing the global tables (interfaces, admins, HA, DNS…); per-VDOM / global command checks; inter-VDOM links (`config system vdom-link` creates `<name>0/1`, point-to-point segments); specs can declare `vdoms: {NAME: cli}`. Interfaces, routing, DHCP, ARP and debug output follow the VDOM that owns the port.

@@ -1,0 +1,176 @@
+id: M10.04
+title: "FortiEDR communication control, playbooks and Fabric integration"
+stage: S10
+stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
+order: 196
+est_sessions: 1
+objectives:
+  - Use communication control to manage which applications may talk to the network
+  - Configure playbooks for automatic notification and remediation
+  - Integrate FortiEDR with FortiGate, FortiAnalyzer/FortiSIEM and other tools
+  - Explain multi-tenancy for MSSP deployments
+sources:
+  - "FortiEDR 7.2.5 Admin Guide: Communication control and host firewall (pp. 174–202)"
+  - "FortiEDR 7.2.5 Admin Guide: Integrations (pp. 264–313), Playbooks (pp. 314–321), Multi-tenancy (pp. 422–451)"
+
+units:
+  - id: M10.04.u1
+    title: Communication control
+    tier: 2
+    est_min: 11
+    body: |
+      **Communication control** lists the applications that communicate on your endpoints, with reputation and
+      vulnerability information, and lets you allow or deny them per policy (pp. 174–202). Uses:
+
+      - Block outdated or vulnerable versions of applications from reaching the network.
+      - Deny unapproved remote-access tools or unknown communicating software.
+      - A **host firewall** controls traffic on the endpoint itself.
+
+      :::recall
+      Q: How do you stop an old, vulnerable version of a remote-access tool from connecting out on every endpoint?
+      A: Communication control: deny that application/version in the policy.
+      :::
+  - id: M10.04.u2
+    title: Playbooks
+    tier: 2
+    est_min: 11
+    body: |
+      **Playbooks** define automatic actions per event classification (pp. 314–321): notify (email, syslog, ticket),
+      investigate, remediate (terminate, delete, clean persistence), isolate the device, or trigger integrations. Their
+      remediation actions rely on the **FCS** final determination (p. 17).
+
+      Typical policy:
+
+      | Classification | Actions |
+      |---|---|
+      | Malicious | Notify, isolate, remediate, block on firewall |
+      | Suspicious | Notify, open ticket |
+      | PUP | Notify, ticket to IT |
+      | Likely Safe | No automatic action; review |
+
+      :::pitfall
+      Automatic isolation on servers can take a business service down on a false positive. Use separate playbooks per
+      collector group and require approval for servers.
+      :::
+  - id: M10.04.u3
+    title: Fabric and multi-tenancy
+    tier: 3
+    est_min: 11
+    body: |
+      **Integrations** (pp. 264–313) connect FortiEDR to other tools so an endpoint verdict becomes a network action:
+
+      - **FortiGate**: block the malicious IP or quarantine the host at the network.
+      - **FortiAnalyzer / FortiSIEM**: send events for correlation with firewall, identity and server logs.
+      - **FortiSandbox**, threat intelligence and ticketing tools.
+
+      **Multi-tenancy** (pp. 422–451): an MSSP runs one FortiEDR with **organizations** per customer, each with its own
+      collectors, policies and administrators.
+
+      :::ps
+      The integration story sells the Fabric: "the laptop was isolated by FortiEDR, the C2 was blocked on every
+      FortiGate, and FortiSIEM correlated it with the VPN login an hour earlier". Design the integrations in the HLD, not
+      as an afterthought.
+      :::
+
+cards:
+  - {id: M10.04.c01, unit: M10.04.u1, tier: 2, front: "Communication control", back: "Lists communicating applications with reputation/vulnerabilities; allow or deny per policy."}
+  - {id: M10.04.c02, unit: M10.04.u2, tier: 2, front: "What drives playbook actions?", back: "Event classification (FCS final determination)."}
+  - {id: M10.04.c03, unit: M10.04.u2, tier: 2, front: "Playbook action types", back: "Notify, investigate, remediate, isolate, trigger integrations."}
+  - {id: M10.04.c04, unit: M10.04.u2, tier: 3, front: "Caution with automatic isolation", back: "Servers: separate playbook, approval required."}
+  - {id: M10.04.c05, unit: M10.04.u3, tier: 2, front: "FortiEDR + FortiGate integration", back: "Endpoint verdict → block IP or quarantine host on the firewall."}
+  - {id: M10.04.c06, unit: M10.04.u3, tier: 2, front: "FortiEDR multi-tenancy", back: "Organizations per customer with own collectors, policies, admins."}
+
+quiz:
+  - id: M10.04.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "You want unapproved remote-access tools unable to connect out from endpoints. Which feature?"
+    options:
+      - {id: a, text: "Communication control", correct: true}
+      - {id: b, text: "Device Control", why_wrong: "USB/external devices."}
+      - {id: c, text: "Playbooks", why_wrong: "Automated response, not app allow-listing."}
+      - {id: d, text: "Exceptions", why_wrong: "The opposite."}
+    explanation: "Communication control governs applications' network access."
+  - id: M10.04.q02
+    type: multi
+    tier: 2
+    stem: "Reasonable automatic actions for a Malicious classification on user laptops? Select all that apply."
+    options:
+      - {id: a, text: "Isolate the device", correct: true}
+      - {id: b, text: "Terminate the process and delete the file", correct: true}
+      - {id: c, text: "Notify the SOC", correct: true}
+      - {id: d, text: "Disable FortiEDR on the device", why_wrong: "Never."}
+    explanation: "Contain, clean, tell."
+  - id: M10.04.q03
+    type: single
+    tier: 3
+    stem: "An MSSP wants each customer's admins to see only their own endpoints. FortiEDR feature?"
+    options:
+      - {id: a, text: "Multi-tenancy with organizations", correct: true}
+      - {id: b, text: "Collector groups", why_wrong: "Grouping inside one organization."}
+      - {id: c, text: "Exceptions", why_wrong: "Unrelated."}
+      - {id: d, text: "Separate Aggregator ports", why_wrong: "Not how tenancy works."}
+    explanation: "Organizations."
+
+labs:
+  - id: M10.04.lab1
+    title: Playbook matrix
+    goal: "Design playbooks per collector group."
+    worked:
+      config: |
+        # Group: Laptops     Malicious → notify + isolate + remediate + FortiGate block IP
+        #                    Suspicious → notify + ticket
+        # Group: Servers     Malicious → notify + remediate (process) ; isolation needs approval
+        #                    Suspicious → notify
+        # Group: Kiosks      Malicious → isolate + remediate ; reimage via IT
+        # Integrations: FortiGate (block), FortiSIEM (events), ticketing (ServiceNow)
+      notes:
+        - "Test each playbook with a harmless test file first."
+    faded:
+      template: |
+        # laptops, malicious → {{isolate}} + remediate
+        # servers → isolation needs {{approval}}
+    solo:
+      prompt: "Name three FortiEDR integration targets, one per line: firewall, siem, sandbox."
+      required: ["fortigate", "fortisiem", "fortisandbox"]
+      solution: |
+        FortiGate
+        FortiSIEM (or FortiAnalyzer)
+        FortiSandbox
+      notes: "Plus ticketing and threat intelligence."
+
+scenarios:
+  - id: M10.04.sc1
+    kind: situation
+    tier: 3
+    title: Auto-isolation took down the ERP
+    situation: |
+      A playbook auto-isolated the ERP server after a Suspicious event that turned out to be a backup agent.
+    ask: "What do you change?"
+    right_thinking:
+      - "Separate playbooks for servers; no auto-isolation on Suspicious"
+      - "Exception for the backup agent"
+      - "Approval step for server isolation"
+    what: "A safer automation design."
+    why: "Automation must match business impact."
+    how: ["Groups", "Thresholds", "Approval", "Exception"]
+    model_answer: |
+      "Automatic isolation should only fire on Malicious, and never automatically on critical servers. I'd split the
+      ERP and other servers into their own group with a playbook that notifies and waits for approval before isolating,
+      add an exception for the backup agent after verifying it, and review the other playbooks the same way."
+    best_way: "Match automation to impact."
+    rubric: ["separates servers", "approval step", "fixes the false positive"]
+
+interview:
+  - id: M10.04.t01
+    stage: technical
+    question: "How does FortiEDR fit into the Fortinet Security Fabric?"
+    testing: "Integration view"
+    framework: "Detect → share → act"
+    model_answer: |
+      "FortiEDR detects and stops malicious actions on the endpoint, then shares that: events to FortiAnalyzer or
+      FortiSIEM for correlation, and actions to FortiGate to block the C2 or quarantine the host on the network. With
+      playbooks the whole chain can run in seconds, with approval where impact is high."
+    best_way: "Endpoint, then network, then SOC."
+    target: "0:30"

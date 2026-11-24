@@ -1,0 +1,178 @@
+id: M9.04
+title: "FortiSIEM analytics, ML, dashboards and automation"
+stage: S9
+stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
+order: 186
+est_sessions: 1
+objectives:
+  - Build searches with filters, grouping and display columns to answer investigation questions
+  - Explain baselines and machine-learning anomaly detection
+  - Build dashboards and scheduled reports for operations and compliance
+  - Connect incidents to playbooks and threat feeds
+sources:
+  - "FortiSIEM 7.6.1 User Guide: Analytics and advanced search (pp. 1312–1367), machine learning (p. 1368)"
+  - "FortiSIEM 7.6.1 User Guide: Dashboards (p. 1413+), Reports (pp. 900–924), Playbooks (pp. 1005–1052)"
+
+units:
+  - id: M9.04.u1
+    title: Asking questions of the data
+    tier: 2
+    est_min: 12
+    body: |
+      An analytics search has three parts:
+
+      1. **Filters**: event type, attributes, time range (`srcIpAddr = 10.20.10.66`, last 24 hours).
+      2. **Display / group by**: which attributes to show, or counts per attribute ("top users by failed logons").
+      3. **Time**: real-time or historical.
+
+      Typical investigation searches:
+
+      | Question | Search |
+      |---|---|
+      | Everything this IP did | `srcIpAddr = X` in the incident window, sorted by time |
+      | Which accounts were tried? | event type = failed logon, group by `user` |
+      | Who talked to the C2? | `destIpAddr = <C2>`, group by `srcIpAddr` |
+
+      Saved searches become report templates and dashboard widgets.
+
+      :::recall
+      Q: How do you list every machine that contacted 185.220.101.47 yesterday?
+      A: Filter destIpAddr = 185.220.101.47, yesterday's time range, group by srcIpAddr.
+      :::
+  - id: M9.04.u2
+    title: Baselines and machine learning
+    tier: 3
+    est_min: 11
+    body: |
+      Rules catch known patterns; **baselines** catch "unusual for this entity": a user logging in at 3 a.m. for the
+      first time, a server suddenly sending ten times its normal traffic.
+
+      FortiSIEM builds statistical profiles and offers **machine-learning** anomaly detection models; release 7.x added,
+      for example, a Gaussian model that flags values with a low occurrence probability (pp. 305, 1368). **UEBA**
+      focuses on user and entity behavior. Entity **risk scores** add up incidents per user or host so analysts see
+      who is most at risk.
+
+      :::pitfall
+      Anomaly detection needs a clean learning period: if the attacker was already active while the model learned,
+      their behavior is "normal". Combine ML with rules.
+      :::
+  - id: M9.04.u3
+    title: Dashboards, reports and automation
+    tier: 2
+    est_min: 11
+    body: |
+      - **Dashboards** for operations: incidents by severity, top sources, data-collection health (sources that went
+        silent are an incident in themselves).
+      - **Reports** scheduled for management and compliance (PCI, ISO 27001…), built from saved searches.
+      - **Threat feeds** (FortiGuard, STIX/TAXII, custom lists) enrich events and power rules like "traffic to a
+        known malicious IP".
+      - **Playbooks** (FortiSOAR) automate response: enrich an IP, open a ticket, block on the FortiGate, disable an
+        account, with human approval where needed.
+
+      :::ps
+      The most valuable dashboard in a new SIEM is "sources that stopped sending". A FortiGate that went quiet after a
+      change is a blind spot nobody notices until the incident review.
+      :::
+
+cards:
+  - {id: M9.04.c01, unit: M9.04.u1, tier: 1, front: "Three parts of an analytics search", back: "Filters, display/group-by, time range."}
+  - {id: M9.04.c02, unit: M9.04.u1, tier: 2, front: "Find all hosts that contacted an IP", back: "Filter destIpAddr = IP, group by srcIpAddr."}
+  - {id: M9.04.c03, unit: M9.04.u2, tier: 2, front: "Rules vs baselines", back: "Rules: known patterns. Baselines/ML: unusual for this entity."}
+  - {id: M9.04.c04, unit: M9.04.u2, tier: 3, front: "Risk of ML learning periods", back: "An attacker active during learning becomes 'normal'."}
+  - {id: M9.04.c05, unit: M9.04.u3, tier: 2, front: "Most underrated SIEM dashboard", back: "Data sources that stopped sending."}
+  - {id: M9.04.c06, unit: M9.04.u3, tier: 2, front: "What do threat feeds add?", back: "Context and detections for known malicious IPs, domains, hashes."}
+
+quiz:
+  - id: M9.04.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Which search answers 'which accounts did 10.20.10.66 try?'"
+    options:
+      - {id: a, text: "Failed-logon events from srcIpAddr 10.20.10.66, grouped by user", correct: true}
+      - {id: b, text: "All events grouped by srcIpAddr", why_wrong: "Doesn't list accounts."}
+      - {id: c, text: "Incidents list", why_wrong: "Summaries, not the accounts."}
+      - {id: d, text: "CMDB devices", why_wrong: "Inventory."}
+    explanation: "Filter + group by."
+  - id: M9.04.q02
+    type: multi
+    tier: 2
+    stem: "Good uses of FortiSIEM dashboards? Select all that apply."
+    options:
+      - {id: a, text: "Sources that stopped sending", correct: true}
+      - {id: b, text: "Incidents by severity", correct: true}
+      - {id: c, text: "Top attacking sources", correct: true}
+      - {id: d, text: "Replacing every report with screenshots", why_wrong: "Reports are scheduled outputs."}
+    explanation: "Operations visibility."
+  - id: M9.04.q03
+    type: single
+    tier: 3
+    stem: "A first-ever 3 a.m. login for an accountant isn't caught by any rule. What catches it?"
+    options:
+      - {id: a, text: "Baseline/UEBA anomaly detection", correct: true}
+      - {id: b, text: "Threat feed", why_wrong: "Not about known-bad indicators."}
+      - {id: c, text: "Port scan rule", why_wrong: "Different pattern."}
+      - {id: d, text: "Parser update", why_wrong: "Parsing isn't the issue."}
+    explanation: "Behavioral anomaly."
+
+labs:
+  - id: M9.04.lab1
+    title: An investigation in five searches
+    goal: "Use searches to build the timeline after a C2 alert."
+    worked:
+      config: |
+        # 1 destIpAddr = C2, last 7 days, group by srcIpAddr          → which hosts
+        # 2 srcIpAddr = <first host>, ±2 h around first contact       → what else it did
+        # 3 user = <user on that host>, last 7 days, group by reptDevName → where the user logged in
+        # 4 eventType = Win-Security-7045 OR 4720 OR 4728, last 7 days  → persistence/admin changes
+        # 5 save searches 1–4 as a report attached to the case
+      notes:
+        - "Each answer drives the next filter."
+    faded:
+      template: |
+        # which hosts: destIpAddr = C2, group by {{srcIpAddr}}
+        # persistence: eventType = Win-Security-{{7045}}
+    solo:
+      prompt: "Write the three things you put in a search, one per line."
+      required: ["filter", "group", "time"]
+      solution: |
+        filters
+        group by / display
+        time range
+      notes: "Save it if you'll need it again."
+
+scenarios:
+  - id: M9.04.sc1
+    kind: situation
+    tier: 3
+    title: The CISO wants one page
+    situation: |
+      The CISO asks for a monthly one-page security report from FortiSIEM for the board.
+    ask: "What goes on it?"
+    right_thinking:
+      - "Business-level metrics: incidents by severity and trend, time to respond, top risks"
+      - "Coverage: % of critical assets sending data"
+      - "Two or three highlights in plain language"
+    what: "A board-readable report built from saved searches."
+    why: "Executives fund what they understand."
+    how: ["Metrics", "Coverage", "Highlights"]
+    model_answer: |
+      "Four numbers with trends: high-severity incidents, median time to contain, percentage of critical systems
+      sending data, and open risks. Then two or three highlights in plain language, like 'a phishing attempt was
+      contained in 20 minutes'. It runs as a scheduled FortiSIEM report from saved searches, so it's the same every
+      month."
+    best_way: "Few numbers, trend, plain words."
+    rubric: ["business metrics", "coverage metric", "plain-language highlights"]
+
+interview:
+  - id: M9.04.t01
+    stage: technical
+    question: "How would you find every host that talked to a malicious IP last week?"
+    testing: "Search skills"
+    framework: "Filter → group → pivot"
+    model_answer: |
+      "In FortiSIEM analytics: destination IP equals the indicator, last seven days, grouped by source IP. That gives
+      the hosts. Then I pivot on each host's events around the first contact, and add the IP to a watch list or threat
+      feed so any new contact raises an incident."
+    best_way: "Search, then pivot, then detect."
+    target: "0:30"

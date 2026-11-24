@@ -1,0 +1,172 @@
+id: M6.05
+title: "FortiAnalyzer reports, datasets and charts"
+stage: S6
+stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
+order: 200
+est_sessions: 1
+objectives:
+  - Explain the report building blocks: datasets, charts, macros, templates
+  - Create and schedule reports per ADOM
+  - Write a simple dataset query and troubleshoot empty reports
+sources:
+  - "FortiAnalyzer 8.0.2 Admin Guide: Reports (pp. 465–515)"
+
+units:
+  - id: M6.05.u1
+    title: Building blocks
+    tier: 1
+    est_min: 11
+    body: |
+      | Block | What it is |
+      |---|---|
+      | **Dataset** | An SQL query over a log type (traffic, UTM, event…) |
+      | **Chart** | A table or graph built from a dataset |
+      | **Macro** | A single value from a dataset placed in text ("Total threats: 1,204") |
+      | **Template / layout** | Cover page, chapters, charts, macros, text |
+      | **Report** | A template run for a time period, devices and ADOM, on demand or scheduled |
+
+      The logs used are determined by the datasets in the charts and macros (p. 465). Predefined templates, charts and
+      macros cover common needs; you clone and adapt them. Reports are per **ADOM**, and Fabric ADOMs can use datasets
+      on the SIEM database (p. 466).
+
+      :::recall
+      Q: A report needs the number "1,204 threats blocked" inside a sentence. Which block?
+      A: A macro.
+      :::
+  - id: M6.05.u2
+    title: Datasets
+    tier: 2
+    est_min: 12
+    body: |
+      A dataset is SQL with FortiAnalyzer's log-table macros, for example (simplified):
+
+      :::cli
+      select srcip, count(*) as sessions
+      from $log
+      where $filter and action='deny'
+      group by srcip
+      order by sessions desc
+      :::
+
+      - `$log` is the log table for the dataset's log type; `$filter` applies the report's time range and device
+        filters.
+      - Test a dataset against a device and time range before using it in a chart.
+
+      :::pitfall
+      An empty report usually means: wrong ADOM, devices not selected, a time range with no logs, or a dataset over a
+      log type the devices don't send (no UTM logs because policies don't log them). Check in Log View first.
+      :::
+  - id: M6.05.u3
+    title: Reports people read
+    tier: 2
+    est_min: 10
+    body: |
+      - **Schedule** recurring reports (weekly security summary, monthly compliance) and email them.
+      - Keep executive reports short: trends and a few numbers; keep detailed reports for operations.
+      - Generation can take long on large datasets; schedule outside peak hours. Reports aren't available while the SQL
+        database rebuilds (p. 465).
+
+      :::ps
+      Deliver a "first-week report" at the end of every FortiGate project: top applications, top threats blocked,
+      top users by bandwidth. It proves value in the customer's own data, and it's built from predefined templates in
+      minutes.
+      :::
+
+cards:
+  - {id: M6.05.c01, unit: M6.05.u1, tier: 1, front: "Dataset", back: "SQL query over a log type that feeds charts and macros."}
+  - {id: M6.05.c02, unit: M6.05.u1, tier: 1, front: "Macro", back: "A single value from a dataset placed in report text."}
+  - {id: M6.05.c03, unit: M6.05.u1, tier: 2, front: "Reports scope", back: "Per ADOM; time period and devices chosen per run."}
+  - {id: M6.05.c04, unit: M6.05.u2, tier: 2, front: "$log and $filter in datasets", back: "$log: the log table; $filter: report time range and device filters."}
+  - {id: M6.05.c05, unit: M6.05.u2, tier: 2, front: "Empty report: usual causes", back: "Wrong ADOM, no devices, empty time range, log type not sent."}
+
+quiz:
+  - id: M6.05.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which FortiAnalyzer object holds the SQL query behind a chart?"
+    options:
+      - {id: a, text: "Dataset", correct: true}
+      - {id: b, text: "Macro", why_wrong: "Uses a dataset."}
+      - {id: c, text: "Template", why_wrong: "Layout."}
+      - {id: d, text: "Event handler", why_wrong: "Alerts."}
+    explanation: "Datasets are the queries."
+    source: "FortiAnalyzer 8.0.2 Admin Guide p. 465"
+  - id: M6.05.q02
+    type: multi
+    tier: 2
+    stem: "A web filter report is empty. Possible causes? Select all that apply."
+    options:
+      - {id: a, text: "Report run in the wrong ADOM", correct: true}
+      - {id: b, text: "Policies don't log web filter events", correct: true}
+      - {id: c, text: "Time range with no data", correct: true}
+      - {id: d, text: "Too many macros", why_wrong: "Doesn't empty a report."}
+    explanation: "Scope and data."
+  - id: M6.05.q03
+    type: text
+    tier: 2
+    stem: "Dataset variable that applies the report's time range and device filters?"
+    accept: ["$filter", "filter"]
+    explanation: "$filter."
+
+labs:
+  - id: M6.05.lab1
+    title: The first-week report
+    goal: "Build the report you deliver at the end of a FortiGate project."
+    worked:
+      config: |
+        # Clone predefined template: Security Analysis / User Report
+        # Chapters: Top applications, Top threats blocked, Top web categories, Top users by bandwidth, VPN usage
+        # Macros: total sessions, threats blocked, % encrypted traffic
+        # Scope: ADOM root, all project devices, last 7 days
+        # Output: PDF, emailed to project sponsor
+      notes:
+        - "Check in Log View that UTM logs exist before generating."
+    faded:
+      template: |
+        # single number in text → {{macro}}
+        # query behind a chart → {{dataset}}
+    solo:
+      prompt: "List the report building blocks, one per line: dataset, chart, macro, template."
+      required: ["dataset", "chart", "macro", "template"]
+      solution: |
+        dataset
+        chart
+        macro
+        template
+      notes: "A report runs a template for a period."
+
+scenarios:
+  - id: M6.05.sc1
+    kind: situation
+    tier: 2
+    title: "\"Your report says we had zero threats\""
+    situation: |
+      The customer's weekly threat report shows zero threats, but they know IPS blocked attacks.
+    ask: "How do you find out why?"
+    right_thinking:
+      - "Check Log View for IPS logs in that period and ADOM"
+      - "Check report scope: devices, ADOM, time zone"
+      - "Check the dataset filters and log type"
+    what: "Root cause in the report scope or data."
+    why: "A wrong report undermines trust in everything else."
+    how: ["Data", "Scope", "Dataset"]
+    model_answer: |
+      "First I confirm the IPS logs exist in Log View for that week and ADOM. If they do, the report's scope is wrong:
+      wrong ADOM, devices not selected, or the time range. If they don't, the FortiGates aren't sending IPS logs, which
+      is a logging setting to fix. Then I regenerate the report and explain the cause."
+    best_way: "Data, then scope."
+    rubric: ["checks data", "checks scope", "explains"]
+
+interview:
+  - id: M6.05.t01
+    stage: technical
+    question: "How are FortiAnalyzer reports built?"
+    testing: "Report model"
+    framework: "Dataset → chart/macro → template → schedule"
+    model_answer: |
+      "Datasets are SQL queries over a log type. Charts and macros present their results, templates arrange charts,
+      macros and text into chapters, and a report runs a template for a time range, devices and ADOM, on demand or on a
+      schedule. I usually clone predefined templates and adjust them."
+    best_way: "Layer by layer."
+    target: "0:30"

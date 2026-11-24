@@ -97,7 +97,8 @@ Lab.prototype.fazGui = function (faz, toks) {
     for (const r of all) if (r[key] !== undefined) cnt.set(r[key], (cnt.get(r[key]) || 0) + 1);
     return `(GUI: FortiView > Top ${what})\n` + [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${pad(k, 22)}${v} logs`).join("\n");
   }
-  if (c === "help") return "FortiAnalyzer CLI plus these GUI actions: devices, authorize <device> [adom], logview [traffic|utm|event] key=value ... [last=N], fortiview sources|destinations|threats|policies";
+  if (c === "help") return "FortiAnalyzer CLI plus these GUI actions: devices, authorize <device> [adom], logview [traffic|utm|event] key=value ... [last=N], fortiview sources|destinations|threats|policies, handlers, handler create|enable|disable, alerts, incident create <event id> [assign=<user>], incidents";
+  if (this.fazSocGui) { const r = this.fazSocGui(faz, toks); if (r !== null && r !== undefined) return r; }
   return null;
 };
 

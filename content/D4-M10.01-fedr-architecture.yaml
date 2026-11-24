@@ -1,0 +1,181 @@
+id: M10.01
+title: "FortiEDR architecture and deployment"
+stage: S10
+stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
+order: 190
+est_sessions: 1
+objectives:
+  - Describe Collector, Aggregator, Core, Central Manager, Threat Hunting Repository and the cloud service
+  - Explain what each component exchanges with the Collector and what autonomous mode is
+  - Plan a Collector rollout and verify connectivity
+sources:
+  - "FortiEDR 7.2.5 Admin Guide: Introducing FortiEDR (pp. 10–21)"
+  - "FortiEDR 7.2.5 Admin Guide: Deploying FortiEDR, installing Collectors (pp. 22–76)"
+
+units:
+  - id: M10.01.u1
+    title: The components
+    tier: 1
+    est_min: 12
+    body: |
+      | Component | Job |
+      |---|---|
+      | **Collector** | Agent on each endpoint; collects OS metadata and enforces decisions |
+      | **Aggregator** | Receives Collector registration, health and security events; sends configuration (pp. 14, 28) |
+      | **Core** | Analyzes connection metadata to decide block/allow (when not autonomous); receives activity data for threat hunting and communication control (p. 14) |
+      | **Central Manager** | The console: policies, events, forensics, inventory |
+      | **Threat Hunting Repository** | Stores activity events for hunting |
+      | **FortiEDR Cloud Service (FCS)** | Cloud classification and verdicts that drive playbooks (p. 17) |
+
+      In the SaaS model, everything except the Collectors runs in Fortinet's cloud; on-premises deployments use the
+      separate On-Premise Deployment Guide (p. 25).
+
+      :::recall
+      Q: Which component does a new Collector register with?
+      A: The Aggregator, over SSL (port 8081 is the Aggregator port asked for during installation).
+      :::
+  - id: M10.01.u2
+    title: How protection works
+    tier: 2
+    est_min: 11
+    body: |
+      FortiEDR focuses on what malware must **do** to cause damage: connect out, encrypt, exfiltrate, tamper. The
+      Collector intercepts these actions (for example a connection establishment request), checks them locally and/or
+      with the Core, and blocks or allows (pp. 16–17).
+
+      - If all Cores are unreachable, the Collector switches to **autonomous mode** after about a minute and keeps
+        protecting with local analysis (p. 14).
+      - Policies start in a mode that **logs** out of the box; you choose when to move each to prevention (p. 18).
+
+      :::why
+      Q: Why does FortiEDR still protect a laptop on a hotel Wi-Fi with no path to the Core?
+      A: The Collector falls back to autonomous mode and analyzes locally.
+      :::
+  - id: M10.01.u3
+    title: Rolling out Collectors
+    tier: 2
+    est_min: 12
+    body: |
+      1. Prepare: registration password, Aggregator address and port 8081, installer per OS; check exclusions needed
+         by other security software.
+      2. Open the network: Collectors → Aggregator (8081) and → Core; through every firewall on the path, including
+         branch FortiGates and VPNs.
+      3. Pilot a group, review events in simulation, add exceptions.
+      4. Deploy in waves with your software distribution tool; watch **Inventory** for Disconnected or Degraded
+         collectors.
+      5. Move policies to prevention per group once noise is handled.
+
+      :::pitfall
+      A Collector that can't reach the Aggregator looks fine to the user and sends nothing to the console. Alert on
+      disconnected collectors from day one.
+      :::
+
+cards:
+  - {id: M10.01.c01, unit: M10.01.u1, tier: 1, front: "FortiEDR Collector", back: "Endpoint agent: collects OS metadata, enforces decisions."}
+  - {id: M10.01.c02, unit: M10.01.u1, tier: 2, front: "FortiEDR Aggregator", back: "Collector registration, health and security events; sends configuration. Port 8081."}
+  - {id: M10.01.c03, unit: M10.01.u1, tier: 2, front: "FortiEDR Core", back: "Analyzes connection metadata for block/allow; gets activity data for hunting and communication control."}
+  - {id: M10.01.c04, unit: M10.01.u2, tier: 2, front: "Autonomous mode", back: "Collector analyzes locally when no Core is reachable (after about a minute)."}
+  - {id: M10.01.c05, unit: M10.01.u2, tier: 2, front: "FortiEDR's protection idea", back: "Stop the malicious actions (connect, encrypt, exfiltrate), not just recognize files."}
+  - {id: M10.01.c06, unit: M10.01.u3, tier: 2, front: "Rollout order", back: "Prepare → open network → pilot in simulation → waves → prevention per group."}
+
+quiz:
+  - id: M10.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which port does a Collector use to reach the Aggregator by default?"
+    options:
+      - {id: a, text: "8081", correct: true}
+      - {id: b, text: "443", why_wrong: "Not the Aggregator port asked at install."}
+      - {id: c, text: "514", why_wrong: "Syslog."}
+      - {id: d, text: "8000", why_wrong: "FSSO collector agent."}
+    explanation: "Aggregator port 8081."
+    source: "FortiEDR 7.2.5 Admin Guide p. 28"
+  - id: M10.01.q02
+    type: single
+    tier: 2
+    stem: "All Cores become unreachable. What does a Collector do?"
+    options:
+      - {id: a, text: "Switches to autonomous mode and keeps protecting", correct: true}
+      - {id: b, text: "Stops protecting until a Core returns", why_wrong: "It falls back to local analysis."}
+      - {id: c, text: "Blocks all traffic", why_wrong: "No."}
+      - {id: d, text: "Uninstalls itself", why_wrong: "No."}
+    explanation: "Autonomous mode."
+    source: "FortiEDR 7.2.5 Admin Guide p. 14"
+  - id: M10.01.q03
+    type: multi
+    tier: 2
+    stem: "What does the Collector send to the Aggregator? Select all that apply."
+    options:
+      - {id: a, text: "Registration", correct: true}
+      - {id: b, text: "Health and status", correct: true}
+      - {id: c, text: "Security events", correct: true}
+      - {id: d, text: "Compressed activity events for threat hunting", why_wrong: "Those go to the Core."}
+    explanation: "Activity data goes to the Core."
+    source: "FortiEDR 7.2.5 Admin Guide p. 14"
+
+labs:
+  - id: M10.01.lab1
+    title: Collector rollout checklist
+    goal: "Write the rollout checklist for 600 endpoints in two sites."
+    worked:
+      config: |
+        # Network: allow endpoints → Aggregator TCP 8081 and → Core on every FortiGate in the path (HQ, branch, VPN)
+        # Pilot:   IT + 20 users per department, simulation mode, 2 weeks
+        # Review:  events daily; exceptions for business apps; document each
+        # Waves:   100 endpoints/day via software distribution; Inventory check after each wave
+        # Monitor: alert on Disconnected/Degraded collectors
+        # Enforce: prevention per group after 2 clean weeks
+      notes:
+        - "Servers last, with app owners present."
+    faded:
+      template: |
+        # endpoints → Aggregator TCP {{8081}}
+        # start in {{simulation}}
+        # watch {{Inventory}} for disconnected collectors
+    solo:
+      prompt: "List the FortiEDR back-end components, one per line: aggregator, core, central manager, repository."
+      required: ["aggregator", "core", "central manager", "repository"]
+      solution: |
+        Aggregator
+        Core
+        Central Manager
+        Threat Hunting Repository
+      notes: "Plus the cloud service (FCS)."
+
+scenarios:
+  - id: M10.01.sc1
+    kind: situation
+    tier: 3
+    title: Half the branch is missing
+    situation: |
+      After deploying Collectors to the Cali branch, only 3 of 40 appear as Running; the rest are Disconnected. HQ is
+      fine.
+    ask: "What do you check?"
+    right_thinking:
+      - "Path from branch to Aggregator: VPN selectors, routes, FortiGate policy for 8081"
+      - "The 3 that work: are they on a different VLAN or VPN?"
+      - "Test with tnc to the Aggregator port from a branch PC"
+    what: "A network-path fix, verified."
+    why: "EDR rollout problems are usually network problems."
+    how: ["Compare", "Test port", "Fix policy/route", "Verify inventory"]
+    model_answer: |
+      "If HQ is fine and the branch isn't, it's the path. I'd test from a branch PC to the Aggregator on 8081, then
+      check the branch FortiGate policy and the VPN selectors for that traffic. The 3 working collectors probably sit in
+      a VLAN already covered. Fix the policy, then watch Inventory turn Running."
+    best_way: "Compare, test, fix, verify."
+    rubric: ["focuses on path", "tests the port", "verifies in inventory"]
+
+interview:
+  - id: M10.01.t01
+    stage: technical
+    question: "Walk me through FortiEDR's architecture."
+    testing: "Component knowledge"
+    framework: "Endpoint → back end → cloud"
+    model_answer: |
+      "Collectors on endpoints register with the Aggregator, which handles health, events and configuration. The Core
+      analyzes connection metadata and gets activity data for threat hunting. The Central Manager is the console, the
+      Threat Hunting Repository stores activity, and the cloud service gives classifications. If the Core is
+      unreachable, collectors keep protecting in autonomous mode."
+    best_way: "Follow the data."
+    target: "0:40"

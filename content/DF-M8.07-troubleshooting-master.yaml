@@ -1,0 +1,196 @@
+id: M8.07
+title: "Troubleshooting master: packet flow, resources and sessions"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 212
+est_sessions: 1
+objectives:
+  - Walk a packet through the FortiGate end to end and know where each feature acts
+  - Diagnose conserve mode, high CPU and memory problems
+  - Analyze sessions and offload issues
+  - Run an efficient, evidence-based troubleshooting session with a customer
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Network diagnostics (p. 1143), Troubleshooting (pp. 5544–5616)"
+  - "FortiOS 8.0.2 Admin Guide: memory thresholds (system global, conserve mode) and SPU offload (as referenced in M8.04)"
+
+units:
+  - id: M8.07.u1
+    title: The packet's journey
+    tier: 2
+    est_min: 13
+    body: |
+      A simplified order for a new session through a FortiGate:
+
+      1. Ingress interface, DoS policies, **local-in** check (traffic to the FortiGate itself).
+      2. **Destination NAT** (VIP) decided.
+      3. **Routing**: policy routes/SD-WAN rules, then the routing table; **RPF** check.
+      4. **Firewall policy** match (first match, top to bottom), identity, schedule.
+      5. **Source NAT**.
+      6. **Security profiles** (flow or proxy), possibly offloaded afterwards to the NP.
+      7. Egress, with the session installed for the reply direction.
+
+      `diagnose debug flow` shows steps 2–5 with the policy ID and reason; the **sniffer** shows the packet on the wire on
+      each interface; the **session table** shows what was installed.
+
+      :::recall
+      Q: Debug flow says "reverse path check fail". Which step failed?
+      A: Routing (RPF): no route back to the source through the incoming interface.
+      :::
+  - id: M8.07.u2
+    title: "Resources: CPU, memory, conserve mode"
+    tier: 3
+    est_min: 12
+    body: |
+      When memory runs low, FortiOS enters **conserve mode** to protect itself. The thresholds are in `config system
+      global`: by default **red 88 %** (enter conserve mode), **extreme 95 %** (drop new sessions), **green 82 %**
+      (leave conserve mode). While in conserve mode, content inspection may stop: `av-failopen` decides whether
+      traffic needing inspection passes (default **pass**) or is blocked.
+
+      Commands: `get system performance status`, `diagnose sys top` (processes), `diagnose sys session full-stat`,
+      `get system status`.
+
+      Common causes: too many sessions (attack, scan, missing session timers), memory-heavy features (proxy inspection
+      on a small model), logging to disk on low-end models, memory leaks fixed in later builds.
+
+      :::pitfall
+      Raising the thresholds hides the symptom. Find what consumes memory: sessions, a process, or a feature mismatched
+      to the model.
+      :::
+  - id: M8.07.u3
+    title: Sessions, offload and method
+    tier: 3
+    est_min: 11
+    body: |
+      - `diagnose sys session filter …` then `diagnose sys session list`: protocol state, policy ID, NAT, the
+        interface pair, and whether the session is **offloaded** (NP flags).
+      - Asymmetric paths, expired sessions and offload issues all show up here.
+      - `diagnose sys session clear` (with a filter!) after a routing or policy change, so new sessions take the new
+        path.
+
+      **Method** for any problem (the one interviewers listen for):
+
+      1. Define: who, what, since when, what changed.
+      2. Reproduce with a known test (source, destination, port).
+      3. Follow the packet: sniffer on ingress and egress, debug flow, session list.
+      4. Change one thing at a time; verify; document.
+
+      :::ps
+      On a customer call, narrate the method: "I'll capture on both interfaces while you reproduce." It shows control,
+      and the evidence ends the "it's the firewall" debate in minutes.
+      :::
+
+cards:
+  - {id: M8.07.c01, unit: M8.07.u1, tier: 2, front: "Order: DNAT, routing, policy, SNAT", back: "DNAT (VIP) → routing (+RPF) → policy match → SNAT."}
+  - {id: M8.07.c02, unit: M8.07.u1, tier: 2, front: "Tools to follow a packet", back: "Sniffer, debug flow, session list."}
+  - {id: M8.07.c03, unit: M8.07.u2, tier: 2, front: "Conserve mode thresholds (default)", back: "Red 88 %, extreme 95 %, green 82 %."}
+  - {id: M8.07.c04, unit: M8.07.u2, tier: 2, front: "av-failopen default", back: "pass: traffic needing inspection passes uninspected in conserve mode."}
+  - {id: M8.07.c05, unit: M8.07.u2, tier: 2, front: "Commands for resources", back: "get system performance status; diagnose sys top; diagnose sys session full-stat."}
+  - {id: M8.07.c06, unit: M8.07.u3, tier: 2, front: "Clear sessions safely", back: "Set diagnose sys session filter first, then clear."}
+  - {id: M8.07.c07, unit: M8.07.u3, tier: 1, front: "Four-step troubleshooting method", back: "Define, reproduce, follow the packet, change one thing and verify."}
+
+quiz:
+  - id: M8.07.q01
+    type: order
+    tier: 2
+    pretest: true
+    stem: "Order these steps for a new session."
+    items: ["Destination NAT (VIP)", "Routing and RPF", "Firewall policy match", "Source NAT"]
+    explanation: "DNAT happens before routing so the real destination is routed."
+  - id: M8.07.q02
+    type: numeric
+    tier: 2
+    stem: "Default memory percentage at which FortiOS enters conserve mode (red threshold)?"
+    answer: 88
+    explanation: "memory-use-threshold-red default 88."
+  - id: M8.07.q03
+    type: single
+    tier: 3
+    stem: "After moving traffic to a new ISP by route change, some users still go out the old ISP. Why?"
+    options:
+      - {id: a, text: "Existing sessions keep their old route until cleared or expired", correct: true}
+      - {id: b, text: "The new route is wrong", why_wrong: "New sessions use it."}
+      - {id: c, text: "NP offload broke routing", why_wrong: "Not the cause."}
+      - {id: d, text: "DNS cache", why_wrong: "Not about the egress ISP."}
+    explanation: "Clear the relevant sessions with a filter."
+  - id: M8.07.q04
+    type: multi
+    tier: 3
+    stem: "A FortiGate enters conserve mode every afternoon. Good first checks? Select all that apply."
+    options:
+      - {id: a, text: "Session count and its trend", correct: true}
+      - {id: b, text: "Top processes by memory", correct: true}
+      - {id: c, text: "Features vs model (proxy inspection on a small unit)", correct: true}
+      - {id: d, text: "Raise the red threshold to 95 %", why_wrong: "Hides the cause."}
+    explanation: "Find the consumer."
+
+labs:
+  - id: M8.07.lab1
+    title: The 15-minute triage script
+    goal: "Write the commands you run in the first 15 minutes of a 'firewall is slow' call."
+    worked:
+      config: |
+        get system status
+        get system performance status
+        diagnose sys top 2 20
+        diagnose sys session full-stat
+        get router info routing-table all
+        diagnose sys session filter dst <app server>
+        diagnose sys session list
+        diagnose sniffer packet any 'host <client> and host <server>' 4 20
+        diagnose debug flow filter addr <client>
+        diagnose debug flow trace start 20
+        diagnose debug enable
+      notes:
+        - "Ask what changed since when, before typing anything."
+    faded:
+      template: |
+        get system {{performance}} status
+        diagnose sys session {{full-stat}}
+        diagnose debug {{flow}} trace start 20
+    solo:
+      prompt: "Write the four steps of the troubleshooting method, one per line."
+      required: ["define", "reproduce", "packet", "verify"]
+      solution: |
+        define
+        reproduce
+        follow the packet
+        change one thing and verify
+      notes: "Document as you go."
+
+scenarios:
+  - id: M8.07.sc1
+    kind: raid
+    tier: 3
+    title: "\"The firewall is slow\""
+    situation: |
+      Monday 9:00, the customer says "everything is slow since the weekend". The FortiGate shows 70 % memory and normal
+      CPU.
+    ask: "Your first questions and commands?"
+    right_thinking:
+      - "Define: what is slow, for whom, since when, what changed"
+      - "Reproduce one slow flow; check sessions, routing, SD-WAN state"
+      - "Follow the packet; don't blame the box without evidence"
+    what: "A focused, evidence-driven start."
+    why: "Vague problems need structure."
+    how: ["Questions", "Reproduce", "Evidence"]
+    model_answer: |
+      "First questions: which applications, which sites, all users or some, and what changed this weekend. Then I pick
+      one slow flow and follow it: SD-WAN member health and which link it uses, the session entry, a sniffer on both
+      interfaces for retransmissions or latency. Memory at 70 % isn't the problem yet, so I'd look at the path before
+      the box."
+    best_way: "Narrow first."
+    rubric: ["asks scoping questions", "reproduces one flow", "uses evidence"]
+
+interview:
+  - id: M8.07.t01
+    stage: technical
+    question: "Walk me through how a packet is processed by a FortiGate."
+    testing: "Packet flow depth"
+    framework: "Ingress → DNAT → route → policy → SNAT → inspection → egress"
+    model_answer: |
+      "On ingress, DoS and local-in checks; then destination NAT if a VIP matches; then routing, with policy routes and
+      SD-WAN rules first and an RPF check; then the first matching firewall policy, with identity and schedule; then
+      source NAT; then security profiles, and the session may be offloaded to the NP afterwards. Debug flow shows those
+      steps with the policy ID, so it's my first tool when traffic is dropped."
+    best_way: "In order, with the tool."
+    target: "0:45"

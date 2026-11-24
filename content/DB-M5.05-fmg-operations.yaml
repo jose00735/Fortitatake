@@ -1,0 +1,169 @@
+id: M5.05
+title: "FortiManager operations: FortiGuard, FortiSwitch Manager, HA and troubleshooting"
+stage: S5
+stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
+order: 204
+est_sessions: 1
+objectives:
+  - Use FortiManager as a local FortiGuard distribution server and manage firmware
+  - Manage FortiSwitches centrally
+  - Explain FortiManager HA and backups
+  - Troubleshoot FGFM connectivity and install failures
+sources:
+  - "FortiManager 7.6.8 Admin Guide: FortiGuard (pp. 912–969), FortiSwitch Manager (pp. 970–1024), System Settings and HA (p. 1037+)"
+  - "FortiManager 7.6.8 Admin Guide: Key concepts (pp. 48–65)"
+
+units:
+  - id: M5.05.u1
+    title: Local FortiGuard and firmware
+    tier: 2
+    est_min: 11
+    body: |
+      FortiManager can act as a **local FortiGuard Distribution Server (FDS)**: it downloads AV/IPS updates and
+      answers web filter and other rating queries for managed devices (pp. 912–969). Benefits: less Internet traffic,
+      updates for devices without direct Internet access (closed networks), central control of versions.
+
+      **Firmware**: FortiManager stores images and upgrades devices by template or on demand, following the upgrade path;
+      upgrade a pilot group first.
+
+      :::recall
+      Q: An OT network has no Internet but its FortiGates need IPS updates. Option?
+      A: FortiManager as local FDS (fed manually or from a connected FortiManager if fully offline).
+      :::
+  - id: M5.05.u2
+    title: FortiSwitch Manager and HA
+    tier: 2
+    est_min: 11
+    body: |
+      **FortiSwitch Manager** manages FortiLink switches of many FortiGates centrally: switch templates, VLANs, port
+      profiles, firmware (pp. 970–1024). It turns per-site switch configuration into reusable templates.
+
+      **FortiManager HA** keeps a secondary unit synchronized with the primary's databases, so management survives a
+      failure. FortiGates keep working when FortiManager is down; you just can't manage centrally. Always schedule
+      configuration backups of FortiManager itself, stored off-box.
+
+      :::pitfall
+      FortiManager down is not an outage, until someone needs an emergency change and edits FortiGates directly,
+      creating drift that the next install has to reconcile.
+      :::
+  - id: M5.05.u3
+    title: Troubleshooting
+    tier: 3
+    est_min: 12
+    body: |
+      | Symptom | Check |
+      |---|---|
+      | Device offline / no tunnel | FGFM TCP 541 path, `central-management` settings on the FortiGate, `fmg-source-ip` over VPNs |
+      | Status "modified" or out of sync | A change on the FortiGate: retrieve or reinstall after review |
+      | Install fails | Install log: missing dynamic mapping, object conflicts, unsupported settings for the firmware |
+      | Install preview shows deletions | Unused objects removed, or a mapping problem: read before installing |
+
+      FortiManager's key concept: ADOM database → device database → FortiGate, with revisions at each install
+      (pp. 55–63).
+
+      :::ps
+      After every rollout wave, check Device Manager for any device not "synchronized". Drift found the same day is a
+      5-minute fix; found three months later, it's a project.
+      :::
+
+cards:
+  - {id: M5.05.c01, unit: M5.05.u1, tier: 2, front: "FortiManager as FDS", back: "Distributes FortiGuard updates and answers rating queries for managed devices."}
+  - {id: M5.05.c02, unit: M5.05.u1, tier: 2, front: "Firmware via FortiManager", back: "Stored images, firmware templates, pilot first, upgrade path."}
+  - {id: M5.05.c03, unit: M5.05.u2, tier: 2, front: "FortiSwitch Manager", back: "Central FortiLink switch templates, VLANs, port profiles, firmware."}
+  - {id: M5.05.c04, unit: M5.05.u2, tier: 2, front: "FortiManager down: impact on traffic", back: "None; only central management stops."}
+  - {id: M5.05.c05, unit: M5.05.u3, tier: 1, front: "FGFM port", back: "TCP 541."}
+  - {id: M5.05.c06, unit: M5.05.u3, tier: 2, front: "Install fails: first place to look", back: "The install log (mapping, conflicts, unsupported settings)."}
+
+quiz:
+  - id: M5.05.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Branch FortiGates over VPN show offline in FortiManager. Likely cause?"
+    options:
+      - {id: a, text: "FGFM sourced from the WAN IP instead of a tunnel-covered IP (fmg-source-ip)", correct: true}
+      - {id: b, text: "FortiManager licence", why_wrong: "Would affect all devices."}
+      - {id: c, text: "Policy package too large", why_wrong: "Install issue, not connectivity."}
+      - {id: d, text: "Log quota", why_wrong: "FortiAnalyzer."}
+    explanation: "Source IP over tunnels."
+  - id: M5.05.q02
+    type: single
+    tier: 2
+    stem: "FortiManager fails. What happens to traffic through managed FortiGates?"
+    options:
+      - {id: a, text: "Nothing; they keep running their configuration", correct: true}
+      - {id: b, text: "Traffic stops", why_wrong: "FortiGates are independent."}
+      - {id: c, text: "Policies revert", why_wrong: "No."}
+      - {id: d, text: "FortiGates reboot", why_wrong: "No."}
+    explanation: "Management plane only."
+  - id: M5.05.q03
+    type: multi
+    tier: 2
+    stem: "Benefits of FortiManager as local FDS? Select all that apply."
+    options:
+      - {id: a, text: "Updates for devices without Internet access", correct: true}
+      - {id: b, text: "Less Internet bandwidth", correct: true}
+      - {id: c, text: "Central control of signature versions", correct: true}
+      - {id: d, text: "Replaces FortiGuard licences", why_wrong: "Licences still apply."}
+    explanation: "Distribution and control."
+
+labs:
+  - id: M5.05.lab1
+    title: Morning health check for a managed estate
+    goal: "Write the daily FortiManager check for 150 FortiGates."
+    worked:
+      config: |
+        # Device Manager: filter status != synchronized → investigate each (retrieve/reinstall)
+        # Connectivity: devices offline → FGFM path / source IP
+        # Task Monitor: failed installs overnight → install logs
+        # FortiGuard: AV/IPS versions behind → FDS status
+        # Firmware: devices not on the target version → plan waves
+        # Backup: FortiManager config backup succeeded?
+      notes:
+        - "15 minutes daily prevents weeks of drift."
+    faded:
+      template: |
+        # not synchronized → {{retrieve}} or reinstall
+        # offline → check FGFM TCP {{541}}
+    solo:
+      prompt: "Write the FGFM port and the setting for its source IP over VPN, one per line."
+      required: ["541", "fmg-source-ip"]
+      solution: |
+        TCP 541
+        fmg-source-ip
+      notes: "In config system central-management."
+
+scenarios:
+  - id: M5.05.sc1
+    kind: situation
+    tier: 3
+    title: Emergency change while FortiManager is down
+    situation: |
+      FortiManager is down for hardware replacement. An urgent block rule is needed on 30 FortiGates now.
+    ask: "How do you do it without creating a mess?"
+    right_thinking:
+      - "Make the change directly (scripted, consistent) with a change record"
+      - "When FortiManager is back: retrieve or apply the same change in the package, then reinstall to align"
+      - "Verify sync status"
+    what: "Safety now, consistency later."
+    why: "Drift is managed, not avoided, in emergencies."
+    how: ["Change", "Record", "Reconcile", "Verify"]
+    model_answer: |
+      "I make the change directly on the 30 FortiGates with one tested script, and log exactly what was changed where.
+      When FortiManager is back, I add the same rule to the policy package and reinstall, or retrieve from the devices,
+      so the databases match again, and confirm every device shows synchronized."
+    best_way: "Do it, record it, reconcile it."
+    rubric: ["acts safely", "records", "reconciles"]
+
+interview:
+  - id: M5.05.t01
+    stage: technical
+    question: "A FortiManager install fails on some devices. How do you troubleshoot?"
+    testing: "FMG troubleshooting"
+    framework: "Log → cause → fix → reinstall"
+    model_answer: |
+      "I open the install log for the failed devices: usually a missing dynamic mapping for an object or interface, a
+      conflict with a local change, or a setting the device's firmware doesn't support. I fix the mapping or
+      reconcile the change, preview again, and reinstall only those devices."
+    best_way: "The log tells you."
+    target: "0:30"

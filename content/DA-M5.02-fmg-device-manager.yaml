@@ -1,0 +1,177 @@
+id: M5.02
+title: "FortiManager Device Manager: adding devices, ZTP, scripts and templates"
+stage: S5
+stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
+order: 202
+est_sessions: 1.5
+objectives:
+  - Add existing FortiGates and model devices (zero-touch provisioning)
+  - Use provisioning templates (system, IPsec, SD-WAN, CLI) to standardize device settings
+  - Run CLI scripts against devices, the device database or ADOM database safely
+  - Manage firmware with templates
+sources:
+  - "FortiManager 7.6.8 Admin Guide: Device Manager (pp. 93–378)"
+
+units:
+  - id: M5.02.u1
+    title: Getting devices in
+    tier: 1
+    est_min: 12
+    body: |
+      - **Existing FortiGate**: point it at FortiManager (`config system central-management`) or add it from
+        FortiManager with credentials; authorize it; **import** its policies and objects into a policy package.
+      - **Model device** (zero-touch): pre-create the device in FortiManager with its serial number and templates.
+        When the real FortiGate comes online and contacts FortiManager (FortiGate Cloud/FortiZTP or DHCP/manual), it
+        matches the serial and receives its full configuration.
+
+      :::recall
+      Q: A new branch FortiGate will be cabled by a non-technical person. How do you avoid sending an engineer?
+      A: A model device with the serial number and templates in FortiManager (zero-touch provisioning).
+      :::
+  - id: M5.02.u2
+    title: Provisioning templates
+    tier: 2
+    est_min: 12
+    body: |
+      Templates apply standard settings to many devices:
+
+      | Template | Covers |
+      |---|---|
+      | System template | DNS, NTP, admin settings, alert email, log settings |
+      | IPsec tunnel template | Branch tunnels to hubs |
+      | SD-WAN template | Members, zones, health checks, rules |
+      | Static route template | Common routes |
+      | CLI template | Anything else, with per-device variables (metadata) |
+      | Firmware template | Target firmware per device group |
+
+      **Metadata variables** (e.g. `$(branch_lan)`) let one template fill in per-device values.
+
+      :::pitfall
+      Templates are applied in a fixed order before the policy package during install; a CLI template that changes an
+      interface a policy depends on can break the install. Preview every install.
+      :::
+  - id: M5.02.u3
+    title: Scripts
+    tier: 2
+    est_min: 11
+    body: |
+      CLI scripts run against:
+
+      - the **device** directly (changes the FortiGate; then FortiManager retrieves),
+      - the **device database** (changes FortiManager's copy; installed later),
+      - the **ADOM database** (objects and policies, for some script types).
+
+      Prefer database targets so changes flow through install previews and revisions. Use direct device scripts for
+      diagnostics (`get`, `diagnose`) across many devices.
+
+      :::ps
+      For a 200-branch change, test the script on two branches' device databases, preview the install, install those
+      two, verify, then roll out in waves. Keep the script and preview in the change record.
+      :::
+
+cards:
+  - {id: M5.02.c01, unit: M5.02.u1, tier: 1, front: "Model device", back: "Pre-created device (serial + templates) for zero-touch provisioning."}
+  - {id: M5.02.c02, unit: M5.02.u1, tier: 2, front: "After adding an existing FortiGate…", back: "Authorize it and import its policies/objects into a package."}
+  - {id: M5.02.c03, unit: M5.02.u2, tier: 2, front: "Metadata variables", back: "Per-device values used in templates, e.g. $(branch_lan)."}
+  - {id: M5.02.c04, unit: M5.02.u2, tier: 2, front: "Template types", back: "System, IPsec tunnel, SD-WAN, static route, CLI, firmware."}
+  - {id: M5.02.c05, unit: M5.02.u3, tier: 2, front: "Script targets", back: "Device, device database, ADOM database."}
+  - {id: M5.02.c06, unit: M5.02.u3, tier: 2, front: "Why script the device database?", back: "Changes go through install preview and revisions."}
+
+quiz:
+  - id: M5.02.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "Which FortiManager feature lets a new branch FortiGate get its config automatically when it first connects?"
+    options:
+      - {id: a, text: "Model device (zero-touch provisioning)", correct: true}
+      - {id: b, text: "Log fetching", why_wrong: "FortiAnalyzer feature."}
+      - {id: c, text: "Revision diff", why_wrong: "History."}
+      - {id: d, text: "Policy block", why_wrong: "Policy reuse."}
+    explanation: "Matched by serial."
+  - id: M5.02.q02
+    type: single
+    tier: 2
+    stem: "200 branches each need the same NTP and DNS settings. Best tool?"
+    options:
+      - {id: a, text: "System template", correct: true}
+      - {id: b, text: "Edit each device", why_wrong: "Doesn't scale."}
+      - {id: c, text: "Policy package", why_wrong: "Policies, not system settings."}
+      - {id: d, text: "Device script directly on each FortiGate", why_wrong: "Bypasses previews and drifts."}
+    explanation: "Templates standardize settings."
+  - id: M5.02.q03
+    type: multi
+    tier: 2
+    stem: "Where can a CLI script run? Select all that apply."
+    options:
+      - {id: a, text: "Directly on the device", correct: true}
+      - {id: b, text: "On the device database", correct: true}
+      - {id: c, text: "On the ADOM database (some script types)", correct: true}
+      - {id: d, text: "On FortiAnalyzer logs", why_wrong: "No."}
+    explanation: "Three targets."
+
+labs:
+  - id: M5.02.lab1
+    title: Zero-touch branch
+    goal: "Prepare FortiManager so a new branch FortiGate configures itself."
+    worked:
+      config: |
+        # 1 Device Manager > Add Device > Model Device: serial FGT60FTK26000123, name BR-PEREIRA
+        # 2 Metadata: branch_lan=10.40.0.1/24, branch_id=40
+        # 3 Assign: system template STD-SYS, SD-WAN template BRANCH-DUAL, IPsec template HUB-OVERLAY,
+        #           CLI template BRANCH-LAN (uses $(branch_lan)), firmware template 7.6-GA
+        # 4 Assign policy package BRANCHES (installation target)
+        # 5 Ship the box; on first contact FortiManager installs everything
+        # 6 Verify: device status synchronized, tunnels up, test from a branch PC
+      notes:
+        - "Double-check the serial number: it's the match key."
+    faded:
+      template: |
+        # pre-create a {{model}} device with the serial
+        # per-device values via {{metadata}} variables
+    solo:
+      prompt: "Name the FortiManager templates for these settings, one per line: dns/ntp, branch tunnels, sd-wan rules, anything else."
+      required: ["system", "ipsec", "sd-wan", "cli"]
+      solution: |
+        system template
+        IPsec tunnel template
+        SD-WAN template
+        CLI template
+      notes: "Plus firmware and static route templates."
+
+scenarios:
+  - id: M5.02.sc1
+    kind: situation
+    tier: 3
+    title: The script that went straight to production
+    situation: |
+      A colleague ran a CLI script directly on 80 FortiGates to change a DNS server. Now FortiManager shows them all
+      "modified" and the next policy install fails on 12.
+    ask: "What happened and how do you fix it?"
+    right_thinking:
+      - "Device-target scripts change FortiGates outside FortiManager's database"
+      - "Retrieve configs (or reapply via the database) to resync"
+      - "Process: scripts on the device database, install with preview"
+    what: "Resync and a better process."
+    why: "FortiManager only works as a single source of truth if changes go through it."
+    how: ["Explain", "Retrieve", "Re-install", "Process"]
+    model_answer: |
+      "The script changed the FortiGates directly, so FortiManager's device database no longer matches them. I'd
+      retrieve the configuration from the affected devices to resync, check the 12 failures' install logs, then
+      re-install. For the future: run such scripts on the device database or use the system template, so changes go
+      through install preview."
+    best_way: "Single source of truth."
+    rubric: ["explains drift", "resyncs", "fixes process"]
+
+interview:
+  - id: M5.02.t01
+    stage: technical
+    question: "How would you deploy 50 new branches with FortiManager?"
+    testing: "FMG at scale"
+    framework: "Model devices → templates → package → verify"
+    model_answer: |
+      "Model devices by serial with metadata for each branch's addresses, the same system, SD-WAN and IPsec templates
+      for all, a branch policy package, and a firmware template. Branches get shipped, plugged in, contact FortiManager
+      and receive everything. I verify each one in Device Manager and with a test from the branch."
+    best_way: "Template-driven, serial-matched."
+    target: "0:35"

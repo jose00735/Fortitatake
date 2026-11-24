@@ -1,0 +1,177 @@
+id: M9.02
+title: "FortiSIEM ingestion: event types, attributes and parsers"
+stage: S9
+stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
+order: 182
+est_sessions: 1
+objectives:
+  - Explain how raw logs become events with an event type and normalized attributes
+  - Choose push (syslog) or pull (API, WMI, agents) per source
+  - Diagnose why a source shows "unknown" events or isn't parsed
+sources:
+  - "FortiSIEM 7.6.1 User Guide: Device Support and event pulling (pp. 489–583)"
+  - "FortiSIEM 7.6.1 User Guide: Key concepts: parsers and monitors (pp. 365–384)"
+
+units:
+  - id: M9.02.u1
+    title: From raw log to event
+    tier: 1
+    est_min: 12
+    body: |
+      Every received log goes through a **parser** chosen by its format and source. The parser produces an **event**:
+
+      - an **event type**, for example `Win-Security-4625` (failed logon) or a FortiGate IPS event type,
+      - **normalized attributes** with the same names across vendors: `srcIpAddr`, `destIpAddr`, `user`,
+        `reptDevName` (the reporting device), `hostName`, and so on,
+      - the raw log, kept for evidence.
+
+      Because attributes are normalized, one rule ("N failed logons from one source") works for Windows, Linux and
+      VPN logins alike.
+
+      :::recall
+      Q: Why do correlation rules use srcIpAddr instead of each vendor's own field name?
+      A: Parsers normalize vendor fields into common attributes, so a single rule covers every source.
+      :::
+  - id: M9.02.u2
+    title: Push and pull
+    tier: 2
+    est_min: 11
+    body: |
+      | Method | Examples | Notes |
+      |---|---|---|
+      | **Push** (device sends) | Syslog from FortiGate, switches, Linux | Simple; UDP can drop under load; check the device's source IP |
+      | **Pull** (FortiSIEM fetches) | Cloud APIs (Microsoft 365, AWS), WMI/WinRM, databases | Needs credentials and polling intervals |
+      | **Agent** | Windows and Linux agents | Reliable, adds host telemetry |
+
+      The Device Support section of the guide lists, per product, which method and which events are supported
+      (pp. 489–583).
+
+      :::pitfall
+      A FortiGate behind NAT or with a different egress IP than expected shows up as a new, unknown device, or its
+      logs land in the wrong Organization. Fix the source IP (`source-ip` in the syslog setting) rather than the SIEM.
+      :::
+  - id: M9.02.u3
+    title: When parsing goes wrong
+    tier: 3
+    est_min: 11
+    body: |
+      Symptoms and causes:
+
+      - **Events arrive as "unknown"**: no parser recognized the format (custom app, changed log format). Write or adapt
+        a parser, or switch the device to a supported format.
+      - **Attributes missing** (no `user` in VPN events): the parser version doesn't cover that message; update the
+        parser or extend it.
+      - **Nothing arrives**: network path (firewall, route), wrong port/protocol, or the device sends to another IP.
+      - **Time is wrong**: device clock or time zone; correlation windows then miss events.
+
+      For custom sources, FortiSIEM parsers are written in its XML parser language and tested against sample logs
+      before deployment.
+
+      :::ps
+      Before writing a single rule, verify each source with a search: "show me the last 10 events from this device,
+      with srcIpAddr and user". If an attribute is empty there, every rule using it is blind.
+      :::
+
+cards:
+  - {id: M9.02.c01, unit: M9.02.u1, tier: 1, front: "What does a FortiSIEM parser produce?", back: "An event type plus normalized attributes (and keeps the raw log)."}
+  - {id: M9.02.c02, unit: M9.02.u1, tier: 1, front: "Event type for a Windows failed logon", back: "Win-Security-4625"}
+  - {id: M9.02.c03, unit: M9.02.u1, tier: 2, front: "reptDevName", back: "The device that reported the event."}
+  - {id: M9.02.c04, unit: M9.02.u2, tier: 2, front: "Push vs pull", back: "Push: device sends (syslog). Pull: FortiSIEM polls (APIs, WMI, databases)."}
+  - {id: M9.02.c05, unit: M9.02.u3, tier: 2, front: "Events show as unknown: cause", back: "No parser matched the format."}
+  - {id: M9.02.c06, unit: M9.02.u3, tier: 3, front: "Correlation misses events from one device: suspect…", back: "Clock/time-zone problems or missing attributes."}
+
+quiz:
+  - id: M9.02.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "What makes one FortiSIEM rule work across Windows and Linux login failures?"
+    options:
+      - {id: a, text: "Normalized attributes from the parsers", correct: true}
+      - {id: b, text: "Raw log regex in the rule", why_wrong: "Rules use attributes."}
+      - {id: c, text: "Same syslog port", why_wrong: "Unrelated."}
+      - {id: d, text: "Organizations", why_wrong: "Tenancy."}
+    explanation: "Parsers normalize."
+  - id: M9.02.q02
+    type: multi
+    tier: 2
+    stem: "A new firewall's logs arrive but show as unknown events. Which could fix it? Select all that apply."
+    options:
+      - {id: a, text: "Switch the device to a supported log format", correct: true}
+      - {id: b, text: "Write or adapt a parser", correct: true}
+      - {id: c, text: "Add EPS licence", why_wrong: "Not a parsing problem."}
+      - {id: d, text: "Add a Worker", why_wrong: "Capacity, not parsing."}
+    explanation: "Format or parser."
+  - id: M9.02.q03
+    type: single
+    tier: 2
+    stem: "Microsoft 365 audit events typically get into FortiSIEM by…"
+    options:
+      - {id: a, text: "Pulling them through the cloud API", correct: true}
+      - {id: b, text: "Syslog from Microsoft 365", why_wrong: "SaaS sources are API-based."}
+      - {id: c, text: "A Windows agent", why_wrong: "Agents run on servers you own."}
+      - {id: d, text: "SNMP traps", why_wrong: "Not for audit logs."}
+    explanation: "Cloud sources are pulled."
+
+labs:
+  - id: M9.02.lab1
+    title: Verify a source before writing rules
+    goal: "Check that a new source produces the attributes your rules need."
+    worked:
+      config: |
+        # 1 Search: reptDevName=<device> last 10 events
+        # 2 Check eventType is specific (not unknown)
+        # 3 Check attributes your use cases need: srcIpAddr, user, destIpAddr, hostName
+        # 4 Check event time vs real time (clock, time zone)
+        # 5 Note EPS for licence tracking
+        # 6 Only then enable rules for that source type
+      notes:
+        - "Keep the checklist per source in the project tracker."
+    faded:
+      template: |
+        # specific {{eventType}}, not unknown
+        # attributes present: {{srcIpAddr}}, user
+        # event time matches real {{time}}
+    solo:
+      prompt: "Name the three ways data gets into FortiSIEM, one per line."
+      required: ["push", "pull", "agent"]
+      solution: |
+        push (syslog)
+        pull (API, WMI, database)
+        agent
+      notes: "Discovery adds CMDB context on top."
+
+scenarios:
+  - id: M9.02.sc1
+    kind: situation
+    tier: 3
+    title: The rule that never fires
+    situation: |
+      A "VPN brute force" rule never fires, though the FortiGate logs hundreds of failed SSL VPN logins.
+    ask: "How do you troubleshoot?"
+    right_thinking:
+      - "Search the raw events: are they arriving?"
+      - "Is the event type specific and is the user/srcIpAddr attribute populated?"
+      - "Does the rule's filter match that event type and attributes?"
+    what: "Find where the chain breaks."
+    why: "Rules depend on parsing."
+    how: ["Arrival", "Parsing", "Rule filter", "Test"]
+    model_answer: |
+      "I'd follow the data: search for events from the FortiGate in that time window. If they're there, check the event
+      type and whether srcIpAddr and user are filled. If the rule filters on an event type the parser doesn't produce, or
+      groups by an empty attribute, it never fires. Fix the parser or the rule, then replay a test."
+    best_way: "Data first, then rule."
+    rubric: ["checks arrival", "checks parsing", "checks rule logic"]
+
+interview:
+  - id: M9.02.t01
+    stage: technical
+    question: "Logs from a new device arrive in FortiSIEM as unknown events. What do you do?"
+    testing: "Parsing knowledge"
+    framework: "Format → parser → verify"
+    model_answer: |
+      "Unknown means no parser recognized them. First I check whether the device can send in a format FortiSIEM supports,
+      for example the vendor's standard syslog or CEF. If not, I write or adapt a parser and test it against sample
+      logs, then verify the attributes the rules need are populated."
+    best_way: "Format first, parser second."
+    target: "0:30"

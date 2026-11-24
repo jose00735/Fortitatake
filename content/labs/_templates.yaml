@@ -1454,3 +1454,46 @@ andes-overlay:
     - {id: clo-wan2, members: ["FGT-CLO:wan2", "ISP-MOVISTAR:ge0"]}
     - {id: up3, members: ["ISP-MOVISTAR:inet0", INTERNET]}
   layout: {ISP-MOVISTAR: [900, 170], ISP-EMCALI: [640, 170], FGT-CLO: [760, 300], CLO-PC: [760, 480]}
+
+# ---------------------------------------------------------------------------
+# Andes SecOps: the identity topology plus FortiSIEM (FSIEM-01) and FortiEDR (FEDR-01) on the servers segment.
+# DC-01 ships Windows logs to FortiSIEM through its agent; DC-01, FIN-PC and HQ-PC run FortiEDR collectors.
+andes-secops:
+  extends: andes-id
+  story:
+    - {at: "07:58:10", host: DC-01, win: {id: 4624, user: mrojas, src: 10.20.10.50, ws: HQ-PC-MROJAS, logon_type: 3}}
+    - {at: "08:02:44", host: DC-01, win: {id: 4624, user: jperez, src: 10.20.10.60, ws: FIN-PC-JPEREZ, logon_type: 3}}
+  devices:
+    DC-01: {siem_agent: FSIEM-01, edr: {manager: FEDR-01}}
+    FIN-PC: {edr: {manager: FEDR-01}}
+    HQ-PC: {edr: {manager: FEDR-01}}
+    FGT-BOG:
+      config: |
+        config firewall address
+        edit FSIEM-01
+        set subnet 10.20.40.50 255.255.255.255
+        next
+        edit FEDR-01
+        set subnet 10.20.40.60 255.255.255.255
+        next
+        end
+        config firewall service custom
+        edit FortiEDR-8081
+        set tcp-portrange 8081
+        next
+        end
+  add_devices:
+    - id: FSIEM-01
+      kind: fortisiem
+      hostname: fsiem-super
+      nic: {ip: 10.20.40.50/24, gw: 10.20.40.1}
+      services: [udp/514, tcp/443, tcp/22]
+      fortisiem: {threat_feed: [185.220.101.47, 45.155.205.233]}
+    - id: FEDR-01
+      kind: fortiedr
+      hostname: fedr-manager
+      nic: {ip: 10.20.40.60/24, gw: 10.20.40.1}
+      services: [tcp/8081, tcp/443, tcp/555]
+    - {id: CONTRACTOR-LT, kind: host, os: windows, hostname: LT-CONTRATISTA, nic: {ip: 10.20.10.66/24, gw: 10.20.10.1, dns: [8.8.8.8]}}
+  segment_members: {bog-srv: [FSIEM-01, FEDR-01], bog-lan: [CONTRACTOR-LT]}
+  layout: {FSIEM-01: [-60, 400], FEDR-01: [-60, 300], DC-01: [25, 500], ERP-SRV: [150, 500], seg:bog-srv: [90, 425], CONTRACTOR-LT: [480, 500], seg:bog-lan: [380, 425], HQ-PC: [300, 500], FIN-PC: [390, 500]}

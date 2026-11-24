@@ -1,0 +1,165 @@
+id: M8.06
+title: "Central management at scale: FortiManager and FortiAnalyzer together"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 210
+est_sessions: 1
+objectives:
+  - Run change management through FortiManager (workspace, preview, revisions)
+  - Use FortiAnalyzer evidence before and after changes
+  - Combine both in operations: drift, audits, incident-driven changes
+sources:
+  - "FortiManager 7.6.8 Admin Guide: Policy & Objects, install and revisions (pp. 379–635)"
+  - "FortiAnalyzer 8.0.2 Admin Guide: Incidents, alerts and reports (pp. 222–515)"
+
+units:
+  - id: M8.06.u1
+    title: Changes through one door
+    tier: 2
+    est_min: 12
+    body: |
+      At scale, every change goes through FortiManager:
+
+      1. **Workspace/lock** the ADOM or package (no two admins editing the same thing).
+      2. Edit the package or templates; use **policy blocks** and **dynamic mappings** to keep one package for many
+         sites.
+      3. **Install preview**: read it; it's the exact diff the FortiGates receive.
+      4. Install in waves; FortiManager keeps **revisions** of each device, so rollback is "install the previous
+         revision".
+      5. Verify on devices and in FortiAnalyzer.
+
+      :::recall
+      Q: What is the single most important document of a FortiManager change?
+      A: The install preview: the exact diff that will be applied.
+      :::
+  - id: M8.06.u2
+    title: Evidence from FortiAnalyzer
+    tier: 2
+    est_min: 11
+    body: |
+      FortiAnalyzer turns changes into evidence-based decisions:
+
+      - **Before**: "Who uses this rule?" Log View filtered by policy ID shows real traffic. Rules with zero hits for 90
+        days are clean-up candidates.
+      - **After**: denies on the new rule's path, error spikes, application traffic per site.
+      - **Incident-driven**: an alert (IPS, IOC) leads to a FortiManager change (block address, update sensor) installed
+        to all sites, then FortiAnalyzer confirms no further hits.
+
+      :::why
+      Q: Why check FortiAnalyzer before deleting a "legacy" policy?
+      A: Logs show whether anything still matches it; zero hits over a long period is evidence, not a guess.
+      :::
+  - id: M8.06.u3
+    title: Operating rhythm
+    tier: 3
+    est_min: 10
+    body: |
+      | Cadence | FortiManager | FortiAnalyzer |
+      |---|---|---|
+      | Daily | Devices not synchronized, failed installs | High-severity alerts, sources that stopped logging |
+      | Weekly | Pending changes, firmware waves | Top threats, policy hit review |
+      | Monthly | Unused objects, package clean-up | Compliance reports, retention vs quota |
+
+      :::ps
+      Offer customers this rhythm as part of the handover: it's the difference between a tool they own and a tool they
+      have.
+      :::
+
+cards:
+  - {id: M8.06.c01, unit: M8.06.u1, tier: 2, front: "FortiManager change steps", back: "Lock, edit, install preview, install in waves, verify; revisions for rollback."}
+  - {id: M8.06.c02, unit: M8.06.u1, tier: 2, front: "Rollback with FortiManager", back: "Install the previous device revision."}
+  - {id: M8.06.c03, unit: M8.06.u2, tier: 2, front: "Evidence before deleting a policy", back: "Policy hits in FortiAnalyzer over a long period."}
+  - {id: M8.06.c04, unit: M8.06.u2, tier: 2, front: "Incident-driven change loop", back: "FAZ alert → FMG change to all sites → FAZ confirms."}
+  - {id: M8.06.c05, unit: M8.06.u3, tier: 2, front: "Daily FMG + FAZ checks", back: "Unsynced devices/failed installs; high alerts/silent log sources."}
+
+quiz:
+  - id: M8.06.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Two admins changed the same policy package at once and one overwrote the other. What prevents this?"
+    options:
+      - {id: a, text: "Workspace mode with locking", correct: true}
+      - {id: b, text: "More ADOMs", why_wrong: "Doesn't prevent concurrent edits in one."}
+      - {id: c, text: "Quick install", why_wrong: "Unrelated."}
+      - {id: d, text: "Log forwarding", why_wrong: "FortiAnalyzer."}
+    explanation: "Lock before editing."
+  - id: M8.06.q02
+    type: single
+    tier: 2
+    stem: "How do you prove a legacy rule is safe to remove?"
+    options:
+      - {id: a, text: "Zero policy hits in FortiAnalyzer over a long period", correct: true}
+      - {id: b, text: "Nobody remembers it", why_wrong: "Not evidence."}
+      - {id: c, text: "It's old", why_wrong: "Not evidence."}
+      - {id: d, text: "It's at the bottom", why_wrong: "Order isn't usage."}
+    explanation: "Logs are evidence."
+  - id: M8.06.q03
+    type: order
+    tier: 2
+    stem: "Order an incident-driven change."
+    items: ["FortiAnalyzer alert identifies a malicious IP", "Add the block in the FortiManager package", "Install preview and install to all sites", "FortiAnalyzer confirms no further hits"]
+    explanation: "Detect, change, deploy, confirm."
+
+labs:
+  - id: M8.06.lab1
+    title: Policy clean-up with evidence
+    goal: "Remove unused rules from a 400-rule package safely."
+    worked:
+      config: |
+        # FAZ: report policy hits per policy ID, last 90 days, all devices in the package
+        # List: 0 hits → candidates; low hits → owner review
+        # FMG: disable (not delete) candidates in the package; install preview; install in waves
+        # Wait 30 days; FAZ: any denies that match the disabled rules' traffic? any tickets?
+        # FMG: delete disabled rules; revision note with the report attached
+      notes:
+        - "Disable first, delete later: it's a cheap rollback."
+    faded:
+      template: |
+        # evidence: policy {{hits}} over 90 days
+        # first {{disable}}, delete after 30 days
+    solo:
+      prompt: "Write the FortiManager change steps, one per line: lock, edit, preview, install, verify."
+      required: ["lock", "edit", "preview", "install", "verify"]
+      solution: |
+        lock
+        edit
+        preview
+        install
+        verify
+      notes: "Then unlock."
+
+scenarios:
+  - id: M8.06.sc1
+    kind: situation
+    tier: 3
+    title: "\"Just delete everything older than 2020\""
+    situation: |
+      A new CISO wants all policies created before 2020 deleted this weekend to "reduce risk".
+    ask: "How do you respond?"
+    right_thinking:
+      - "Agree with the goal"
+      - "Age isn't usage: use hit evidence"
+      - "Disable-then-delete plan with dates"
+    what: "Risk reduction without outages."
+    why: "Evidence beats age."
+    how: ["Agree", "Evidence", "Plan"]
+    model_answer: |
+      "Reducing rule sprawl is the right goal. Age doesn't tell us if a rule is still used, though: some 2018 rules may
+      carry payroll. I'd pull 90 days of hits from FortiAnalyzer, disable the zero-hit rules this weekend through
+      FortiManager, and delete them in a month if nothing breaks. Low-hit rules go to their owners for review."
+    best_way: "Same goal, evidence-based path."
+    rubric: ["supports goal", "evidence", "reversible plan"]
+
+interview:
+  - id: M8.06.t01
+    stage: technical
+    question: "How do FortiManager and FortiAnalyzer work together in operations?"
+    testing: "Integrated operations"
+    framework: "Change ↔ evidence"
+    model_answer: |
+      "FortiManager is the single door for changes, with previews and revisions; FortiAnalyzer is the evidence. Before
+      a change I check real usage in the logs, after it I confirm the effect, and when FortiAnalyzer raises an incident
+      the fix goes out through FortiManager to every site and FortiAnalyzer confirms it worked."
+    best_way: "Change and evidence loop."
+    target: "0:30"

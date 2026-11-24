@@ -1,0 +1,175 @@
+id: M8.01
+title: "Security Fabric and automation"
+stage: S8
+stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
+order: 206
+est_sessions: 1
+objectives:
+  - Build a Security Fabric with root and downstream FortiGates and connected Fortinet devices
+  - Use security rating, topology views and fabric connectors
+  - Design automation stitches with triggers and actions
+sources:
+  - "FortiOS 8.0.2 Admin Guide: Fortinet Security Fabric (pp. 4814–5339)"
+
+units:
+  - id: M8.01.u1
+    title: What the Fabric is
+    tier: 1
+    est_min: 11
+    body: |
+      The Security Fabric interconnects Fortinet products to detect, monitor, block and remediate across the network
+      (p. 4814):
+
+      - **Root FortiGate**: usually the edge; shows the whole Fabric in physical and logical topology views.
+      - **Downstream FortiGates**: internal segmentation firewalls (ISFW) joined to the root.
+      - **FortiAnalyzer** (logging for the Fabric), FortiManager, FortiSwitch, FortiAP, FortiClient EMS, FortiSandbox,
+        FortiEDR and others join it.
+      - FortiGate models with 2 GB RAM (40F, 50G, 60F series) can authorize up to five devices as Fabric root; a
+        maximum of 35 downstream FortiGates is recommended (p. 4814).
+
+      :::recall
+      Q: Why do downstream FortiGates join the root's Fabric instead of standing alone?
+      A: Shared visibility (topology, logs to one FortiAnalyzer), security rating across all, and Fabric-wide automation.
+      :::
+  - id: M8.01.u2
+    title: Security rating and connectors
+    tier: 2
+    est_min: 10
+    body: |
+      - **Security rating** checks the Fabric configuration against best practices and highlights vulnerabilities and
+        improvements (p. 4814). Run it before and after a project: it's a measurable outcome.
+      - **Fabric connectors** integrate SDN, cloud and partner platforms (AWS, Azure, VMware, Kubernetes, ITSM…) so
+        dynamic addresses follow workloads without manual updates.
+
+      :::why
+      Q: Why use an SDN connector address (e.g. by cloud tag) instead of static IPs for cloud servers?
+      A: Cloud IPs change; the connector keeps the address object in sync, so policies stay correct.
+      :::
+  - id: M8.01.u3
+    title: Automation stitches
+    tier: 2
+    est_min: 13
+    body: |
+      An **automation stitch** pairs a **trigger** with one or more **actions** (p. 4814).
+
+      | Triggers (examples) | Actions (examples) |
+      |---|---|
+      | Compromised host (IOC), event log, HA failover, config change, high CPU, low memory, license near expiry, FortiAnalyzer event, incoming webhook, IPS/virus logs | Email, alert, ban IP, quarantine (FortiSwitch/FortiClient/FortiNAC), CLI script, diagnose script, webhook, Slack/Teams notification, cloud functions |
+
+      Example: "IPS critical log from an internal host → quarantine the host on FortiSwitch + Teams message to the SOC".
+
+      :::cli
+      config system automation-trigger
+          edit "ips-critical"
+              set event-type ips-logs
+          next
+      end
+      :::
+
+      :::pitfall
+      Automation that bans or quarantines on a noisy trigger causes self-inflicted outages. Start with notify-only
+      stitches, review a week of triggers, then add blocking actions.
+      :::
+
+cards:
+  - {id: M8.01.c01, unit: M8.01.u1, tier: 1, front: "Root vs downstream FortiGate", back: "Root: edge, full Fabric view. Downstream: internal segmentation firewalls joined to the root."}
+  - {id: M8.01.c02, unit: M8.01.u1, tier: 2, front: "Recommended max downstream FortiGates", back: "35 (2 GB RAM roots: up to five devices)."}
+  - {id: M8.01.c03, unit: M8.01.u2, tier: 2, front: "Security rating", back: "Checks the Fabric against best practices and shows improvements."}
+  - {id: M8.01.c04, unit: M8.01.u2, tier: 2, front: "Fabric connectors", back: "SDN/cloud/partner integrations that keep dynamic objects in sync."}
+  - {id: M8.01.c05, unit: M8.01.u3, tier: 1, front: "Automation stitch", back: "Trigger + one or more actions."}
+  - {id: M8.01.c06, unit: M8.01.u3, tier: 2, front: "Safe automation rollout", back: "Notify first, review triggers, then add blocking actions."}
+
+quiz:
+  - id: M8.01.q01
+    type: single
+    tier: 1
+    pretest: true
+    stem: "In a Security Fabric, which FortiGate shows the full topology?"
+    options:
+      - {id: a, text: "The root", correct: true}
+      - {id: b, text: "Any downstream", why_wrong: "Root is the main view."}
+      - {id: c, text: "The HA secondary", why_wrong: "Unrelated."}
+      - {id: d, text: "FortiSwitch", why_wrong: "Not a FortiGate."}
+    explanation: "Root FortiGate."
+    source: "FortiOS 8.0.2 Admin Guide p. 4814"
+  - id: M8.01.q02
+    type: multi
+    tier: 2
+    stem: "Valid automation actions? Select all that apply."
+    options:
+      - {id: a, text: "Ban IP", correct: true}
+      - {id: b, text: "Quarantine on FortiSwitch/FortiClient", correct: true}
+      - {id: c, text: "CLI script", correct: true}
+      - {id: d, text: "Rewrite firmware", why_wrong: "Not an action."}
+    explanation: "Among the documented action types."
+  - id: M8.01.q03
+    type: single
+    tier: 2
+    stem: "Cloud servers change IPs daily. How do policies keep up?"
+    options:
+      - {id: a, text: "SDN connector-based dynamic addresses", correct: true}
+      - {id: b, text: "Edit addresses daily", why_wrong: "Manual, error-prone."}
+      - {id: c, text: "Allow any", why_wrong: "Insecure."}
+      - {id: d, text: "FQDN of the cloud console", why_wrong: "Not the workloads."}
+    explanation: "Connectors sync dynamic objects."
+
+labs:
+  - id: M8.01.lab1
+    title: A notify-then-act stitch
+    goal: "Design an automation for compromised internal hosts."
+    worked:
+      config: |
+        # Phase 1 (week 1): trigger = IPS logs severity critical from internal src
+        #                   actions = email SOC + Teams notification
+        # Review: which hosts triggered, false positives?
+        # Phase 2: add action = quarantine host on FortiSwitch (FortiLink) / FortiClient EMS
+        #          exclude: servers group (notify only)
+        # Document: trigger, actions, owner, rollback (unquarantine procedure)
+      notes:
+        - "Every blocking action needs an unblock procedure."
+    faded:
+      template: |
+        # stitch = {{trigger}} + actions
+        # start with {{notify}}-only
+    solo:
+      prompt: "Name the two halves of an automation stitch, one per line."
+      required: ["trigger", "action"]
+      solution: |
+        trigger
+        action(s)
+      notes: "Conditions can refine triggers."
+
+scenarios:
+  - id: M8.01.sc1
+    kind: situation
+    tier: 3
+    title: The stitch that banned the CEO
+    situation: |
+      A "ban IP on any IPS log" stitch banned the CEO's laptop during a board meeting after a false positive.
+    ask: "How do you redesign it?"
+    right_thinking:
+      - "Trigger on critical severity only, internal sources, with conditions"
+      - "Notify first; quarantine only for confirmed patterns"
+      - "Exclusion list for VIP/servers with escalation instead"
+    what: "Automation that matches risk and impact."
+    why: "Trust in automation is easy to lose."
+    how: ["Narrow trigger", "Graduated actions", "Exclusions"]
+    model_answer: |
+      "I'd narrow the trigger to critical-severity IPS events from internal hosts, start with notification, and only
+      quarantine on specific high-confidence signatures. Executives and servers get notify-and-call instead of
+      automatic blocking, and there's a documented, fast unban procedure for the service desk."
+    best_way: "Narrow, graduated, reversible."
+    rubric: ["narrows trigger", "graduated actions", "reversible"]
+
+interview:
+  - id: M8.01.t01
+    stage: technical
+    question: "Give an example of a useful Security Fabric automation."
+    testing: "Practical automation"
+    framework: "Trigger → action → safeguard"
+    model_answer: |
+      "When FortiAnalyzer flags a compromised host from IOC matches, the stitch quarantines that host on the
+      FortiSwitch port through FortiLink and posts to the SOC's Teams channel. Servers are excluded and only notify,
+      and the service desk has a documented unquarantine step."
+    best_way: "Concrete trigger, action, safeguard."
+    target: "0:30"

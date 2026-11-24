@@ -1,0 +1,174 @@
+id: M10.03
+title: "FortiEDR incidents, forensics and threat hunting"
+stage: S10
+stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
+order: 194
+est_sessions: 1
+objectives:
+  - Triage security events by classification and action
+  - Use the investigation view and flow analyzer to reconstruct the attack chain
+  - Remediate (kill, delete, registry) and isolate devices
+  - Hunt for other affected hosts
+sources:
+  - "FortiEDR 7.2.5 Admin Guide: Incidents and Event Viewer (pp. 87–127), classifications (p. 91), isolating a device (p. 104)"
+  - "FortiEDR 7.2.5 Admin Guide: Forensics and threat hunting (pp. 128–173)"
+
+units:
+  - id: M10.03.u1
+    title: Reading an event
+    tier: 1
+    est_min: 11
+    body: |
+      Each security event carries:
+
+      - **Classification** (p. 91): Malicious, Suspicious, PUP, Inconclusive, Likely Safe, Safe.
+      - **Action**: Blocked, Simulated Block (policy in simulation), Log, Post Detection…
+      - Device, process, path, hash, signer, policy and rule, destinations.
+
+      Triage order: Malicious first, then Suspicious; anything blocked still deserves a look at **how it got there**.
+
+      :::recall
+      Q: An event says Malicious, Simulated Block. Is the host clean?
+      A: No: the policy was in simulation, so the action ran. Investigate and remediate.
+      :::
+  - id: M10.03.u2
+    title: Investigation and flow analyzer
+    tier: 2
+    est_min: 12
+    body: |
+      The **investigation view** and **flow analyzer** show the process chain: who started what, with command lines,
+      files written and network destinations (pp. 94–127). From it you answer:
+
+      1. **Entry**: which parent launched the payload (OUTLOOK.EXE → attachment, browser → download, a service →
+         lateral movement)?
+      2. **Behavior**: encryption, injection, persistence, credential access?
+      3. **Communication**: which IPs/domains (C2) did it contact?
+
+      Then **hunt**: search the Threat Hunting Repository for the hash, the file name, the C2 destination across all
+      collectors (pp. 128–173).
+
+      :::why
+      Q: Why hunt for the hash and the C2 IP after remediating one host?
+      A: Campaigns hit many users; other hosts may have run it without triggering the same rule.
+      :::
+  - id: M10.03.u3
+    title: Containment and remediation
+    tier: 2
+    est_min: 11
+    body: |
+      - **Isolate the device** (p. 104): blocked from communicating with the outside world, sending and receiving,
+        while staying connected to FortiEDR for investigation and remediation.
+      - **Remediate**: terminate the process, delete the file, clean registry persistence.
+      - **Network**: block the C2 on the FortiGate (address + deny, or a threat feed), so hosts without a collector are
+        covered too.
+      - **Identity**: if credentials may be stolen, reset them.
+      - Release isolation only after the host is clean (or reimaged).
+
+      :::ps
+      Write the incident summary as you go: entry vector, affected hosts, C2, actions taken with times. The customer's
+      management and insurer will ask for exactly that.
+      :::
+
+cards:
+  - {id: M10.03.c01, unit: M10.03.u1, tier: 1, front: "FortiEDR classifications", back: "Malicious, Suspicious, PUP, Inconclusive, Likely Safe, Safe."}
+  - {id: M10.03.c02, unit: M10.03.u1, tier: 2, front: "Malicious + Simulated Block means…", back: "The malicious action ran: investigate and remediate."}
+  - {id: M10.03.c03, unit: M10.03.u2, tier: 2, front: "Three questions for the flow analyzer", back: "Entry, behavior, communication."}
+  - {id: M10.03.c04, unit: M10.03.u2, tier: 2, front: "After one host: hunt for…", back: "The hash, file name and C2 across all collectors."}
+  - {id: M10.03.c05, unit: M10.03.u3, tier: 1, front: "Isolation in FortiEDR", back: "Device can't communicate with the outside, but stays connected to FortiEDR."}
+  - {id: M10.03.c06, unit: M10.03.u3, tier: 2, front: "Remediation actions", back: "Terminate process, delete file, clean registry."}
+
+quiz:
+  - id: M10.03.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "The flow analyzer shows OUTLOOK.EXE → Factura.pdf.exe → powershell.exe. Entry vector?"
+    options:
+      - {id: a, text: "Email attachment", correct: true}
+      - {id: b, text: "USB drive", why_wrong: "Parent would be explorer from removable media."}
+      - {id: c, text: "Lateral movement", why_wrong: "Parent would be a service or remote tool."}
+      - {id: d, text: "Drive-by download", why_wrong: "Parent would be a browser."}
+    explanation: "Outlook launched the payload."
+  - id: M10.03.q02
+    type: order
+    tier: 2
+    stem: "Order the response to a malicious event."
+    items: ["Isolate the device", "Investigate the chain (entry, behavior, C2)", "Remediate the host", "Hunt for other hosts and block the C2", "Release isolation when clean"]
+    explanation: "Contain, understand, clean, widen, restore."
+  - id: M10.03.q03
+    type: multi
+    tier: 2
+    stem: "What does an isolated FortiEDR device still do? Select all that apply."
+    options:
+      - {id: a, text: "Talk to FortiEDR for investigation and remediation", correct: true}
+      - {id: b, text: "Keep its local processes running", correct: true}
+      - {id: c, text: "Browse the Internet", why_wrong: "Blocked."}
+      - {id: d, text: "Reach file shares", why_wrong: "Blocked."}
+    explanation: "Isolation cuts the network except management."
+
+labs:
+  - id: M10.03.lab1
+    title: The incident summary
+    goal: "Write the summary for a ransomware attempt contained by FortiEDR."
+    worked:
+      config: |
+        # Summary – FIN-PC-JPEREZ – 2026-11-24
+        # 10:12 Factura_Nov.pdf.exe launched by OUTLOOK.EXE (email attachment)
+        # 10:12 powershell.exe started encrypting \\FS01\Contabilidad (File Encryptor, simulation → not blocked)
+        # 10:12 C2 contact 185.220.101.47:443
+        # 10:14 Event classified Malicious; process killed, file deleted; FIN-PC isolated
+        # 10:30 C2 blocked on FGT-BOG; hunt: hash on no other collectors
+        # 10:45 Ransomware + Execution Prevention set to prevention
+        # Next: restore share from backup, reset jperez password, reimage FIN-PC
+      notes:
+        - "Times, facts, actions; no speculation."
+    faded:
+      template: |
+        # entry: {{OUTLOOK.EXE}} attachment
+        # containment: {{isolate}} the device
+        # network: block the {{C2}}
+    solo:
+      prompt: "Write the three things the flow analyzer must tell you, one per line: entry, behavior, communication."
+      required: ["entry", "behavior", "communication"]
+      solution: |
+        entry
+        behavior
+        communication
+      notes: "Then hunt."
+
+scenarios:
+  - id: M10.03.sc1
+    kind: raid
+    tier: 3
+    title: Ransomware in simulation mode
+    situation: |
+      FortiEDR shows a Malicious File Encryptor event on a finance PC, action Simulated Block. Files on a share are
+      being renamed.
+    ask: "Your next five minutes."
+    right_thinking:
+      - "Isolate the PC now"
+      - "Kill/delete via remediation"
+      - "Check the share, block C2, switch ransomware policy to prevention"
+    what: "Containment first, then the rest."
+    why: "Minutes matter with encryption."
+    how: ["Isolate", "Remediate", "Block C2", "Prevention"]
+    model_answer: |
+      "Isolate the PC immediately from FortiEDR so the encryption stops reaching the share, then kill the process and
+      delete the file. Block the C2 on the FortiGate and switch Ransomware Prevention to prevention for everyone. Then
+      I tell the file-server team which folder to restore and start the investigation and hunt."
+    best_way: "Contain first."
+    rubric: ["isolates first", "remediates", "prevents recurrence"]
+
+interview:
+  - id: M10.03.t01
+    stage: technical
+    question: "An EDR flags ransomware on a laptop. What do you do?"
+    testing: "Incident response"
+    framework: "Contain → investigate → eradicate → recover → learn"
+    model_answer: |
+      "Isolate the device so it can't reach shares or its C2, kill the process and quarantine the file. Then I read the
+      process chain for the entry point and the C2, hunt for the same hash and destination on other hosts, block the
+      C2 at the firewall, reset credentials if needed, restore affected files and reimage. Finally, if policies were in
+      simulation, move them to prevention."
+    best_way: "The IR lifecycle, concretely."
+    target: "0:45"

@@ -1,0 +1,193 @@
+id: M9.03
+title: "FortiSIEM rules, incidents and cases"
+stage: S9
+stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
+order: 184
+est_sessions: 1.5
+objectives:
+  - Read a correlation rule: filters, grouping, thresholds, time windows
+  - Triage an incident: severity, timeline, entities, related events
+  - Tune with exceptions instead of disabling rules
+  - Move from incident to case and to response (remediation, ticketing, SOAR)
+sources:
+  - "FortiSIEM 7.6.1 User Guide: Rules (pp. 925–942), Incidents (pp. 1256–1311), Cases (pp. 1229–1255)"
+  - "FortiSIEM 7.6.1 User Guide: Key concepts: rules and incidents, incident automation policy, remediation library (pp. 365–384)"
+
+units:
+  - id: M9.03.u1
+    title: Anatomy of a correlation rule
+    tier: 2
+    est_min: 13
+    body: |
+      A FortiSIEM rule watches the event stream and raises an **incident** when a pattern appears in a time window:
+
+      - **Sub-patterns**: filters on event type and attributes (e.g. `eventType = Win-Security-4625`).
+      - **Group by**: the entity the count is per (e.g. `srcIpAddr`, `user`, destination host).
+      - **Aggregate condition**: `COUNT(Matched Events) >= 5`.
+      - **Time window**: e.g. 600 seconds.
+      - **Relationships between sub-patterns**: "A followed by B" with the same user and source (failures then a
+        success).
+      - **Incident attributes and severity**, which carry into the incident.
+
+      FortiSIEM ships hundreds of rules, mapped to MITRE ATT&CK techniques, and can import community **Sigma** rules
+      (pp. 925–942).
+
+      :::recall
+      Q: "Successful Logon After Multiple Failures" uses two sub-patterns. What links them?
+      A: The same user and source IP, with the success following the failures inside the time window.
+      :::
+  - id: M9.03.u2
+    title: Triage
+    tier: 2
+    est_min: 13
+    body: |
+      For each incident, answer in order:
+
+      1. **What fired, how bad?** Rule, severity, count, first/last seen.
+      2. **Who and what?** Entities: source IP, user, host, destination; look them up in the CMDB (is it a domain
+         controller? a scanner?).
+      3. **What happened around it?** Search all events for the entity in a window before and after: the incident is
+         a pointer, the timeline is the story.
+      4. **Decision**: false positive (tune), benign true positive (document), or true positive (escalate, contain).
+
+      Incident views in FortiSIEM include risk-based views, MITRE ATT&CK mapping and UEBA anomalies (pp. 1256–1311).
+      Use **cases** to group related incidents, assign owners and keep the investigation record (pp. 1229–1255).
+
+      :::why
+      Q: Why search events around an incident instead of only reading its triggering events?
+      A: The rule only shows the pattern it matched; what the attacker did before and after (a service install, a new admin) is in other events.
+      :::
+  - id: M9.03.u3
+    title: Tuning and response
+    tier: 3
+    est_min: 11
+    body: |
+      ## Tuning
+
+      - Prefer **exceptions** (this source, this user, this host) over disabling a rule.
+      - Adjust **thresholds** with data: look at how often the pattern occurs normally.
+      - Record why, who asked, and a review date for every exception.
+
+      ## Response
+
+      - **Incident automation policies** notify or act when incidents match conditions.
+      - The **remediation library** runs actions on devices (block an IP on a firewall, disable an account).
+      - External **ticketing** integrations open tickets; **FortiSOAR playbooks** orchestrate multi-step response
+        (pp. 1005–1052).
+
+      :::ps
+      In the first month of a SIEM, plan weekly tuning sessions with the customer: list the top 10 noisiest rules,
+      decide exception, threshold or keep, and document it. That rhythm is what turns a SIEM into a SOC tool.
+      :::
+
+cards:
+  - {id: M9.03.c01, unit: M9.03.u1, tier: 2, front: "Parts of a FortiSIEM correlation rule", back: "Sub-patterns (filters), group by, aggregate condition, time window, relationships, incident attributes/severity."}
+  - {id: M9.03.c02, unit: M9.03.u1, tier: 2, front: "Sigma rules in FortiSIEM", back: "Community detection rules that FortiSIEM can import."}
+  - {id: M9.03.c03, unit: M9.03.u2, tier: 1, front: "Four triage questions", back: "What fired/how bad, who/what, what happened around it, decision."}
+  - {id: M9.03.c04, unit: M9.03.u2, tier: 2, front: "Incident vs case", back: "Incident: a rule hit. Case: the investigation record grouping incidents, owner and notes."}
+  - {id: M9.03.c05, unit: M9.03.u3, tier: 2, front: "Exception vs disabling a rule", back: "Exception narrows one known source; disabling blinds the rule for everything."}
+  - {id: M9.03.c06, unit: M9.03.u3, tier: 2, front: "Remediation library", back: "Actions FortiSIEM can run on devices, e.g. block an IP on a firewall."}
+  - {id: M9.03.c07, unit: M9.03.u3, tier: 2, front: "Multi-step automated response", back: "FortiSOAR playbooks (integrated with FortiSIEM)."}
+
+quiz:
+  - id: M9.03.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A vulnerability scanner triggers 'Excessive Logon Failures' every night. Best fix?"
+    options:
+      - {id: a, text: "An exception for the scanner's source IP on that rule", correct: true}
+      - {id: b, text: "Disable the rule", why_wrong: "Blinds you to real attacks."}
+      - {id: c, text: "Raise the threshold to 1000", why_wrong: "Effectively disables it."}
+      - {id: d, text: "Delete the incidents each morning", why_wrong: "Wastes analyst time."}
+    explanation: "Narrow, documented exceptions."
+  - id: M9.03.q02
+    type: order
+    tier: 2
+    stem: "Order the triage steps."
+    items: ["Read rule, severity and counts", "Identify the entities (IP, user, host)", "Search the timeline around them", "Decide: false positive, benign, or escalate"]
+    explanation: "Pointer, context, story, decision."
+  - id: M9.03.q03
+    type: single
+    tier: 3
+    stem: "12 failed logons then one success for the same user and source in 3 minutes. Which rule logic catches it best?"
+    options:
+      - {id: a, text: "Two sub-patterns (failures ≥ N, then success) joined on user and source", correct: true}
+      - {id: b, text: "Count of 4624 events ≥ 1", why_wrong: "Fires on every logon."}
+      - {id: c, text: "Count of 4625 ≥ 5", why_wrong: "Misses the success."}
+      - {id: d, text: "Any event from that source", why_wrong: "Too broad."}
+    explanation: "The sequence matters."
+  - id: M9.03.q04
+    type: text
+    tier: 2
+    stem: "Which Fortinet product runs multi-step playbooks for FortiSIEM incidents?"
+    accept: ["fortisoar", "forti soar"]
+    explanation: "FortiSOAR."
+
+labs:
+  - id: M9.03.lab1
+    title: Write a rule on paper
+    goal: "Specify a rule for password spraying on the VPN."
+    worked:
+      config: |
+        # Name:        VPN password spraying
+        # Sub-pattern: eventType = FortiGate SSL VPN login failure
+        # Group by:    srcIpAddr
+        # Condition:   COUNT(DISTINCT user) >= 8
+        # Window:      600 s
+        # Severity:    HIGH; incident attributes: srcIpAddr, count, users
+        # Response:    notify SOC; remediation: block srcIpAddr on the FortiGate (after review)
+        # Exceptions:  none at start; review after 2 weeks
+      notes:
+        - "Distinct users is what separates spraying from one user mistyping."
+    faded:
+      template: |
+        # group by {{srcIpAddr}}
+        # condition COUNT(DISTINCT {{user}}) >= 8
+        # window {{600}} s
+    solo:
+      prompt: "Write the parts of a correlation rule, one per line: filter, group by, condition, window, severity."
+      required: ["filter", "group", "condition", "window", "severity"]
+      solution: |
+        filter (sub-pattern)
+        group by
+        condition
+        window
+        severity
+      notes: "Then exceptions and response."
+
+scenarios:
+  - id: M9.03.sc1
+    kind: situation
+    tier: 3
+    title: Alert fatigue
+    situation: |
+      Three months after go-live, the SOC ignores FortiSIEM: 900 incidents a day, mostly the same five rules.
+    ask: "What's your plan?"
+    right_thinking:
+      - "Measure: top rules by volume and their true-positive rate"
+      - "Tune with exceptions/thresholds; fix parsing gaps"
+      - "Weekly tuning ritual with owners; measure again"
+    what: "A data-driven tuning plan."
+    why: "A SIEM nobody reads is a compliance checkbox."
+    how: ["Measure", "Tune", "Ritual", "Measure"]
+    model_answer: |
+      "I'd start with data: incidents per rule over 30 days and how many were real. The top five noisy rules get
+      exceptions for known sources or better thresholds, and any that depend on bad parsing get fixed. Then a weekly
+      30-minute tuning session with the SOC lead. The target is fewer than 50 incidents a day, most of them worth
+      opening."
+    best_way: "Measure, tune, repeat."
+    rubric: ["uses data", "specific tuning actions", "sustainable process"]
+
+interview:
+  - id: M9.03.t01
+    stage: technical
+    question: "How do you reduce false positives in a SIEM without missing real attacks?"
+    testing: "Tuning judgement"
+    framework: "Measure → narrow → document → review"
+    model_answer: |
+      "I measure which rules create the noise, then narrow them with exceptions for specific known sources or adjust
+      thresholds based on real baselines, never by disabling the rule. Every exception has an owner, a reason and a
+      review date, and I review true-positive rates monthly."
+    best_way: "Narrow, not silence."
+    target: "0:30"
