@@ -1,0 +1,54 @@
+id: F1.03
+track: fortigate
+tier: 1
+order: 3
+kind: project
+title: Least privilege for staff Internet
+customer: Clínica San Rafael
+par: 30
+skills: [custom services, service groups, least privilege]
+brief: |
+  **Audit finding H-04:** "Staff-Internet allows ALL services." The auditor wants web only, plus the clinical records
+  app, which runs on **TCP 8443** at soporte.historiaclinica.co. Remote desktop and FTP to the Internet must stop.
+topology: {use: clinic-live}
+tasks:
+  - "Custom service LIS-8443: TCP 8443."
+  - "Service group SVC-STAFF-WEB: HTTP, HTTPS, DNS, LIS-8443."
+  - "Policy 1 uses SVC-STAFF-WEB instead of ALL."
+checks:
+  - text: "Staff browse HTTPS"
+    probe: {from: RECEPCION, to: www.google.com, proto: tcp, port: 443}
+  - text: "Staff resolve DNS"
+    probe: {from: RECEPCION, to: 8.8.8.8, proto: udp, port: 53}
+  - text: "The records app on 8443 works"
+    probe: {from: CONSULTORIO, to: soporte.historiaclinica.co, proto: tcp, port: 8443}
+  - text: "Remote desktop to the Internet is blocked"
+    probe: {from: RECEPCION, to: rdp.example.net, proto: tcp, port: 3389, expect: fail}
+  - text: "FTP to the Internet is blocked"
+    probe: {from: RECEPCION, to: ftp.example.net, proto: tcp, port: 21, expect: fail}
+  - text: "Policy 1 no longer uses ALL"
+    config: {dev: FGT-SR, path: firewall policy, key: "1", attr: service, lacks: [ALL]}
+hints:
+  - "Services live in `config firewall service custom` and `config firewall service group`."
+  - "`edit LIS-8443` / `set tcp-portrange 8443`. Group: `set member HTTP HTTPS DNS LIS-8443`."
+  - "In policy 1: `set service SVC-STAFF-WEB` replaces the list."
+solution:
+  FGT-SR: |
+    config firewall service custom
+    edit LIS-8443
+    set tcp-portrange 8443
+    next
+    end
+    config firewall service group
+    edit SVC-STAFF-WEB
+    set member HTTP HTTPS DNS LIS-8443
+    next
+    end
+    config firewall policy
+    edit 1
+    set service SVC-STAFF-WEB
+    next
+    end
+explain: |
+  Removing ALL also removes DNS unless you add it back: the classic "after hardening nobody can browse" ticket.
+  Service groups keep the policy readable and the auditor's evidence simple: one object that lists exactly what's allowed.

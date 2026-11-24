@@ -99,7 +99,7 @@ export function rebuild() {
     quizFirst: new Map(), // item -> correct on first graded try
     scenarios: [], drills: new Map(), bosses: new Map(), sessions: new Map(),
     userCards: [], reflections: [], xp: 0, reviews: 0, days: new Set(), pretests: 0,
-    xpByDay: new Map(),
+    xpByDay: new Map(), labParts: new Set(), labDone: new Map(),
   };
   const retention = () => Number(p.settings.retention || 0.9);
   const dayKey = (ts) => new Date(ts).toLocaleDateString("en-CA");
@@ -163,6 +163,17 @@ export function rebuild() {
       case "session_end": {
         const s = p.sessions.get(b.sid);
         if (s && !s.end) { s.end = e.ts; addXP(100, e.ts); }
+        break;
+      }
+      case "lab_part": {
+        const k = b.lab + ":" + b.part;
+        if (!p.labParts.has(k)) { p.labParts.add(k); addXP(b.revealed ? 10 : 40, e.ts); }
+        break;
+      }
+      case "lab_done": {
+        const prev = p.labDone.get(b.lab);
+        if (!prev) addXP(Math.round(b.score || 0) + (b.exam ? 50 : 0), e.ts);
+        if (!prev || (b.score || 0) > prev.score) p.labDone.set(b.lab, { score: b.score || 0, kind: b.kind, track: b.track, tier: b.tier, exam: !!b.exam, ts: e.ts });
         break;
       }
       case "reflection": p.reflections.push({ ...b, ts: e.ts }); break;
@@ -234,6 +245,10 @@ export const MEDALS = [
   { id: "debug-whisperer", name: "Debug Flow Whisperer", desc: "90% first-try on 10+ diagnostics items", test: (p) => { const xs = [...p.quizFirst.values()].filter((v) => v.module === "M4.12"); return xs.length >= 10 && xs.filter((v) => v.correct).length / xs.length >= 0.9; } },
   { id: "nat-ninja", name: "NAT Ninja", desc: "90% first-try on 15+ policy and NAT items", test: (p) => { const xs = [...p.quizFirst.values()].filter((v) => v.module === "M4.03"); return xs.length >= 15 && xs.filter((v) => v.correct).length / xs.length >= 0.9; } },
   { id: "lab-rat", name: "Lab Rat", desc: "Solve 5 labs solo", test: (p) => [...p.labs.entries()].filter(([k, v]) => k.endsWith(":solo") && v).length >= 5 },
+  { id: "first-console", name: "Console Cowboy", desc: "Finish your first simulator lab", test: (p) => p.labDone.size >= 1 },
+  { id: "sim-10", name: "Change Window Veteran", desc: "Finish 10 simulator labs", test: (p) => p.labDone.size >= 10 },
+  { id: "breakfix-3", name: "Ticket Slayer", desc: "Close 3 break-fix tickets", test: (p) => [...p.labDone.values()].filter((d) => d.kind === "ticket").length >= 3 },
+  { id: "exam-pass", name: "Under the Clock", desc: "Finish a lab in exam mode with 80+ points", test: (p) => [...p.labDone.values()].some((d) => d.exam && d.score >= 80) },
   { id: "streak-7", name: "Seven Fires", desc: "Study 7 days in a row", test: (p) => p.streak >= 7 },
   { id: "self-made", name: "Card Smith", desc: "Write 10 of your own cards", test: (p) => p.userCards.length >= 10 },
   { id: "level-10", name: "Double Digits", desc: "Reach level 10", test: (p) => p.level >= 10 },

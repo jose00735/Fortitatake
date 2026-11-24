@@ -1,0 +1,43 @@
+id: C0.01
+track: fortigate
+tier: 0
+order: 1
+kind: drill
+title: First contact with a FortiGate you've never seen
+customer: Clínica San Rafael
+par: 15
+skills: [get system status, routing table, show]
+brief: |
+  **Engagement kickoff, day 1.** Clínica San Rafael bought a PS health check. Before anyone changes anything,
+  the PS rule is simple: *document what's there*. The previous integrator left no notes.
+
+  You have read-write CLI on **FGT-SR**. Collect the facts the customer's IT lead asked for and answer below.
+  Don't change the configuration in this lab.
+topology: {use: clinic-live}
+tasks:
+  - Find the hostname, the serial number and the firmware version.
+  - Find which interface and gateway the default route uses.
+  - Find which firewall policy publishes the appointment portal (citas.clinicasanrafael.co).
+checks:
+  - text: "Ran `get system status`"
+    ran: {dev: FGT-SR, cmd: "^get sys(tem)? stat", fail: "Start with `get system status`: it's the first command on any new FortiGate."}
+  - text: "Looked at the routing table"
+    ran: {dev: FGT-SR, cmd: "get router info routing-table|get router info rout", fail: "Use `get router info routing-table all`."}
+  - text: "What is the serial number?"
+    answer: {accept: ["FGT60FTK23051842"], hint: "It's in the output of `get system status`, the Serial-Number line.", why: "Serial numbers go in every PS report and every TAC case."}
+  - text: "Default route: which interface and gateway? (e.g. port1 192.0.2.1)"
+    answer: {accept: ["~(wan1.*203\\.0\\.113\\.1|203\\.0\\.113\\.1.*wan1)"], hint: "Look for the S* line in the routing table.", why: "S* 0.0.0.0/0 via 203.0.113.1, wan1."}
+  - text: "Which policy ID publishes the portal?"
+    answer: {accept: ["2", "policy 2", "id 2"], hint: "`show firewall policy`, look for the policy whose destination is a VIP.", why: "Policy 2 (Citas-Publish) allows HTTPS from wan1 to the VIP VIP-CITAS-443."}
+hints:
+  - "Three read-only commands answer everything: one for the system, one for routing, one for policies."
+  - "`get system status`, `get router info routing-table all`, `show firewall policy`."
+solution:
+  FGT-SR: |
+    get system status
+    get router info routing-table all
+    show firewall policy
+explain: |
+  A PS consultant's first hour on an unknown box is read-only. `get system status` gives model, firmware,
+  serial, HA mode and VDOM mode; the routing table tells you how traffic leaves; `show firewall policy`
+  shows what's allowed. Note what you find before you touch anything: it's your baseline and your rollback.

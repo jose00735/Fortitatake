@@ -1,0 +1,59 @@
+id: F1.04
+track: fortigate
+tier: 1
+order: 4
+kind: ticket
+title: "\"We blocked remote desktop but it still works\""
+customer: Clínica San Rafael
+par: 20
+skills: [policy order, move, policy lookup]
+brief: |
+  **Ticket 2207, priority 3.** "Last week we created a policy to block remote desktop from the clinic to the Internet
+  (a doctor was using it to reach a home PC). It's there, but the doctor still connects."
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config firewall service custom
+        edit RDP-TCP
+        set tcp-portrange 3389
+        next
+        end
+        config firewall policy
+        edit 4
+        set name Block-RDP-Out
+        set srcintf internal
+        set dstintf wan1
+        set srcaddr LAN-Staff
+        set dstaddr all
+        set action deny
+        set schedule always
+        set service RDP-TCP
+        next
+        end
+tasks:
+  - "Prove which policy the RDP traffic matches today (diagnose firewall iprope lookup or debug flow)."
+  - "Fix it so policy 4 blocks RDP, without breaking web browsing."
+  - "Answer why the block didn't work."
+checks:
+  - text: "RDP from CONSULTORIO is now denied by policy 4"
+    probe: {from: CONSULTORIO, to: rdp.example.net, proto: tcp, port: 3389, expect: fail, blocked_by_policy: 4}
+  - text: "Web browsing still works"
+    probe: {from: CONSULTORIO, to: www.google.com, proto: tcp, port: 443}
+  - text: "Proved the match with a lookup or a debug"
+    ran: {dev: FGT-SR, cmd: "iprope lookup|debug flow", fail: "Show evidence first: `diagnose firewall iprope lookup <src> <sport> 52.10.20.30 3389 tcp internal`."}
+  - text: "Why didn't the block work?"
+    answer: {accept: ["~first|order|above|top|before|matched policy 1|policy 1"], hint: "Which policy did the lookup return?", why: "Policy 1 accepts ALL from LAN-Staff and sits above policy 4; FortiOS stops at the first match."}
+hints:
+  - "`diagnose firewall iprope lookup 10.10.10.101 50000 52.10.20.30 3389 tcp internal` tells you the winning policy."
+  - "Use `move 4 before 1` inside `config firewall policy`."
+solution:
+  FGT-SR: |
+    diagnose firewall iprope lookup 10.10.10.101 50000 52.10.20.30 3389 tcp internal
+    config firewall policy
+    move 4 before 1
+    end
+explain: |
+  Policy IDs are labels, not positions: policy 4 can sit at the top. `diagnose firewall iprope lookup` answers "which
+  policy wins" without generating traffic, which is ideal on a customer's production box.

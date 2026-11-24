@@ -1,0 +1,59 @@
+id: F1.05
+track: fortigate
+tier: 1
+order: 5
+kind: project
+title: A dedicated public IP for the backup server
+customer: Clínica San Rafael
+par: 30
+skills: [IP pools, SNAT, ARP reply, policy order]
+brief: |
+  The clinic's cloud backup vendor (soporte.historiaclinica.co) whitelists source IPs. Claro assigned the block
+  203.0.113.0/28. The vendor whitelisted **203.0.113.10** for NAS-01's uploads. Staff must keep leaving as 203.0.113.2.
+topology: {use: clinic-live}
+tasks:
+  - "IP pool POOL-BACKUP: 203.0.113.10 to 203.0.113.10, overload."
+  - "Address NAS-01 = 10.10.10.50/32."
+  - "Policy NAS-01 → wan1 (HTTPS) using the pool, above Staff-Internet."
+checks:
+  - text: "NAS-01 reaches the vendor as 203.0.113.10"
+    probe: {from: NAS-01, to: soporte.historiaclinica.co, proto: tcp, port: 443, snat: 203.0.113.10}
+  - text: "Reception still leaves as 203.0.113.2"
+    probe: {from: RECEPCION, to: www.google.com, proto: tcp, port: 443, snat: 203.0.113.2}
+  - text: "The pool answers ARP so Claro can return traffic"
+    config: {dev: FGT-SR, path: firewall ippool, key: POOL-BACKUP, attr: arp-reply, equals: enable}
+hints:
+  - "`config firewall ippool` / `edit POOL-BACKUP` / `set startip 203.0.113.10` / `set endip 203.0.113.10`."
+  - "In the policy: `set nat enable`, `set ippool enable`, `set poolname POOL-BACKUP`. Then move it above policy 1."
+solution:
+  FGT-SR: |
+    config firewall ippool
+    edit POOL-BACKUP
+    set startip 203.0.113.10
+    set endip 203.0.113.10
+    next
+    end
+    config firewall address
+    edit NAS-01
+    set subnet 10.10.10.50/32
+    next
+    end
+    config firewall policy
+    edit 20
+    set name NAS-Backup-Out
+    set srcintf internal
+    set dstintf wan1
+    set srcaddr NAS-01
+    set dstaddr all
+    set action accept
+    set schedule always
+    set service HTTPS DNS
+    set nat enable
+    set ippool enable
+    set poolname POOL-BACKUP
+    next
+    move 20 before 1
+    end
+explain: |
+  The ISP's router reaches 203.0.113.10 by ARP on the WAN segment; the FortiGate answers for pool addresses because
+  arp-reply is enabled by default. If the pool were outside the WAN subnet, the ISP would need a route to it instead.

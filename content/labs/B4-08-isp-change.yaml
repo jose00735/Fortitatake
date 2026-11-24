@@ -1,0 +1,61 @@
+id: B4.08
+track: fortigate
+tier: 4
+order: 8
+kind: ticket
+title: "\"After the ISP migration nothing goes out\""
+customer: Andes Logistics
+par: 25
+skills: [static routes, ARP, ISP migrations]
+brief: |
+  **Ticket 5120, priority 1.** Tonight HQ moved from ETB to a new circuit on the **same port1**: new block
+  **200.31.30.0/29**, FortiGate **200.31.30.2**, gateway **200.31.30.1**. The ISP's engineer readdressed the FortiGate's
+  interface and left. HQ has no Internet. The ISP says "our side is fine".
+topology:
+  use: andes
+  devices:
+    FGT-BOG:
+      config: |
+        config system interface
+        edit port1
+        set ip 200.31.30.2/29
+        next
+        end
+        config firewall policy
+        edit 1
+        set name HQ-Internet
+        set srcintf port2
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    ISP-ETB: {ifaces: [{name: ge0, ip: 200.31.30.1/29}, {name: inet0, ip: 198.51.100.14/30}]}
+tasks:
+  - "Prove where the traffic dies (routing table, debug flow or ARP table)."
+  - "Fix it and answer the root cause."
+checks:
+  - text: "HQ-PC browses the Internet"
+    probe: {from: HQ-PC, to: www.google.com, proto: tcp, port: 443}
+  - text: "Only one default route, via 200.31.30.1"
+    route: {dev: FGT-BOG, dst: 0.0.0.0/0, via: 200.31.30.1}
+  - text: "Root cause"
+    answer: {accept: ["~gateway|route|200\\.31\\.20\\.1|next.?hop|old"], hint: "`get router info routing-table all`: where does the default route point?", why: "The static default route still pointed to the old gateway 200.31.20.1, which no longer exists on the segment, so ARP for the next hop failed."}
+hints:
+  - "The debug flow shows the route lookup choosing gw-200.31.20.1."
+  - "Edit static route 1 and set gateway 200.31.30.1."
+solution:
+  FGT-BOG: |
+    get router info routing-table all
+    config router static
+    edit 1
+    set gateway 200.31.30.1
+    next
+    end
+explain: |
+  FortiOS keeps a static route active while its interface is up, even if the gateway is unreachable. ISP migrations need a
+  checklist: interface IP, default route, VIPs, IP pools, IPsec peers and anything the remote side whitelists.

@@ -10,6 +10,7 @@
 | P1 Engine MVP (Windows) | **Done, v0.1.0 (21 Nov 2026).** Go core + WebView2 window, event store, all ten session blocks, review, library, interview studio, progress, medals, both skins |
 | P2 Android + LAN sync (FTSP/1) | **Built, v0.2.0 (21 Nov 2026).** Protocol tested on Linux (unit, security and property tests; two-instance UI test). Not yet run on a real phone or across real Wi-Fi |
 | P3 Advanced items (topology, packet diagrams, voice capture) | Not started |
+| L1 Labs engine + tiers 0, 1, 4 | **Built, v0.4.0 (23 Nov 2026).** Emulated FortiOS 8.0.2 CLI, network simulator, grader, 24 labs |
 
 ### What v0.1.0 does
 
@@ -67,6 +68,20 @@
 - **Windows is always delivered as a zip containing an installer:** `fortitatake-vX.Y.Z-windows-setup.zip` with `FortiTatake-Setup-vX.Y.Z.exe` (NSIS, per-user, no admin) and `INSTALL.txt`. Build with `tools/build_windows.sh`; the script is `installer/fortitatake.nsi`.
 - Android is delivered as `fortitatake-vX.Y.Z.apk` from `tools/build_android.sh`.
 
+### What v0.4.0 adds (Labs)
+
+- **Labs** section: PS projects and tickets on an emulated FortiOS 8.0.2 CLI. Blueprint: Claude Doc "FortiTatake Labs — CLI Simulator Blueprint".
+- `tools/extract_cli.py` turns the FortiOS 8.0.2 CLI Reference PDF into `web/schema/fortios-8.0.2.json`: 644 config paths with attribute types, options, ranges and defaults, plus 5,751 diagnose/execute command names. **No Fortinet descriptions are copied** (the repo is public).
+- Engine (`web/js/labs/`, no DOM, tested in Node): `fgt.js` CLI and config tree (config/edit/set/unset/append/next/end/abort, delete/rename/clone/move/purge, show, show full-configuration, get, `?`, Tab, abbreviations, reference checks, FortiOS-style errors); `sim.js` packet path (VIP DNAT, local-in and allowaccess, trusted hosts, routing with distance/priority, loose/strict RPF, policies in order with zones, addresses, groups, FQDN, services, schedules, SNAT and IP pools, proxy ARP, sessions, MTU, TTL); `diag.js` (debug flow, sniffer, session list, iprope lookup, routing table, ARP, ping/traceroute, backup, DHCP leases; Windows/Linux host consoles; read-only ISP routers); `grader.js` (probe, config, DHCP, route, ran, backup, answer checks with plain-language explanations).
+- Lab packs in `content/labs/*.yaml` with reusable topologies (`_templates.yaml`: clinic, clinic-live, retail, retail-live, andes). `tools/build_labs.py` builds `web/content/labs.json`; `tools/test_labs.mjs` proves each lab fails at start and passes with its reference solution. Release scripts run both.
+- Labs can have parts (sub-labs unlocked in order), hints in three steps, a reveal (score capped), Exam mode (no hints, timed), and score → XP and four new medals. Progress resumes from localStorage by replaying the command log.
+
+| Tier | Labs |
+|---|---|
+| 0 Console | C0.01–C0.04 |
+| 1 Fundamentals | F1.01 (5-part clinic deployment), F1.02–F1.12 (F1.07 has 2 parts) |
+| 4 Break-fix | B4.01–B4.08 |
+
 ## Amendments to the blueprint
 
 1. **All learning logic lives in the shared web JS** (FSRS, projections, planner, XP, medals, mastery). The Go core only stores events, serves content, opens the window and, later, syncs. Android will reuse the same `web/` folder unchanged.
@@ -108,7 +123,14 @@ Sprint order follows the `order` field: interview track first (I1–I3), then fo
 
 Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
-### Next in the queue
+### Next in the queue (labs)
+
+1. v0.5.0 Core PS labs: IPsec (site-to-site, dial-up FortiClient), SD-WAN (members, health checks, rules), FGCP HA, security profiles and SSL inspection, users (LDAP/FSSO).
+2. v0.6.0 FortiManager and FortiAnalyzer devices + GUI panels, FortiSwitch, BGP/OSPF/ADVPN, VDOMs, more break-fix.
+3. v0.7.0 SecOps consoles: FortiAnalyzer SOC, FortiSIEM, FortiEDR, log generator.
+4. v0.8.0 Capstones and multi-product integration labs.
+
+### Next in the queue (study content)
 
 Ids follow CURRICULUM.md, written with two digits (M4.9 → M4.09).
 

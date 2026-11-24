@@ -1,0 +1,115 @@
+id: B4.05
+track: fortigate
+tier: 4
+order: 5
+kind: ticket
+title: "\"Accounting lost the ERP after the policy cleanup\""
+customer: Andes Logistics
+par: 20
+skills: [policy order, iprope lookup, change review]
+brief: |
+  **Ticket 5108, priority 2.** The security team "cleaned up" FGT-CLO's rulebase yesterday: they added a block on SQL
+  (1433) to the HQ network, because "only the ERP's web front end should be used". Accounting's reporting tool,
+  approved by management, uses SQL to **10.20.10.20** only. Today it fails; the web ERP still works.
+topology:
+  use: andes
+  devices:
+    FGT-BOG:
+      config: |
+        config router static
+        edit 2
+        set dst 10.30.0.0/24
+        set gateway 10.255.0.1
+        set device port3
+        next
+        end
+        config firewall policy
+        edit 1
+        set name CLO-to-BOG
+        set srcintf port3
+        set dstintf port2
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+    FGT-CLO:
+      config: |
+        config router static
+        edit 2
+        set dst 10.20.0.0/16
+        set gateway 10.255.0.5
+        set device wan2
+        next
+        end
+        config firewall address
+        edit BOG-LAN
+        set subnet 10.20.0.0/16
+        next
+        edit ERP-SRV
+        set subnet 10.20.10.20/32
+        next
+        end
+        config firewall service custom
+        edit SQL-1433
+        set tcp-portrange 1433
+        next
+        end
+        config firewall policy
+        edit 5
+        set name Block-SQL-to-HQ
+        set srcintf internal
+        set dstintf wan2
+        set srcaddr all
+        set dstaddr BOG-LAN
+        set action deny
+        set schedule always
+        set service SQL-1433
+        next
+        edit 6
+        set name Reporting-SQL
+        set srcintf internal
+        set dstintf wan2
+        set srcaddr all
+        set dstaddr ERP-SRV
+        set action accept
+        set schedule always
+        set service SQL-1433
+        next
+        edit 7
+        set name CLO-to-BOG
+        set srcintf internal
+        set dstintf wan2
+        set srcaddr all
+        set dstaddr BOG-LAN
+        set action accept
+        set schedule always
+        set service HTTPS
+        next
+        end
+tasks:
+  - "Find which policy drops SQL to 10.20.10.20 (no guessing: use a lookup)."
+  - "Fix it so SQL reaches the ERP, but SQL to any other HQ address stays blocked."
+checks:
+  - text: "CLO-PC reaches SQL on the ERP"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 1433}
+  - text: "The web ERP still works"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "SQL to other HQ hosts is still blocked"
+    probe: {from: CLO-PC, to: 10.20.10.50, proto: tcp, port: 1433, expect: fail}
+  - text: "Proved the match first"
+    ran: {dev: FGT-CLO, cmd: "iprope lookup|debug flow", fail: "Use `diagnose firewall iprope lookup 10.30.0.20 50000 10.20.10.20 1433 tcp internal`."}
+hints:
+  - "Policy 6 exists and is correct. Why doesn't it match?"
+  - "Move 6 above 5: the exception must come before the general block."
+solution:
+  FGT-CLO: |
+    diagnose firewall iprope lookup 10.30.0.20 50000 10.20.10.20 1433 tcp internal
+    config firewall policy
+    move 6 before 5
+    end
+explain: |
+  Exceptions go above the rule they're an exception to. In change reviews, read new policies in their final position, not
+  by ID: the GUI's sequence view or `show firewall policy` lists them in evaluation order.

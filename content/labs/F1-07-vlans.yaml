@@ -1,0 +1,208 @@
+id: F1.07
+track: fortigate
+tier: 1
+order: 7
+kind: project
+title: "Tiendas Macondo: VLANs for staff, card terminals and guests"
+customer: Tiendas Macondo (retail chain, Barranquilla store)
+par: 50
+skills: [VLAN interfaces, DHCP per VLAN, segmentation, PCI scope]
+brief: |
+  **SOW 2026-131 · store network refresh.** The store's switch trunks three VLANs to the FortiGate-40F on lan1:
+  **10 Staff**, **20 POS** (card terminals) and **30 Guest** Wi-Fi. WAN and the default route are already in place.
+
+  The acquirer's PCI assessor requires card terminals to reach only the payment processor, **api.pagos.co**
+  (HTTPS), and guests to be fully separated from the store's networks.
+topology:
+  use: retail
+  devices:
+    FGT-MAC:
+      config: |
+        config system interface
+        edit wan
+        set ip 181.49.10.2/29
+        set allowaccess ping
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+        config router static
+        edit 1
+        set gateway 181.49.10.1
+        set device wan
+        next
+        end
+parts:
+  - id: a
+    title: VLAN interfaces and DHCP
+    tasks:
+      - "VLAN interfaces on lan1: STAFF (VLAN 10, 10.40.10.1/24), POS (VLAN 20, 10.40.20.1/24), GUEST (VLAN 30, 10.40.30.1/24)."
+      - "A DHCP server on each, range .100 to .199, gateway .1, DNS from the system DNS."
+      - "Allow ping on all three; HTTPS and SSH only on STAFF."
+    checks:
+      - text: "STAFF-PC gets 10.40.10.x with gateway 10.40.10.1"
+        dhcp: {host: STAFF-PC, in: 10.40.10.0/24, gw: 10.40.10.1, dns: 8.8.8.8}
+      - text: "POS-01 gets 10.40.20.x with gateway 10.40.20.1"
+        dhcp: {host: POS-01, in: 10.40.20.0/24, gw: 10.40.20.1}
+      - text: "GUEST-PHONE gets 10.40.30.x with gateway 10.40.30.1"
+        dhcp: {host: GUEST-PHONE, in: 10.40.30.0/24, gw: 10.40.30.1}
+      - text: "Guests can't open the GUI"
+        probe: {from: GUEST-PHONE, to: 10.40.30.1, proto: tcp, port: 443, expect: fail}
+    hints:
+      - "A VLAN interface is a new entry in `config system interface` with `set type vlan`, `set interface lan1` and `set vlanid 10`."
+      - "Name ≤ 15 characters. Each one needs its own DHCP server entry pointing at the VLAN interface, not lan1."
+    solution:
+      FGT-MAC: |
+        config system interface
+        edit STAFF
+        set vdom root
+        set type vlan
+        set interface lan1
+        set vlanid 10
+        set ip 10.40.10.1/24
+        set allowaccess ping https ssh
+        set role lan
+        next
+        edit POS
+        set vdom root
+        set type vlan
+        set interface lan1
+        set vlanid 20
+        set ip 10.40.20.1/24
+        set allowaccess ping
+        set role lan
+        next
+        edit GUEST
+        set vdom root
+        set type vlan
+        set interface lan1
+        set vlanid 30
+        set ip 10.40.30.1/24
+        set allowaccess ping
+        set role lan
+        next
+        end
+        config system dhcp server
+        edit 10
+        set interface STAFF
+        set default-gateway 10.40.10.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.40.10.100
+        set end-ip 10.40.10.199
+        next
+        end
+        next
+        edit 20
+        set interface POS
+        set default-gateway 10.40.20.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.40.20.100
+        set end-ip 10.40.20.199
+        next
+        end
+        next
+        edit 30
+        set interface GUEST
+        set default-gateway 10.40.30.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.40.30.100
+        set end-ip 10.40.30.199
+        next
+        end
+        next
+        end
+    explain: |
+      The physical port carries the tags; each VLAN interface is a separate Layer 3 interface with its own IP, DHCP,
+      allowaccess and policies. A wrong VLAN ID is invisible in the GUI's interface list and is a classic "only one
+      VLAN has no DHCP" ticket.
+  - id: b
+    title: Segmentation policies
+    tasks:
+      - "Address PAGOS-API = FQDN api.pagos.co."
+      - "POS → wan: only PAGOS-API on HTTPS (plus DNS). Nothing else."
+      - "STAFF → wan: web (HTTP, HTTPS, DNS)."
+      - "GUEST → wan: web (HTTP, HTTPS, DNS). Guests must not reach STAFF or POS."
+      - "All three with NAT."
+    checks:
+      - text: "POS-01 reaches api.pagos.co on 443"
+        probe: {from: POS-01, to: api.pagos.co, proto: tcp, port: 443}
+      - text: "POS-01 can't browse the web"
+        probe: {from: POS-01, to: www.google.com, proto: tcp, port: 443, expect: fail}
+      - text: "Staff browse the web"
+        probe: {from: STAFF-PC, to: www.google.com, proto: tcp, port: 443}
+      - text: "Guests browse the web"
+        probe: {from: GUEST-PHONE, to: www.google.com, proto: tcp, port: 443}
+      - text: "Guests can't reach a card terminal"
+        probe: {from: GUEST-PHONE, to: "@POS-01", expect: fail}
+      - text: "Guests can't reach staff"
+        probe: {from: GUEST-PHONE, to: "@STAFF-PC", expect: fail}
+    hints:
+      - "Without a policy between GUEST and POS, the implicit deny already separates them. Don't add an 'any → any' rule."
+      - "For POS use dstaddr PAGOS-API and service HTTPS, then a second policy for DNS to all."
+    solution:
+      FGT-MAC: |
+        config firewall address
+        edit PAGOS-API
+        set type fqdn
+        set fqdn api.pagos.co
+        next
+        end
+        config firewall policy
+        edit 1
+        set name POS-to-Pagos
+        set srcintf POS
+        set dstintf wan
+        set srcaddr all
+        set dstaddr PAGOS-API
+        set action accept
+        set schedule always
+        set service HTTPS
+        set nat enable
+        next
+        edit 2
+        set name POS-DNS
+        set srcintf POS
+        set dstintf wan
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service DNS
+        set nat enable
+        next
+        edit 3
+        set name Staff-Web
+        set srcintf STAFF
+        set dstintf wan
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service HTTP HTTPS DNS
+        set nat enable
+        next
+        edit 4
+        set name Guest-Web
+        set srcintf GUEST
+        set dstintf wan
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service HTTP HTTPS DNS
+        set nat enable
+        next
+        end
+    explain: |
+      Segmentation is mostly what you *don't* configure: no policy between GUEST and the store VLANs means the implicit
+      deny (policy 0) drops it. For PCI, this is how you shrink the cardholder data environment to the POS VLAN and prove it.

@@ -1,0 +1,45 @@
+id: F1.10
+track: fortigate
+tier: 1
+order: 10
+kind: project
+title: Guest Wi-Fi only during store hours
+customer: Tiendas Macondo
+par: 25
+skills: [recurring schedules, time-based policies]
+brief: |
+  Neighbours were using the store's guest Wi-Fi at night for downloads. Management wants guest Internet only during
+  store hours: **Monday to Saturday, 08:00 to 20:00**. Staff and card terminals are unaffected.
+topology: {use: retail-live}
+tasks:
+  - "Recurring schedule STORE-HOURS: monday to saturday, 08:00 to 20:00."
+  - "Apply it to the Guest-Web policy (4)."
+checks:
+  - text: "Tuesday 10:00: guests browse"
+    probe: {from: GUEST-PHONE, to: www.google.com, proto: tcp, port: 443, at: "2026-11-24T10:00:00-05:00"}
+  - text: "Tuesday 21:30: guests are blocked"
+    probe: {from: GUEST-PHONE, to: www.google.com, proto: tcp, port: 443, at: "2026-11-24T21:30:00-05:00", expect: fail}
+  - text: "Sunday 11:00: guests are blocked"
+    probe: {from: GUEST-PHONE, to: www.google.com, proto: tcp, port: 443, at: "2026-11-29T11:00:00-05:00", expect: fail}
+  - text: "Tuesday 21:30: staff still browse"
+    probe: {from: STAFF-PC, to: www.google.com, proto: tcp, port: 443, at: "2026-11-24T21:30:00-05:00"}
+hints:
+  - "`config firewall schedule recurring` / `edit STORE-HOURS` / `set day monday tuesday wednesday thursday friday saturday` / `set start 08:00` / `set end 20:00`."
+  - "Then in policy 4: `set schedule STORE-HOURS`."
+solution:
+  FGT-MAC: |
+    config firewall schedule recurring
+    edit STORE-HOURS
+    set day monday tuesday wednesday thursday friday saturday
+    set start 08:00
+    set end 20:00
+    next
+    end
+    config firewall policy
+    edit 4
+    set schedule STORE-HOURS
+    next
+    end
+explain: |
+  A policy outside its schedule simply doesn't match, so traffic falls through to the next policy (here, the implicit deny).
+  Sessions already open when the schedule ends can stay up until they time out unless `schedule-timeout` is enabled on the policy.

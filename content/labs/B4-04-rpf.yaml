@@ -1,0 +1,115 @@
+id: B4.04
+track: fortigate
+tier: 4
+order: 4
+kind: ticket
+title: "\"Cali can't reach the ERP, but the tunnel is up\""
+customer: Andes Logistics
+par: 25
+skills: [reverse path check, routing, debug flow, two-device troubleshooting]
+brief: |
+  **Ticket 5101, priority 2.** After a FortiGate replacement at HQ, Cali users can't open the ERP (10.20.10.20). The new
+  HQ FortiGate was "configured from the old backup". The carrier confirms the MPLS circuit is clean.
+topology:
+  use: andes
+  devices:
+    FGT-BOG:
+      config: |
+        config firewall address
+        edit BOG-LAN
+        set subnet 10.20.0.0/16
+        next
+        edit CLO-LAN
+        set subnet 10.30.0.0/24
+        next
+        end
+        config firewall policy
+        edit 1
+        set name CLO-to-BOG
+        set srcintf port3
+        set dstintf port2
+        set srcaddr CLO-LAN
+        set dstaddr BOG-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 2
+        set name BOG-to-CLO
+        set srcintf port2
+        set dstintf port3
+        set srcaddr BOG-LAN
+        set dstaddr CLO-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+    FGT-CLO:
+      config: |
+        config router static
+        edit 2
+        set dst 10.20.0.0/16
+        set gateway 10.255.0.5
+        set device wan2
+        next
+        end
+        config firewall address
+        edit BOG-LAN
+        set subnet 10.20.0.0/16
+        next
+        edit CLO-LAN
+        set subnet 10.30.0.0/24
+        next
+        end
+        config firewall policy
+        edit 1
+        set name CLO-to-BOG
+        set srcintf internal
+        set dstintf wan2
+        set srcaddr CLO-LAN
+        set dstaddr BOG-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 2
+        set name BOG-to-CLO
+        set srcintf wan2
+        set dstintf internal
+        set srcaddr BOG-LAN
+        set dstaddr CLO-LAN
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+tasks:
+  - "Run a debug flow on FGT-BOG while CLO-PC tests the ERP."
+  - "Fix it and answer the root cause."
+checks:
+  - text: "CLO-PC opens the ERP on 443"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "HQ-PC reaches CLO-PC"
+    probe: {from: HQ-PC, to: 10.30.0.20}
+  - text: "Root cause"
+    answer: {accept: ["~reverse|rpf|route back|return route|no route|anti.?spoof"], hint: "Read the debug flow's last line on FGT-BOG.", why: "FGT-BOG had no route to 10.30.0.0/24 through port3, so the reverse path check dropped Cali's packets on arrival."}
+hints:
+  - "On FGT-BOG: `diagnose debug flow filter addr 10.30.0.20`, `diagnose debug enable`, `diagnose debug flow trace start 10`. Then test from CLO-PC."
+  - "`reverse path check fail, drop` means: no route back to the source through the interface it came in on."
+solution:
+  FGT-BOG: |
+    diagnose debug flow filter addr 10.30.0.20
+    diagnose debug enable
+    diagnose debug flow trace start 10
+    config router static
+    edit 0
+    set dst 10.30.0.0/24
+    set gateway 10.255.0.1
+    set device port3
+    next
+    end
+explain: |
+  The reverse path check (anti-spoofing) drops a new session whose source isn't reachable through the incoming interface.
+  The default route points to the ISP on port1, so 10.30.0.20 "should" come from port1, not from the MPLS. Restoring the
+  static route fixes both directions.

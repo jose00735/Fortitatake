@@ -1,0 +1,120 @@
+id: F1.09
+track: fortigate
+tier: 1
+order: 9
+kind: project
+title: "Andes Logistics: route HQ and the Cali branch over MPLS"
+customer: Andes Logistics (freight, Bogotá HQ + Cali branch)
+par: 40
+skills: [static routes, policies without NAT, two FortiGates]
+brief: |
+  **SOW 2026-140.** The carrier delivered the MPLS circuit between Bogotá and Cali. Cali's users need the ERP at HQ
+  (**ERP-SRV, 10.20.10.20**, HTTPS and SQL 1433). The ERP's licence server logs the real client IP, so **no NAT** across MPLS.
+  Each site keeps its own Internet breakout.
+
+  | Site | LAN | MPLS address | Carrier next hop |
+  | --- | --- | --- | --- |
+  | Bogotá (FGT-BOG) | 10.20.10.0/24 (summary 10.20.0.0/16) | port3 10.255.0.2/30 | 10.255.0.1 |
+  | Cali (FGT-CLO) | 10.30.0.0/24 | wan2 10.255.0.6/30 | 10.255.0.5 |
+topology: {use: andes}
+tasks:
+  - "FGT-BOG: route 10.30.0.0/24 via 10.255.0.1 on port3; policies port2 ↔ port3 for the sites, no NAT."
+  - "FGT-CLO: route 10.20.0.0/16 via 10.255.0.5 on wan2; policies internal ↔ wan2, no NAT."
+  - "Test from CLO-PC: tnc 10.20.10.20 -port 443."
+checks:
+  - text: "CLO-PC opens the ERP on 443, and the ERP sees 10.30.0.20"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443, seen_src: 10.30.0.20}
+  - text: "CLO-PC reaches SQL 1433 on the ERP"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 1433}
+  - text: "HQ-PC pings CLO-PC"
+    probe: {from: HQ-PC, to: 10.30.0.20}
+  - text: "FGT-BOG routes 10.30.0.0/24 to the carrier"
+    route: {dev: FGT-BOG, dst: 10.30.0.0/24, via: 10.255.0.1}
+  - text: "FGT-CLO routes 10.20.0.0/16 to the carrier"
+    route: {dev: FGT-CLO, dst: 10.20.0.0/16, via: 10.255.0.5}
+hints:
+  - "Each FortiGate needs a route to the other site, and policies in both directions: two devices, four policies."
+  - "Without a route back, the remote FortiGate drops the traffic with 'reverse path check fail'."
+  - "Address objects make the policies readable: BOG-LAN 10.20.0.0/16 and CLO-LAN 10.30.0.0/24 on both FortiGates."
+solution:
+  FGT-BOG: |
+    config router static
+    edit 0
+    set dst 10.30.0.0/24
+    set gateway 10.255.0.1
+    set device port3
+    next
+    end
+    config firewall address
+    edit BOG-LAN
+    set subnet 10.20.0.0/16
+    next
+    edit CLO-LAN
+    set subnet 10.30.0.0/24
+    next
+    end
+    config firewall policy
+    edit 0
+    set name CLO-to-BOG
+    set srcintf port3
+    set dstintf port2
+    set srcaddr CLO-LAN
+    set dstaddr BOG-LAN
+    set action accept
+    set schedule always
+    set service ALL
+    next
+    edit 0
+    set name BOG-to-CLO
+    set srcintf port2
+    set dstintf port3
+    set srcaddr BOG-LAN
+    set dstaddr CLO-LAN
+    set action accept
+    set schedule always
+    set service ALL
+    next
+    end
+  FGT-CLO: |
+    config router static
+    edit 0
+    set dst 10.20.0.0/16
+    set gateway 10.255.0.5
+    set device wan2
+    next
+    end
+    config firewall address
+    edit BOG-LAN
+    set subnet 10.20.0.0/16
+    next
+    edit CLO-LAN
+    set subnet 10.30.0.0/24
+    next
+    end
+    config firewall policy
+    edit 0
+    set name CLO-to-BOG
+    set srcintf internal
+    set dstintf wan2
+    set srcaddr CLO-LAN
+    set dstaddr BOG-LAN
+    set action accept
+    set schedule always
+    set service ALL
+    next
+    edit 0
+    set name BOG-to-CLO
+    set srcintf wan2
+    set dstintf internal
+    set srcaddr BOG-LAN
+    set dstaddr CLO-LAN
+    set action accept
+    set schedule always
+    set service ALL
+    next
+    end
+  CLO-PC: |
+    tnc 10.20.10.20 -port 443
+explain: |
+  Two FortiGates means two routing tables and two rulebases: a flow needs routes and policies on both, in both directions
+  for traffic started from either side. Leaving NAT off keeps the real client IP for licensing and logs.

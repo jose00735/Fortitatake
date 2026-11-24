@@ -1,0 +1,78 @@
+id: F1.11
+track: fortigate
+tier: 1
+order: 11
+kind: ticket
+title: "\"Card payments are failing in every store\""
+customer: Tiendas Macondo
+par: 25
+skills: [FQDN addresses, debug flow, vendor IP changes]
+brief: |
+  **Ticket 3310, priority 1.** Since 06:00 card payments fail at the Barranquilla store: the terminals show
+  "host unreachable". The payment processor sent a notice last month: *"api.pagos.co moves to new infrastructure on
+  November 24."* The store's previous integrator hard-coded the processor's IP.
+topology:
+  use: retail-live
+  dns: {api.pagos.co: 190.85.33.77}
+  devices:
+    INTERNET:
+      hosts:
+        - {name: dns.google, ip: 8.8.8.8, services: [udp/53]}
+        - {name: api-old.pagos.co, ip: 190.85.33.10, services: []}
+        - {name: api.pagos.co, ip: 190.85.33.77, services: [tcp/443]}
+        - {name: www.google.com, ip: 142.250.78.4, services: [tcp/80, tcp/443]}
+    FGT-MAC:
+      config: |
+        config firewall address
+        edit PAGOS-IP
+        set subnet 190.85.33.10/32
+        next
+        end
+        config firewall policy
+        edit 1
+        set dstaddr PAGOS-IP
+        next
+        end
+        config firewall address
+        delete PAGOS-API
+        end
+tasks:
+  - "Confirm with debug flow which policy POS traffic to api.pagos.co hits."
+  - "Fix it so a future IP change doesn't break payments again."
+  - "Answer the root cause."
+checks:
+  - text: "POS-01 pays: api.pagos.co reachable on 443"
+    probe: {from: POS-01, to: api.pagos.co, proto: tcp, port: 443}
+  - text: "POS-01 still can't browse"
+    probe: {from: POS-01, to: www.google.com, proto: tcp, port: 443, expect: fail}
+  - text: "Policy 1 uses an FQDN object"
+    config: {dev: FGT-MAC, path: firewall policy, key: "1", attr: dstaddr, has: [PAGOS-API]}
+  - text: "Ran a debug flow"
+    ran: {dev: FGT-MAC, cmd: "debug flow", fail: "Collect evidence: `diagnose debug flow filter addr 190.85.33.77`, `diagnose debug enable`, `diagnose debug flow trace start 10`, then pay from POS-01."}
+  - text: "Root cause in one line"
+    answer: {accept: ["~ip|address|fqdn|hard.?coded|dns"], hint: "Compare `nslookup api.pagos.co` on POS-01 with the address object in policy 1.", why: "The policy allowed the old IP 190.85.33.10; the processor now resolves to 190.85.33.77, so POS traffic fell to the implicit deny."}
+hints:
+  - "On POS-01, `nslookup api.pagos.co`. Then `show firewall address PAGOS-IP` on the FortiGate."
+  - "Create PAGOS-API as `set type fqdn` / `set fqdn api.pagos.co` and put it in policy 1 instead of PAGOS-IP."
+solution:
+  FGT-MAC: |
+    diagnose debug flow filter addr 190.85.33.77
+    diagnose debug enable
+    diagnose debug flow trace start 5
+    config firewall address
+    edit PAGOS-API
+    set type fqdn
+    set fqdn api.pagos.co
+    next
+    end
+    config firewall policy
+    edit 1
+    set dstaddr PAGOS-API
+    next
+    end
+  POS-01: |
+    nslookup api.pagos.co
+explain: |
+  Debug flow shows "Denied by forward policy check (policy 0)": no policy matches the new IP. FQDN objects track the
+  vendor's DNS, which is how SaaS and payment APIs should be allowed. Mind that the FortiGate and the clients should use
+  the same DNS, or they may resolve different IPs.

@@ -1,0 +1,61 @@
+id: B4.03
+track: fortigate
+tier: 4
+order: 3
+kind: ticket
+title: "\"New PCs get 169.254 addresses\""
+customer: Clínica San Rafael
+par: 20
+skills: [DHCP, re-addressing]
+brief: |
+  **Ticket 4033, priority 2.** The clinic re-addressed its LAN to 10.10.20.0/24 last weekend (new numbering plan).
+  Existing PCs with static IPs were changed by hand and work. DHCP clients, like RECEPCION and CONSULTORIO,
+  "get 169.254 addresses and no Internet".
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config system interface
+        edit internal
+        set ip 10.10.20.1/24
+        next
+        end
+        config firewall address
+        edit LAN-Staff
+        set subnet 10.10.20.0/24
+        next
+        end
+    ADMIN-PC: {nic: {ip: 10.10.20.10/24, gw: 10.10.20.1, dns: [8.8.8.8]}}
+    NAS-01: {nic: {ip: 10.10.20.50/24, gw: 10.10.20.1, dns: [8.8.8.8]}}
+tasks:
+  - "Find why DHCP stopped and fix it for the new numbering."
+  - "Renew on RECEPCION and confirm Internet."
+checks:
+  - text: "RECEPCION gets a 10.10.20.x lease with gateway 10.10.20.1"
+    dhcp: {host: RECEPCION, in: 10.10.20.0/24, gw: 10.10.20.1}
+  - text: "RECEPCION browses the Internet"
+    probe: {from: RECEPCION, to: www.google.com, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~range|ip-range|gateway|10\\.10\\.10|old|subnet"], hint: "`show system dhcp server`: compare it with the interface IP.", why: "The DHCP range and gateway still pointed at 10.10.10.0/24, outside the interface's new subnet, so the server offered nothing."}
+hints:
+  - "`show system dhcp server` and `show system interface internal`."
+  - "Update default-gateway and the ip-range (start-ip, end-ip) to 10.10.20.x."
+solution:
+  FGT-SR: |
+    config system dhcp server
+    edit 1
+    set default-gateway 10.10.20.1
+    config ip-range
+    edit 1
+    set start-ip 10.10.20.100
+    set end-ip 10.10.20.199
+    next
+    end
+    next
+    end
+  RECEPCION: |
+    ipconfig /renew
+explain: |
+  Re-addressing checklists must include DHCP scopes, address objects, VIPs, routes and trusted hosts. Anything that
+  embeds the old subnet breaks quietly.

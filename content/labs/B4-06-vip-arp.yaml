@@ -1,0 +1,57 @@
+id: B4.06
+track: fortigate
+tier: 4
+order: 6
+kind: ticket
+title: "\"The new public IP for the portal doesn't answer\""
+customer: Clínica San Rafael
+par: 25
+skills: [VIP, ARP, public IP blocks]
+brief: |
+  **Ticket 4051, priority 2.** The clinic moved the portal to its own public IP, **203.0.113.5** (part of their /28 from
+  Claro), so DNS now points citas.clinicasanrafael.co there. Staff tested inside and it works. From outside, nothing.
+  The VIP and the policy "are identical to the old ones except the IP".
+topology:
+  use: clinic-live
+  dns: {citas.clinicasanrafael.co: 203.0.113.5}
+  devices:
+    FGT-SR:
+      config: |
+        config firewall vip
+        edit VIP-CITAS-NEW
+        set extip 203.0.113.5
+        set mappedip 192.168.50.10
+        set extintf wan1
+        set portforward enable
+        set extport 443
+        set mappedport 443
+        set arp-reply disable
+        next
+        end
+        config firewall policy
+        edit 2
+        set dstaddr VIP-CITAS-NEW
+        next
+        end
+tasks:
+  - "Test from HOME-PC and from the ISP router (ISP-CLARO: ping 203.0.113.5)."
+  - "Compare the new VIP with how ARP works on the WAN segment, fix it, answer the root cause."
+checks:
+  - text: "HOME-PC reaches the portal on 203.0.113.5"
+    probe: {from: HOME-PC, to: citas.clinicasanrafael.co, proto: tcp, port: 443, dnat: 192.168.50.10}
+  - text: "Root cause"
+    answer: {accept: ["~arp"], hint: "How does Claro's router find which device owns 203.0.113.5 on the WAN segment?", why: "arp-reply was disabled on the VIP, so the FortiGate never answered ARP for 203.0.113.5 and Claro's router couldn't deliver the packets."}
+hints:
+  - "The ISP router reaches addresses in its connected /28 by ARP. Debug flow on the FortiGate shows nothing: the packet never arrives."
+  - "`show firewall vip VIP-CITAS-NEW`: look at arp-reply."
+solution:
+  FGT-SR: |
+    config firewall vip
+    edit VIP-CITAS-NEW
+    set arp-reply enable
+    next
+    end
+explain: |
+  When the debug flow is silent, the packet never reached the FortiGate: look at Layer 2 and the upstream device. For a VIP
+  or pool in the WAN subnet, the FortiGate must answer ARP (arp-reply enable, the default); for a block routed by the ISP
+  to the FortiGate, ARP isn't involved.

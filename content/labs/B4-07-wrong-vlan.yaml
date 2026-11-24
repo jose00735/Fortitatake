@@ -1,0 +1,48 @@
+id: B4.07
+track: fortigate
+tier: 4
+order: 7
+kind: ticket
+title: "\"Only the card terminals are offline\""
+customer: Tiendas Macondo
+par: 20
+skills: [VLAN tagging, DHCP, layer 2 vs layer 3]
+brief: |
+  **Ticket 3344, priority 1.** At the new Santa Marta store, staff PCs and guest Wi-Fi work. Both card terminals show
+  "no network" and get 169.254 addresses. The switch technician swears the POS ports are in **VLAN 20**, as in every store.
+  The FortiGate was cloned from Barranquilla and edited by hand.
+topology:
+  use: retail-live
+  devices:
+    FGT-MAC:
+      config: |
+        config system interface
+        edit POS
+        set vlanid 21
+        next
+        end
+tasks:
+  - "Find why the POS VLAN gets no DHCP while the others do."
+  - "Fix it; make POS-01 renew; answer the root cause."
+checks:
+  - text: "POS-01 gets a 10.40.20.x lease"
+    dhcp: {host: POS-01, in: 10.40.20.0/24, gw: 10.40.20.1}
+  - text: "POS-01 reaches api.pagos.co"
+    probe: {from: POS-01, to: api.pagos.co, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~vlan.?id|vlan 21|21|tag"], hint: "Compare `show system interface POS` with the switch's VLAN.", why: "The POS interface was tagged VLAN 21 while the switch sends VLAN 20, so the terminals' DHCP requests never reached it."}
+hints:
+  - "The DHCP server and the IP are fine. What makes the FortiGate *receive* the terminal's frames?"
+  - "`show system interface POS`: look at vlanid."
+solution:
+  FGT-MAC: |
+    config system interface
+    edit POS
+    set vlanid 20
+    next
+    end
+  POS-01: |
+    ipconfig /renew
+explain: |
+  VLAN IDs must match on both ends of the trunk. Nothing in the FortiGate's config looks "broken", which is why
+  hand-edited clones are a risk: FortiManager templates with per-store variables avoid this whole class of error.

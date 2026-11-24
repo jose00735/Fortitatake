@@ -1,0 +1,59 @@
+id: F1.06
+track: fortigate
+tier: 1
+order: 6
+kind: project
+title: SSH for the portal vendor, on a non-standard port
+customer: Clínica San Rafael
+par: 30
+skills: [VIP port translation, source restriction, multiple VIPs on one IP]
+brief: |
+  The portal's developer (fixed IP **45.60.12.8**) needs SSH to WEB-CITAS for maintenance. The clinic will only allow
+  it on **203.0.113.2:2222** and only from the vendor. HTTPS for patients must keep working.
+topology: {use: clinic-live}
+tasks:
+  - "VIP VIP-CITAS-SSH: 203.0.113.2 TCP 2222 → 192.168.50.10 TCP 22."
+  - "Address VENDOR-DEV = 45.60.12.8/32."
+  - "Policy wan1 → dmz from VENDOR-DEV to the new VIP, service SSH."
+checks:
+  - text: "The vendor reaches SSH on 2222"
+    probe: {from: "INTERNET:45.60.12.8", to: 203.0.113.2, proto: tcp, port: 2222, dnat: 192.168.50.10}
+  - text: "Anyone else is blocked on 2222"
+    probe: {from: HOME-PC, to: 203.0.113.2, proto: tcp, port: 2222, expect: fail}
+  - text: "Patients still reach the portal on 443"
+    probe: {from: HOME-PC, to: citas.clinicasanrafael.co, proto: tcp, port: 443}
+hints:
+  - "Two port-forward VIPs can share one external IP as long as the external ports differ."
+  - "The policy's service is checked after translation: use SSH (22), not a custom 2222 service."
+solution:
+  FGT-SR: |
+    config firewall vip
+    edit VIP-CITAS-SSH
+    set extip 203.0.113.2
+    set mappedip 192.168.50.10
+    set extintf wan1
+    set portforward enable
+    set extport 2222
+    set mappedport 22
+    next
+    end
+    config firewall address
+    edit VENDOR-DEV
+    set subnet 45.60.12.8/32
+    next
+    end
+    config firewall policy
+    edit 0
+    set name Vendor-SSH
+    set srcintf wan1
+    set dstintf dmz
+    set srcaddr VENDOR-DEV
+    set dstaddr VIP-CITAS-SSH
+    set action accept
+    set schedule always
+    set service SSH
+    next
+    end
+explain: |
+  DNAT happens before the policy lookup, so the policy sees port 22. Restricting the source is what makes a published
+  admin service acceptable; an open SSH port on a clinic's public IP is brute-forced within hours.

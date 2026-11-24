@@ -1,0 +1,110 @@
+// A running lab: the simulated network, one console per device, the current part, hints, timing and score.
+import { Lab } from "./sim.js";
+import "./diag.js";
+import { hostRun, routerRun } from "./diag.js";
+import { runChecks } from "./grader.js";
+import { FortiGate } from "./fgt.js";
+
+export class LabRun {
+  constructor(def, schemas, saved) {
+    this.def = def;
+    this.schemas = schemas;
+    this.parts = def.parts;
+    this.lab = new Lab(def.topology, schemas);
+    this.part = 0;
+    this.passed = new Set();       // part ids completed
+    this.hints = {};               // part id -> hints shown
+    this.revealed = {};            // part id -> solution revealed
+    this.answers = {};             // check id -> typed answer
+    this.results = {};             // part id -> last check results
+    this.log = [];                 // [{dev, line}] replayable
+    this.started = Date.now();
+    this.elapsed = 0;
+    this.checksRun = 0;
+    this.verified = 0;             // diagnostics run before pressing Check
+    if (saved) this.restore(saved);
+  }
+  get current() { return this.parts[this.part]; }
+  device(id) { return this.lab.dev(id); }
+  consoleDevices() { return this.lab.order.map((id) => this.lab.dev(id)).filter((d) => d.kind !== "cloud"); }
+
+  // run a line on a device console; returns the text to print (async debug output appended)
+  exec(devId, line, record = true) {
+    const d = this.lab.dev(devId);
+    let out;
+    if (d instanceof FortiGate) {
+      out = d.run(line);
+      if (/^\s*(diag|exec|get)/i.test(line)) this.verified++;
+    } else if (d.kind === "router") out = routerRun(this.lab, d, line);
+    else { out = hostRun(this.lab, d, line); if (/^(ping|curl|tracert|traceroute|nslookup|tnc|nc)/i.test(line.trim())) this.verified++; }
+    if (record) this.log.push({ dev: devId, line });
+    return out;
+  }
+  prompt(devId) {
+    const d = this.lab.dev(devId);
+    if (d instanceof FortiGate) return d.prompt();
+    if (d.kind === "router") return `${d.id}> `;
+    return d.os === "windows" ? `C:\\Users\\${d.hostname.toLowerCase()}> ` : `${d.hostname.toLowerCase()}@lab:~$ `;
+  }
+  // async output (debug flow, sniffer) collected per FortiGate since last call
+  drain() {
+    const out = {};
+    for (const d of this.lab.devices.values()) if (d instanceof FortiGate && d.async.length) out[d.id] = d.async.splice(0);
+    return out;
+  }
+  stopCapture(devId) {
+    const d = this.lab.dev(devId);
+    if (d instanceof FortiGate && d.dbg.sniffer) { const s = d.dbg.sniffer; d.dbg.sniffer = null; return `\n${s.total - s.left} packets received by filter\n0 packets dropped by kernel`; }
+    return "";
+  }
+
+  check() {
+    const p = this.current;
+    this.checksRun++;
+    const res = runChecks(this.lab, p.checks || [], this.answers);
+    this.results[p.id] = res;
+    if (res.length && res.every((r) => r.pass)) this.passed.add(p.id);
+    return res;
+  }
+  advance() { if (this.passed.has(this.current.id) && this.part < this.parts.length - 1) { this.part++; return true; } return false; }
+  finished() { return this.parts.every((p) => this.passed.has(p.id)); }
+  hint(partId) { const n = (this.hints[partId] || 0) + 1; this.hints[partId] = Math.min(n, (this.current.hints || []).length); return this.hints[partId]; }
+
+  // apply a part's reference solution (used by tests and "show me" after reveal)
+  applySolution(part) {
+    for (const [dev, script] of Object.entries(part.solution || {})) {
+      for (const line of String(script).split("\n")) if (line.trim()) this.exec(dev, line.trim());
+    }
+  }
+
+  score() {
+    let pts = 0;
+    const par = (this.def.par || 30) * 60000;
+    for (const p of this.parts) {
+      if (!this.passed.has(p.id)) continue;
+      let s = 100;
+      s -= 10 * (this.hints[p.id] || 0);
+      if (this.revealed[p.id]) s = Math.min(s, 20);
+      pts += Math.max(10, s);
+    }
+    const avg = pts / this.parts.length;
+    const overPar = Math.max(0, this.elapsed - par);
+    const timePenalty = Math.min(20, Math.floor(overPar / 60000));
+    return Math.max(0, Math.round(avg - timePenalty + (this.verified >= 3 ? 5 : 0)));
+  }
+
+  save() {
+    return { v: 1, id: this.def.id, part: this.part, passed: [...this.passed], hints: this.hints, revealed: this.revealed, answers: this.answers, log: this.log, elapsed: this.elapsed };
+  }
+  restore(s) {
+    if (!s || s.id !== this.def.id) return;
+    for (const { dev, line } of s.log || []) { try { this.exec(dev, line, true); } catch (e) { /* skip */ } }
+    for (const d of this.lab.devices.values()) if (d instanceof FortiGate) d.async.length = 0;
+    this.part = Math.min(s.part || 0, this.parts.length - 1);
+    this.passed = new Set(s.passed || []);
+    this.hints = s.hints || {};
+    this.revealed = s.revealed || {};
+    this.answers = s.answers || {};
+    this.elapsed = s.elapsed || 0;
+  }
+}

@@ -1,0 +1,251 @@
+id: F1.01
+track: fortigate
+tier: 1
+order: 1
+kind: project
+title: "Clínica San Rafael: day-one deployment"
+customer: Clínica San Rafael (40 staff, Santa Marta)
+par: 75
+skills: [interfaces, allowaccess, DHCP, default route, SNAT, VIP, trusted hosts, backup]
+brief: |
+  **SOW 2026-118 · FortiGate-60F deployment.** The clinic replaces a consumer router with a FortiGate-60F.
+
+  **In scope:** WAN on Claro (203.0.113.2/28, gateway 203.0.113.1), staff LAN 10.10.10.0/24 with DHCP,
+  a DMZ for the appointment portal (WEB-CITAS, 192.168.50.10), Internet for staff, publishing the portal
+  over HTTPS only, and admin hardening.
+  **Out of scope:** Wi-Fi, VPN, security profiles (phase 2).
+  **Change window:** tonight 20:00–23:00. **Acceptance:** the checks of each part.
+
+  The project has five parts. Each one unlocks when the previous one passes, like the milestones of a real SOW.
+topology: {use: clinic}
+parts:
+  - id: a
+    title: Interfaces and management access
+    brief: |
+      Address the three interfaces. Management (HTTPS, SSH) only from the staff LAN; the WAN answers ping and nothing else.
+    tasks:
+      - "wan1: 203.0.113.2/28, allow ping only, alias Claro."
+      - "internal: 10.10.10.1/24, allow ping, HTTPS and SSH, alias LAN-Staff."
+      - "dmz: 192.168.50.1/24, allow ping only."
+    checks:
+      - text: "wan1 has 203.0.113.2/28"
+        config: {dev: FGT-SR, path: system interface, key: wan1, attr: ip, equals: 203.0.113.2/28}
+      - text: "No HTTPS, HTTP, SSH or Telnet admin on wan1"
+        config: {dev: FGT-SR, path: system interface, key: wan1, attr: allowaccess, lacks: [https, http, ssh, telnet]}
+      - text: "ADMIN-PC reaches the GUI on 10.10.10.1"
+        probe: {from: ADMIN-PC, to: 10.10.10.1, proto: tcp, port: 443}
+      - text: "ADMIN-PC can SSH to 10.10.10.1"
+        probe: {from: ADMIN-PC, to: 10.10.10.1, proto: tcp, port: 22}
+      - text: "The portal server pings its gateway 192.168.50.1"
+        probe: {from: WEB-CITAS, to: 192.168.50.1}
+      - text: "The DMZ can't open the GUI"
+        probe: {from: WEB-CITAS, to: 192.168.50.1, proto: tcp, port: 443, expect: fail}
+    hints:
+      - "Everything here is under `config system interface`, one `edit` per port."
+      - "allowaccess replaces the whole list: `set allowaccess ping https ssh`."
+      - "`edit wan1` / `set ip 203.0.113.2/28` / `set allowaccess ping` / `set alias Claro` / `next`."
+    solution:
+      FGT-SR: |
+        config system interface
+        edit wan1
+        set ip 203.0.113.2/28
+        set allowaccess ping
+        set alias Claro
+        next
+        edit internal
+        set ip 10.10.10.1/24
+        set allowaccess ping https ssh
+        set alias LAN-Staff
+        next
+        edit dmz
+        set ip 192.168.50.1/24
+        set allowaccess ping
+        next
+        end
+    explain: |
+      allowaccess controls which management services an interface answers. Exposing HTTPS or SSH on a WAN is the most
+      common finding in FortiGate health checks; it's also the first thing attackers scan for.
+  - id: b
+    title: DHCP and DNS for staff
+    brief: |
+      Staff PCs use DHCP. Leases from 10.10.10.100 to 10.10.10.199, gateway 10.10.10.1. The FortiGate uses Google and
+      Cloudflare as DNS, and hands the same servers to the PCs.
+    tasks:
+      - "System DNS: primary 8.8.8.8, secondary 1.1.1.1."
+      - "DHCP server on internal: range 10.10.10.100-10.10.10.199, gateway 10.10.10.1, mask 255.255.255.0, DNS = the system DNS."
+      - "Renew the lease on RECEPCION (ipconfig /renew) and check it."
+    checks:
+      - text: "System DNS is 8.8.8.8 / 1.1.1.1"
+        config: {dev: FGT-SR, path: system dns, attr: primary, equals: 8.8.8.8}
+      - text: "RECEPCION gets an address in 10.10.10.100-199 with gateway 10.10.10.1"
+        dhcp: {host: RECEPCION, in: 10.10.10.96/27, gw: 10.10.10.1, dns: 8.8.8.8}
+      - text: "CONSULTORIO gets an address too"
+        dhcp: {host: CONSULTORIO, in: 10.10.10.0/24, gw: 10.10.10.1}
+    hints:
+      - "DNS: `config system dns` / `set primary ...` / `set secondary ...` / `end`."
+      - "The range is a table inside the DHCP server: `config ip-range` / `edit 1` / `set start-ip ...` / `set end-ip ...` / `next` / `end`."
+      - "`set dns-service default` hands out the FortiGate's own system DNS servers."
+    solution:
+      FGT-SR: |
+        config system dns
+        set primary 8.8.8.8
+        set secondary 1.1.1.1
+        end
+        config system dhcp server
+        edit 1
+        set interface internal
+        set default-gateway 10.10.10.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.10.10.100
+        set end-ip 10.10.10.199
+        next
+        end
+        next
+        end
+      RECEPCION: |
+        ipconfig /renew
+    explain: |
+      dns-service has three modes: default (system DNS), specify (dns-server1/2) and local (the FortiGate itself as a DNS
+      server). Most "Internet doesn't work" tickets on day one are a DHCP lease without a DNS server.
+  - id: c
+    title: Internet for staff
+    brief: |
+      Staff browse the Internet through Claro. Use an address object for the LAN and source NAT to wan1's IP.
+    tasks:
+      - "Default route to 203.0.113.1 through wan1."
+      - "Address object LAN-Staff = 10.10.10.0/24."
+      - "Policy internal → wan1 for LAN-Staff, NAT enabled, named Staff-Internet."
+    checks:
+      - text: "Default route via 203.0.113.1 is active"
+        route: {dev: FGT-SR, dst: 0.0.0.0/0, via: 203.0.113.1}
+      - text: "RECEPCION browses https://www.fortinet.com, SNAT to 203.0.113.2"
+        probe: {from: RECEPCION, to: www.fortinet.com, proto: tcp, port: 443, snat: 203.0.113.2}
+      - text: "RECEPCION resolves names through 8.8.8.8"
+        probe: {from: RECEPCION, to: 8.8.8.8, proto: udp, port: 53}
+      - text: "The policy uses the LAN-Staff object, not 'all'"
+        config: {dev: FGT-SR, path: firewall policy, where: {dstintf: wan1, srcintf: internal}, attr: srcaddr, has: [LAN-Staff]}
+    hints:
+      - "Without a route the FortiGate drops the packet before any policy: check `get router info routing-table all`."
+      - "`config router static` / `edit 0` / `set gateway 203.0.113.1` / `set device wan1` / `next` / `end`."
+      - "Private 10.x addresses can't come back from the Internet: the policy needs `set nat enable`."
+    solution:
+      FGT-SR: |
+        config router static
+        edit 0
+        set gateway 203.0.113.1
+        set device wan1
+        next
+        end
+        config firewall address
+        edit LAN-Staff
+        set subnet 10.10.10.0/24
+        next
+        end
+        config firewall policy
+        edit 0
+        set name Staff-Internet
+        set srcintf internal
+        set dstintf wan1
+        set srcaddr LAN-Staff
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    explain: |
+      FortiOS order for a new session: route lookup first (which also decides the egress interface), then the policy for
+      that interface pair, then NAT. No route means no policy match is even attempted. Using an address object instead of
+      'all' documents intent and keeps rogue subnets out.
+  - id: d
+    title: Publish the appointment portal
+    brief: |
+      Patients book at **https://citas.clinicasanrafael.co** (DNS already points to 203.0.113.2). Publish WEB-CITAS on
+      wan1's IP, HTTPS only. The portal logs client IPs for audit, so the server must see the patient's real address.
+    tasks:
+      - "VIP VIP-CITAS-443: 203.0.113.2:443 on wan1 → 192.168.50.10:443 (port forwarding)."
+      - "Policy wan1 → dmz to the VIP, service HTTPS only, no NAT."
+      - "Test from HOME-PC: curl https://citas.clinicasanrafael.co"
+    checks:
+      - text: "A patient (HOME-PC) reaches the portal over HTTPS"
+        probe: {from: HOME-PC, to: citas.clinicasanrafael.co, proto: tcp, port: 443, dnat: 192.168.50.10}
+      - text: "WEB-CITAS sees the patient's real IP (100.25.7.9)"
+        probe: {from: HOME-PC, to: 203.0.113.2, proto: tcp, port: 443, seen_src: 100.25.7.9}
+      - text: "SSH to the portal is not exposed"
+        probe: {from: HOME-PC, to: 203.0.113.2, proto: tcp, port: 22, expect: fail}
+      - text: "HTTP (80) is not exposed either"
+        probe: {from: HOME-PC, to: 203.0.113.2, proto: tcp, port: 80, expect: fail}
+    hints:
+      - "A VIP is just the translation. Nothing passes until a policy uses the VIP as destination."
+      - "`config firewall vip` / `edit VIP-CITAS-443` / `set extip 203.0.113.2` / `set mappedip 192.168.50.10` / `set extintf wan1` / `set portforward enable` / `set extport 443` / `set mappedport 443`."
+      - "In the policy, `set dstaddr VIP-CITAS-443` and `set service HTTPS`; leave NAT disabled so the server sees real client IPs."
+    solution:
+      FGT-SR: |
+        config firewall vip
+        edit VIP-CITAS-443
+        set extip 203.0.113.2
+        set mappedip 192.168.50.10
+        set extintf wan1
+        set portforward enable
+        set extport 443
+        set mappedport 443
+        next
+        end
+        config firewall policy
+        edit 0
+        set name Citas-Publish
+        set srcintf wan1
+        set dstintf dmz
+        set srcaddr all
+        set dstaddr VIP-CITAS-443
+        set action accept
+        set schedule always
+        set service HTTPS
+        next
+        end
+      HOME-PC: |
+        curl https://citas.clinicasanrafael.co
+    explain: |
+      With port forwarding the VIP translates only TCP 443, so 22 and 80 still go to the FortiGate itself (and are dropped,
+      because wan1 allows only ping). Enabling NAT on an inbound policy would hide every patient behind the DMZ interface IP
+      and break the portal's audit log: a classic day-two complaint.
+  - id: e
+    title: Hand-over hardening
+    brief: |
+      Before hand-over, the clinic's security officer wants admin logins limited to the staff LAN, a 10-minute idle timeout,
+      and the final config saved to the NAS.
+    tasks:
+      - "Trusted host for the admin account: 10.10.10.0/24."
+      - "Admin idle timeout: 10 minutes."
+      - "Back up the configuration to TFTP 10.10.10.50."
+    checks:
+      - text: "admin can only log in from 10.10.10.0/24"
+        config: {dev: FGT-SR, path: system admin, key: admin, attr: trusthost1, equals: 10.10.10.0/24}
+      - text: "Idle timeout is 10 minutes"
+        config: {dev: FGT-SR, path: system global, attr: admintimeout, equals: "10"}
+      - text: "ADMIN-PC still reaches the GUI"
+        probe: {from: ADMIN-PC, to: 10.10.10.1, proto: tcp, port: 443}
+      - text: "Final configuration backed up"
+        backup: {dev: FGT-SR}
+    hints:
+      - "Trusted hosts are per admin: `config system admin` / `edit admin` / `set trusthost1 10.10.10.0/24`."
+      - "Backup: `execute backup config tftp <file> 10.10.10.50`."
+    solution:
+      FGT-SR: |
+        config system admin
+        edit admin
+        set trusthost1 10.10.10.0/24
+        next
+        end
+        config system global
+        set admintimeout 10
+        end
+        execute backup config tftp fgt-sr-handover.conf 10.10.10.50
+    explain: |
+      Trusted hosts are checked on top of allowaccess: an address outside them can't log in even where HTTPS is allowed.
+      Configure them on every admin account, or the one you forget becomes the way in. The final backup goes into the
+      hand-over pack with the as-built document.

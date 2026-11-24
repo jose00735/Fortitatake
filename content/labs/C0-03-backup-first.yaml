@@ -1,0 +1,61 @@
+id: C0.03
+track: fortigate
+tier: 0
+order: 3
+kind: drill
+title: Back up before you touch anything
+customer: Clínica San Rafael
+par: 20
+skills: [execute backup config, rename, delete, object references]
+brief: |
+  The clinic approved a small cleanup in tonight's window. Their change process requires a configuration
+  backup to the NAS (**NAS-01, 10.10.10.50, TFTP**) *before* the first change.
+
+  Cleanup list from the customer:
+  1. Rename the address object `WEB-CITAS` to `SRV-CITAS-WEB` to match their naming standard.
+  2. Delete the unused address object `OLD-PRINTER`.
+  3. Try to delete `LAN-Staff` and note why FortiOS refuses (don't force it).
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config firewall address
+        edit OLD-PRINTER
+        set subnet 10.10.10.77/32
+        next
+        end
+tasks:
+  - Back up the configuration to TFTP 10.10.10.50 before any change (file name of your choice).
+  - Rename WEB-CITAS to SRV-CITAS-WEB and check that policy 3 still works.
+  - Delete OLD-PRINTER.
+  - Try to delete LAN-Staff, read the error, and answer why it failed.
+checks:
+  - text: "Configuration backed up before the first change"
+    backup: {dev: FGT-SR, before_changes: true}
+  - text: "SRV-CITAS-WEB exists and policy 3 uses it"
+    config: {dev: FGT-SR, path: firewall policy, key: "3", attr: dstaddr, has: [SRV-CITAS-WEB]}
+  - text: "OLD-PRINTER is deleted"
+    config: {dev: FGT-SR, path: firewall address, key: OLD-PRINTER, exists: false}
+  - text: "LAN-Staff is still there"
+    config: {dev: FGT-SR, path: firewall address, key: LAN-Staff}
+  - text: "Staff can still reach the portal over HTTPS"
+    probe: {from: ADMIN-PC, to: 192.168.50.10, proto: tcp, port: 443}
+  - text: "Why couldn't you delete LAN-Staff?"
+    answer: {accept: ["~used|referenc|in use|policy"], hint: "Read the error: 'The entry is used by other ... entries'.", why: "FortiOS won't delete an object a policy references. Rename updates references for you; delete doesn't."}
+expect_fail: ["delete LAN-Staff"]
+hints:
+  - "The backup command starts with `execute backup config tftp`, then a file name, then the server IP."
+  - "`config firewall address`, then `rename WEB-CITAS to SRV-CITAS-WEB`, then `delete OLD-PRINTER`."
+solution:
+  FGT-SR: |
+    execute backup config tftp fgt-sr-before-cleanup.conf 10.10.10.50
+    config firewall address
+    rename WEB-CITAS to SRV-CITAS-WEB
+    delete OLD-PRINTER
+    delete LAN-Staff
+    end
+explain: |
+  `rename` keeps every reference pointing at the object; delete-and-recreate would break the policies that use it.
+  FortiOS refuses to delete an object in use ("The entry is used by other N entries"); you'd first remove it from
+  each policy. And the backup comes first: it's your rollback if the window goes wrong.

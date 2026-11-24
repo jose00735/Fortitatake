@@ -1,0 +1,107 @@
+id: F1.02
+track: fortigate
+tier: 1
+order: 2
+kind: project
+title: Lock the lab analyzers to their vendor
+customer: Clínica San Rafael
+par: 30
+skills: [address ranges, FQDN, address groups, deny policy, policy order]
+brief: |
+  **Change request CR-031.** The clinic installed lab analyzers (blood and urine) in the staff LAN,
+  10.10.10.60 to 10.10.10.69, plus an X-ray workstation at 10.10.10.70. Their vendor's cloud is
+  **soporte.historiaclinica.co** on HTTPS. Medical devices must reach the vendor and nothing else: they run an old,
+  unpatched OS.
+topology:
+  use: clinic-live
+  add_devices:
+    - {id: ANALYZER-01, kind: host, os: windows, hostname: ANALYZER-01, nic: {ip: 10.10.10.61/24, gw: 10.10.10.1, dns: [8.8.8.8]}}
+    - {id: XRAY-01, kind: host, os: windows, hostname: XRAY-01, nic: {ip: 10.10.10.70/24, gw: 10.10.10.1, dns: [8.8.8.8]}}
+  layout: {ANALYZER-01: [550, 500], XRAY-01: [660, 500]}
+  segment_members: {lan: [ANALYZER-01, XRAY-01]}
+tasks:
+  - "Address LAB-ANALYZERS: range 10.10.10.60-10.10.10.69. Address XRAY-01: 10.10.10.70/32."
+  - "Address group GRP-MEDICAL with both."
+  - "Address VENDOR-LIS: FQDN soporte.historiaclinica.co."
+  - "Allow GRP-MEDICAL → VENDOR-LIS on HTTPS and DNS; deny GRP-MEDICAL to anything else. Mind the policy order."
+checks:
+  - text: "ANALYZER-01 reaches the vendor cloud on HTTPS"
+    probe: {from: ANALYZER-01, to: soporte.historiaclinica.co, proto: tcp, port: 443}
+  - text: "ANALYZER-01 can't browse anything else"
+    probe: {from: ANALYZER-01, to: www.google.com, proto: tcp, port: 443, expect: fail}
+  - text: "XRAY-01 reaches the vendor and nothing else"
+    all:
+      - probe: {from: XRAY-01, to: soporte.historiaclinica.co, proto: tcp, port: 443}
+      - probe: {from: XRAY-01, to: update.microsoft.com, proto: tcp, port: 443, expect: fail}
+  - text: "Reception still browses normally"
+    probe: {from: RECEPCION, to: www.google.com, proto: tcp, port: 443}
+  - text: "GRP-MEDICAL contains LAB-ANALYZERS and XRAY-01"
+    config: {dev: FGT-SR, path: firewall addrgrp, key: GRP-MEDICAL, attr: member, has: [LAB-ANALYZERS, XRAY-01]}
+  - text: "The vendor object is an FQDN, not a hard-coded IP"
+    config: {dev: FGT-SR, path: firewall address, key: VENDOR-LIS, attr: type, equals: fqdn}
+hints:
+  - "The analyzers are inside 10.10.10.0/24, so policy 1 (Staff-Internet) matches them first. Your new policies must sit above it."
+  - "Ranges: `set type iprange` / `set start-ip` / `set end-ip`. FQDN: `set type fqdn` / `set fqdn soporte.historiaclinica.co`."
+  - "Create the allow and the deny with `edit 0`, then `move <id> before 1` for both, allow above deny."
+solution:
+  FGT-SR: |
+    config firewall address
+    edit LAB-ANALYZERS
+    set type iprange
+    set start-ip 10.10.10.60
+    set end-ip 10.10.10.69
+    next
+    edit XRAY-01
+    set subnet 10.10.10.70/32
+    next
+    edit VENDOR-LIS
+    set type fqdn
+    set fqdn soporte.historiaclinica.co
+    next
+    end
+    config firewall addrgrp
+    edit GRP-MEDICAL
+    set member LAB-ANALYZERS XRAY-01
+    next
+    end
+    config firewall policy
+    edit 10
+    set name Medical-to-Vendor
+    set srcintf internal
+    set dstintf wan1
+    set srcaddr GRP-MEDICAL
+    set dstaddr VENDOR-LIS
+    set action accept
+    set schedule always
+    set service HTTPS
+    set nat enable
+    next
+    edit 11
+    set name Medical-DNS
+    set srcintf internal
+    set dstintf wan1
+    set srcaddr GRP-MEDICAL
+    set dstaddr all
+    set action accept
+    set schedule always
+    set service DNS
+    set nat enable
+    next
+    edit 12
+    set name Medical-Deny
+    set srcintf internal
+    set dstintf wan1
+    set srcaddr GRP-MEDICAL
+    set dstaddr all
+    set action deny
+    set schedule always
+    set service ALL
+    next
+    move 10 before 1
+    move 11 before 1
+    move 12 before 1
+    end
+explain: |
+  FortiOS evaluates policies top-down and stops at the first match. A specific rule below a broad one never fires, which
+  is why "I added a block and it does nothing" is one of the most common tickets. FQDN objects follow the vendor's DNS, so
+  a cloud provider changing IPs doesn't break the clinic. The device needs DNS too, or the FQDN connection never starts.

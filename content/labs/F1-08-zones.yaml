@@ -1,0 +1,166 @@
+id: F1.08
+track: fortigate
+tier: 1
+order: 8
+kind: project
+title: Zones for the store's internal VLANs
+customer: Tiendas Macondo
+par: 30
+skills: [zones, intrazone, policy consolidation]
+brief: |
+  Macondo is rolling this design out to 40 stores. To keep the rulebase short, the architect wants **STAFF** and
+  **POS** in one zone, **ZONE-STORE**, with a single policy to the inventory system **inventario.macondo.co**
+  (HTTPS). Traffic *between* staff and card terminals must stay blocked (PCI).
+topology:
+  use: retail
+  devices:
+    FGT-MAC:
+      config: |
+        config system interface
+        edit wan
+        set ip 181.49.10.2/29
+        set allowaccess ping
+        next
+        edit STAFF
+        set vdom root
+        set type vlan
+        set interface lan1
+        set vlanid 10
+        set ip 10.40.10.1/24
+        set allowaccess ping https ssh
+        next
+        edit POS
+        set vdom root
+        set type vlan
+        set interface lan1
+        set vlanid 20
+        set ip 10.40.20.1/24
+        set allowaccess ping
+        next
+        edit GUEST
+        set vdom root
+        set type vlan
+        set interface lan1
+        set vlanid 30
+        set ip 10.40.30.1/24
+        set allowaccess ping
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+        config router static
+        edit 1
+        set gateway 181.49.10.1
+        set device wan
+        next
+        end
+        config system dhcp server
+        edit 10
+        set interface STAFF
+        set default-gateway 10.40.10.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.40.10.100
+        set end-ip 10.40.10.199
+        next
+        end
+        next
+        edit 20
+        set interface POS
+        set default-gateway 10.40.20.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.40.20.100
+        set end-ip 10.40.20.199
+        next
+        end
+        next
+        edit 30
+        set interface GUEST
+        set default-gateway 10.40.30.1
+        set netmask 255.255.255.0
+        set dns-service default
+        config ip-range
+        edit 1
+        set start-ip 10.40.30.100
+        set end-ip 10.40.30.199
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 9
+        set name Store-DNS
+        set srcintf STAFF POS GUEST
+        set dstintf wan
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service DNS
+        set nat enable
+        next
+        end
+tasks:
+  - "Zone ZONE-STORE with STAFF and POS; intrazone traffic denied."
+  - "Address INVENTARIO = FQDN inventario.macondo.co."
+  - "One policy ZONE-STORE → wan to INVENTARIO on HTTPS, with NAT."
+checks:
+  - text: "Staff reach the inventory system"
+    probe: {from: STAFF-PC, to: inventario.macondo.co, proto: tcp, port: 443}
+  - text: "Card terminals reach the inventory system"
+    probe: {from: POS-02, to: inventario.macondo.co, proto: tcp, port: 443}
+  - text: "Guests don't"
+    probe: {from: GUEST-PHONE, to: inventario.macondo.co, proto: tcp, port: 443, expect: fail}
+  - text: "Staff can't reach a card terminal (intrazone deny)"
+    probe: {from: STAFF-PC, to: "@POS-01", expect: fail}
+  - text: "ZONE-STORE holds STAFF and POS"
+    config: {dev: FGT-MAC, path: system zone, key: ZONE-STORE, attr: interface, has: [STAFF, POS]}
+  - text: "A policy uses the zone as source"
+    config: {dev: FGT-MAC, path: firewall policy, attr: srcintf, has: [ZONE-STORE]}
+hints:
+  - "An interface used directly by a policy can't be added to a zone. Here no policy uses STAFF or POS alone except Store-DNS: change it first."
+  - "`config system zone` / `edit ZONE-STORE` / `set interface STAFF POS` / `set intrazone deny`."
+solution:
+  FGT-MAC: |
+    config firewall policy
+    edit 9
+    set srcintf GUEST
+    next
+    end
+    config system zone
+    edit ZONE-STORE
+    set interface STAFF POS
+    set intrazone deny
+    next
+    end
+    config firewall address
+    edit INVENTARIO
+    set type fqdn
+    set fqdn inventario.macondo.co
+    next
+    end
+    config firewall policy
+    edit 9
+    set srcintf ZONE-STORE GUEST
+    next
+    edit 10
+    set name Store-to-Inventario
+    set srcintf ZONE-STORE
+    set dstintf wan
+    set srcaddr all
+    set dstaddr INVENTARIO
+    set action accept
+    set schedule always
+    set service HTTPS
+    set nat enable
+    next
+    end
+explain: |
+  Zones let one policy cover several interfaces, which matters when a FortiManager template rolls the design to 40 stores.
+  intrazone deny keeps STAFF and POS apart even inside the same zone: zone membership alone never permits traffic.

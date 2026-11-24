@@ -1,0 +1,53 @@
+id: B4.01
+track: fortigate
+tier: 4
+order: 1
+kind: ticket
+title: "\"The Internet works by IP but not by name\""
+customer: Clínica San Rafael
+par: 20
+skills: [DNS, service objects, debug flow]
+brief: |
+  **Ticket 4012, priority 2.** After the auditor's hardening last night, reception "can't open any website". The IT lead
+  says: *"Strange, I can ping 8.8.8.8 from my PC."*
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config firewall service group
+        edit SVC-STAFF-WEB
+        set member HTTP HTTPS PING
+        next
+        end
+        config firewall policy
+        edit 1
+        set service SVC-STAFF-WEB
+        next
+        end
+tasks:
+  - "Reproduce from RECEPCION (curl https://www.fortinet.com, nslookup, ping 8.8.8.8)."
+  - "Find the cause with evidence, fix it with the least privilege that works."
+  - "Answer the root cause."
+checks:
+  - text: "RECEPCION opens https://www.fortinet.com"
+    probe: {from: RECEPCION, to: www.fortinet.com, proto: tcp, port: 443}
+  - text: "Remote desktop to the Internet is still blocked"
+    probe: {from: RECEPCION, to: rdp.example.net, proto: tcp, port: 3389, expect: fail}
+  - text: "Root cause"
+    answer: {accept: ["~dns|53|name resol"], hint: "What does a browser need before it can open https://www.fortinet.com?", why: "The hardened service group dropped DNS (UDP/TCP 53), so names never resolve; IP traffic still works."}
+hints:
+  - "nslookup on RECEPCION times out; ping by IP works. What service is missing?"
+  - "`show firewall service group SVC-STAFF-WEB`: add DNS to it."
+solution:
+  RECEPCION: |
+    nslookup www.fortinet.com
+  FGT-SR: |
+    config firewall service group
+    edit SVC-STAFF-WEB
+    append member DNS
+    next
+    end
+explain: |
+  "Works by IP, not by name" is almost always DNS. `append` adds to a list without retyping it, safer than `set` on a
+  production group.

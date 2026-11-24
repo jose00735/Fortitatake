@@ -1,0 +1,51 @@
+id: B4.02
+track: fortigate
+tier: 4
+order: 2
+kind: ticket
+title: "\"The appointment portal is down since the WAN change\""
+customer: Clínica San Rafael
+par: 25
+skills: [VIP, extintf, local-in, debug flow]
+brief: |
+  **Ticket 4027, priority 1.** Patients can't book appointments: their browsers time out on
+  https://citas.clinicasanrafael.co. Last night a technician "prepared wan2 for the second ISP" and touched the VIP.
+  Staff inside the clinic can still open the portal.
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config firewall vip
+        edit VIP-CITAS-443
+        set extintf wan2
+        next
+        end
+tasks:
+  - "Reproduce from HOME-PC."
+  - "Use debug flow on FGT-SR to see what happens to the patient's packet."
+  - "Fix it and answer the root cause."
+checks:
+  - text: "HOME-PC reaches the portal"
+    probe: {from: HOME-PC, to: citas.clinicasanrafael.co, proto: tcp, port: 443, dnat: 192.168.50.10}
+  - text: "Ran a debug flow"
+    ran: {dev: FGT-SR, cmd: "debug flow", fail: "Show the evidence with debug flow before changing anything."}
+  - text: "Root cause"
+    answer: {accept: ["~extintf|wan2|interface|external interface"], hint: "Compare the interface the packet arrives on with the VIP's external interface.", why: "The VIP was bound to wan2, so packets arriving on wan1 never matched it and were treated as traffic to the FortiGate itself (local-in), where HTTPS isn't allowed."}
+hints:
+  - "Debug flow shows `ret-no-match` in the DNAT check, then a route to the FortiGate itself."
+  - "`show firewall vip VIP-CITAS-443`: which extintf?"
+solution:
+  FGT-SR: |
+    diagnose debug flow filter addr 100.25.7.9
+    diagnose debug enable
+    diagnose debug flow trace start 5
+    config firewall vip
+    edit VIP-CITAS-443
+    set extintf wan1
+    next
+    end
+explain: |
+  A VIP only matches on its extintf (or any). When it doesn't match, traffic to the FortiGate's own IP becomes local-in,
+  and the debug shows `iprope_in_check() check failed`. Staff weren't affected because they reach the server directly
+  through policy 3.

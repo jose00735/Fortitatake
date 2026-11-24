@@ -1,0 +1,58 @@
+id: F1.12
+track: fortigate
+tier: 1
+order: 12
+kind: project
+title: Close the audit findings on admin access
+customer: Clínica San Rafael
+par: 30
+skills: [admin-sport, trusted hosts, allowaccess, local-in]
+brief: |
+  **Audit report, findings H-01 to H-03:**
+  - H-01: admin HTTPS on the default port 443.
+  - H-02: any LAN host can reach the admin login.
+  - H-03: the admin session never locks (timeout too long).
+
+  Agreed remediation: GUI on **8443**, logins only from **ADMIN-PC (10.10.10.10)**, idle timeout **10 minutes**.
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config system global
+        set admintimeout 480
+        end
+tasks:
+  - "Move the admin HTTPS port to 8443."
+  - "Trusted host 10.10.10.10/32 on the admin account."
+  - "Idle timeout 10 minutes."
+checks:
+  - text: "ADMIN-PC reaches the GUI on 8443"
+    probe: {from: ADMIN-PC, to: 10.10.10.1, proto: tcp, port: 8443}
+  - text: "ADMIN-PC can't reach the GUI on 443 any more"
+    probe: {from: ADMIN-PC, to: 10.10.10.1, proto: tcp, port: 443, expect: fail}
+  - text: "RECEPCION can't reach the GUI on 8443"
+    probe: {from: RECEPCION, to: 10.10.10.1, proto: tcp, port: 8443, expect: fail}
+  - text: "RECEPCION can't SSH to the FortiGate"
+    probe: {from: RECEPCION, to: 10.10.10.1, proto: tcp, port: 22, expect: fail}
+  - text: "Idle timeout is 10 minutes"
+    config: {dev: FGT-SR, path: system global, attr: admintimeout, equals: "10"}
+  - text: "Patients still reach the portal on 443 (it's a VIP, not the GUI)"
+    probe: {from: HOME-PC, to: citas.clinicasanrafael.co, proto: tcp, port: 443}
+hints:
+  - "The GUI port is `admin-sport` in `config system global`."
+  - "Trusted hosts: `config system admin` / `edit admin` / `set trusthost1 10.10.10.10/32`."
+solution:
+  FGT-SR: |
+    config system global
+    set admin-sport 8443
+    set admintimeout 10
+    end
+    config system admin
+    edit admin
+    set trusthost1 10.10.10.10/32
+    next
+    end
+explain: |
+  Trusted hosts apply to HTTPS and SSH alike, so RECEPCION loses both. Changing the port alone only reduces noise; the
+  trusted host is the real control. The portal on 443 is unaffected because the VIP and its policy handle it before local-in.

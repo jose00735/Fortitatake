@@ -4,8 +4,9 @@ import { S, loadAll, setAnnouncer, setting, onChange, dueItems } from "./state.j
 import { runSession } from "./session.js";
 import { home, review, library, moduleView, interview, progress, settings } from "./views.js";
 import { startPolling } from "./sync.js";
+import { labsHome, labView } from "./labs/view.js";
 
-const NAV = [["home", "Command", "home"], ["review", "Review", "cards"], ["library", "Library", "book"], ["interview", "Interview", "mic"], ["progress", "Progress", "chart"], ["settings", "Settings", "gear"]];
+const NAV = [["home", "Command", "home"], ["review", "Review", "cards"], ["library", "Library", "book"], ["labs", "Labs", "term"], ["interview", "Interview", "mic"], ["progress", "Progress", "chart"], ["settings", "Settings", "gear"]];
 let info = {};
 
 function shell() {
@@ -33,11 +34,13 @@ function route() {
   const main = $("#main");
   const parts = (location.hash.replace(/^#\/?/, "") || "home").split("/");
   const [view, a, b] = parts;
-  $$("[data-nav]").forEach((x) => x.classList.toggle("on", x.dataset.nav === view || (view === "module" && x.dataset.nav === "library") || (view === "session" && x.dataset.nav === "home")));
+  $$("[data-nav]").forEach((x) => x.classList.toggle("on", x.dataset.nav === view || (view === "module" && x.dataset.nav === "library") || (view === "session" && x.dataset.nav === "home") || (view === "lab" && x.dataset.nav === "labs")));
   window.scrollTo(0, 0);
   switch (view) {
     case "session": return runSession(main, a);
     case "review": return review(main);
+    case "labs": return labsHome(main, a);
+    case "lab": return labView(main, a);
     case "library": return library(main);
     case "module": return moduleView(main, a, b);
     case "interview": return interview(main, a);

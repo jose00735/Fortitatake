@@ -1,0 +1,48 @@
+id: C0.02
+track: fortigate
+tier: 0
+order: 2
+kind: drill
+title: show, get and full-configuration
+customer: Clínica San Rafael
+par: 15
+skills: [show, show full-configuration, get, set]
+brief: |
+  The clinic's IT lead wants the FortiGate to follow their naming standard and a longer admin idle timeout.
+  Along the way, learn the difference between `show` (only what differs from defaults), `show full-configuration`
+  (everything, defaults included) and `get` (values as a list).
+topology: {use: clinic-live}
+tasks:
+  - Find the default admin idle timeout (it isn't in `show system global`, because it's a default).
+  - Rename the FortiGate to FGT-SR-SMR01 (site SR, city code SMR, unit 01).
+  - Set the admin idle timeout to 15 minutes.
+  - Give the dmz interface the alias "DMZ-Portal".
+checks:
+  - text: "What is the default admintimeout, in minutes?"
+    answer: {accept: ["5", "5 minutes", "5 min"], hint: "`show full-configuration system global`, then find admintimeout. Or `get system global`.", why: "Defaults never appear in plain `show`; that's why reading a config needs full-configuration."}
+  - text: "Hostname follows the standard"
+    config: {dev: FGT-SR, path: system global, attr: hostname, equals: FGT-SR-SMR01}
+  - text: "Admin idle timeout is 15 minutes"
+    config: {dev: FGT-SR, path: system global, attr: admintimeout, equals: "15"}
+  - text: "dmz has the alias DMZ-Portal"
+    config: {dev: FGT-SR, path: system interface, key: dmz, attr: alias, equals: DMZ-Portal}
+hints:
+  - "`show` hides defaults. Try `show full-configuration system global` or `get system global`."
+  - "`config system global`, then `set hostname ...` and `set admintimeout ...`, then `end`."
+  - "Aliases live on the interface: `config system interface`, `edit dmz`, `set alias DMZ-Portal`."
+solution:
+  FGT-SR: |
+    show full-configuration system global
+    config system global
+    set hostname FGT-SR-SMR01
+    set admintimeout 15
+    end
+    config system interface
+    edit dmz
+    set alias DMZ-Portal
+    next
+    end
+explain: |
+  Changes in an `edit` take effect at `next` or `end`; `abort` throws them away. When you document a
+  customer's config, use `show` to see their intent and `show full-configuration` when a default matters.
+  The prompt changes with the hostname immediately: that's how you know `end` committed it.

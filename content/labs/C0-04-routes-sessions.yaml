@@ -1,0 +1,56 @@
+id: C0.04
+track: fortigate
+tier: 0
+order: 4
+kind: drill
+title: Read the routing table and the session table
+customer: Clínica San Rafael
+par: 20
+skills: [routing-table details, diagnose sys session, session filter]
+brief: |
+  Reception says "the Internet is slow". Before guessing, a consultant checks how the traffic is actually
+  handled. Generate traffic from **RECEPCION** and read the FortiGate's session table to answer.
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config router static
+        edit 2
+        set dst 172.16.40.0/24
+        set gateway 10.10.10.254
+        set device internal
+        set comment "Lab partner network"
+        next
+        end
+tasks:
+  - From RECEPCION, browse to www.fortinet.com (curl https://www.fortinet.com) so a session exists.
+  - On FGT-SR, filter the session list to RECEPCION's IP and read the session.
+  - Find which interface traffic to 172.16.40.15 would use.
+checks:
+  - text: "Generated traffic from RECEPCION"
+    ran: {dev: RECEPCION, cmd: "curl|ping|tnc", fail: "Run curl https://www.fortinet.com on RECEPCION first."}
+  - text: "Used a session filter"
+    ran: {dev: FGT-SR, cmd: "diag(nose)? sys(tem)? session filter (src|dst)", fail: "Filter first: `diagnose sys session filter src <ip>`, then `diagnose sys session list`."}
+  - text: "Which policy ID handled RECEPCION's web session?"
+    answer: {accept: ["1", "policy 1"], hint: "Look for policy_id= in the session.", why: "policy_id=1 (Staff-Internet)."}
+  - text: "Which source IP did the session leave with (after SNAT)?"
+    answer: {accept: ["203.0.113.2"], hint: "The act=snat line shows the translated address in brackets.", why: "SNAT to wan1's IP, 203.0.113.2."}
+  - text: "Which interface would traffic to 172.16.40.15 leave through?"
+    answer: {accept: ["internal"], hint: "`get router info routing-table details 172.16.40.15`.", why: "The static route 172.16.40.0/24 via 10.10.10.254 points out internal."}
+hints:
+  - "Session list is long on a real box. Always filter: `diagnose sys session filter clear`, then `diagnose sys session filter src <RECEPCION IP>`."
+  - "RECEPCION's IP comes from DHCP: run ipconfig there."
+solution:
+  RECEPCION: |
+    ipconfig
+    curl https://www.fortinet.com
+  FGT-SR: |
+    diagnose sys session filter clear
+    diagnose sys session filter src 10.10.10.100
+    diagnose sys session list
+    get router info routing-table details 172.16.40.15
+explain: |
+  The session table is the truth about traffic the FortiGate has already accepted: interfaces, gateway,
+  NAT and the policy ID. In production it holds thousands of entries, so filter first. `routing-table details <ip>`
+  answers "where would this go" without sending a packet.
