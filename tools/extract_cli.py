@@ -217,6 +217,9 @@ def parse_tables(lines, i, tree, stop):
 
 
 def clean(nd):
+    # a wrapped "Type" cell ("ipv4-" / "address") can be read as a parameter of its own; drop those
+    for k in [k for k, sp in nd["a"].items() if k in ("address", "netmask") and sp == {"y": k}]:
+        del nd["a"][k]
     for sp in nd["a"].values():
         sp.pop("partial", None)
         if sp.get("y") == "option" and not sp.get("o"):

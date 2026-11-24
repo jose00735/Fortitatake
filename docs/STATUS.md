@@ -98,6 +98,10 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.7.3 fixes
+
+- The FortiOS schema had 9 attributes that were really wrapped "Type" cells from the reference tables (`address` under `system interface`, `system mobile-tunnel`, `user domain-controller`, `system central-management server-list`; `netmask` under `system ha`, `system dedicated-mgmt`, `system cellular-modem` modems). The CLI accepted `set address 10.10.10.1/24` on an interface and silently did nothing. Now it answers `command parse error before 'address'`, as FortiOS does; the extractor drops these artifacts.
+
 ### What v0.7.2 fixes
 
 - `get router info routing-table database` lists static routes whose gateway is off the interface's subnet as `inactive` (they were hidden).
