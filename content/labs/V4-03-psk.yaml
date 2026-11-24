@@ -1,0 +1,47 @@
+id: V4.03
+track: vpn
+tier: 4
+order: 23
+kind: ticket
+title: "\"The tunnel died after the quarterly password rotation\""
+customer: Andes Logistics
+par: 20
+skills: [PSK, IKE debug, change control]
+brief: |
+  **Ticket 5230, priority 1.** Security rotated the site-to-site PSK last night. The change record says the new key is
+  `An3s-S2S-Q4-2026#` "on both firewalls". Since then VPN-CLO is down.
+topology:
+  use: andes-vpn-live
+  devices:
+    FGT-BOG:
+      config: |
+        config vpn ipsec phase1-interface
+        edit VPN-CLO
+        set psksecret An3s-S2S-Q4-2026#
+        next
+        end
+tasks:
+  - "Prove the cause with the IKE debug."
+  - "Fix it according to the change record."
+checks:
+  - text: "VPN-CLO is up"
+    tunnel: {dev: FGT-BOG, name: VPN-CLO}
+  - text: "Root cause"
+    answer: {accept: ["~psk|pre.?shared|key|secret|authentication"], hint: "What does AUTHENTICATION_FAILED mean in IKEv2?", why: "Only FGT-BOG got the new key; FGT-CLO still uses the old one, so authentication fails."}
+hints:
+  - "The debug on FGT-BOG ends with a notify about authentication."
+  - "Set the new PSK on FGT-CLO's VPN-BOG."
+solution:
+  FGT-BOG: |
+    diagnose debug application ike -1
+    diagnose debug enable
+    diagnose vpn ike gateway clear
+  FGT-CLO: |
+    config vpn ipsec phase1-interface
+    edit VPN-BOG
+    set psksecret An3s-S2S-Q4-2026#
+    next
+    end
+explain: |
+  FortiOS stores the PSK encrypted, so `show` can't prove both sides match: the debug can. IKEv1 says "probable pre-shared
+  secret mismatch"; IKEv2 returns AUTHENTICATION_FAILED.

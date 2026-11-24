@@ -1,0 +1,61 @@
+id: S2.02
+track: sdwan
+tier: 2
+order: 11
+kind: project
+title: Voice on the steadiest link
+customer: Andes Logistics
+par: 35
+skills: [best-quality mode, jitter, SD-WAN rules for SIP]
+brief: |
+  Cali's IP phones register to the cloud PBX **voz.andes-pbx.co (45.79.20.10)** on UDP 5060. Calls break up in the
+  afternoons. Voice should always take the link with the lowest **jitter**, measured against the PBX itself.
+topology: {use: sdwan-live}
+events:
+  - {router: ISP-EMCALI, quality: {latency: 22, jitter: 25, loss: 0}}
+tasks:
+  - "Address VOIP-PBX = 45.79.20.10/32."
+  - "Health check HC-PBX: ping 45.79.20.10 on members 1 and 2."
+  - "SD-WAN rule 2 'Voice': UDP 5060 to VOIP-PBX, best quality (priority) by jitter on HC-PBX, members 1 and 2."
+checks:
+  - text: "SIP from the phone leaves through wan2 (lower jitter now)"
+    probe: {from: CLO-PHONE, to: 45.79.20.10, proto: udp, port: 5060, egress: wan2}
+  - text: "The rule uses jitter as its link-cost factor"
+    config: {dev: FGT-CLO, path: system sdwan, attr: status, equals: enable}
+  - text: "Which member has the lower jitter towards the PBX?"
+    answer: {accept: ["~wan2|movistar|member 2"], hint: "`diagnose sys sdwan health-check HC-PBX`.", why: "Emcali shows about 25 ms of jitter this afternoon; Movistar about 7 ms."}
+hints:
+  - "Best quality is `set mode priority` with `set link-cost-factor jitter` and `set health-check HC-PBX`."
+  - "Match only SIP: `set protocol 17`, `set start-port 5060`, `set end-port 5060`."
+solution:
+  FGT-CLO: |
+    config firewall address
+    edit VOIP-PBX
+    set subnet 45.79.20.10/32
+    next
+    end
+    config system sdwan
+    config health-check
+    edit HC-PBX
+    set server 45.79.20.10
+    set members 1 2
+    next
+    end
+    config service
+    edit 2
+    set name Voice
+    set mode priority
+    set dst VOIP-PBX
+    set protocol 17
+    set start-port 5060
+    set end-port 5060
+    set health-check HC-PBX
+    set link-cost-factor jitter
+    set priority-members 1 2
+    next
+    end
+    end
+    diagnose sys sdwan health-check
+explain: |
+  Best-quality mode picks the member with the best value of one metric. Measure against the application itself when you can:
+  a path that's clean to 8.8.8.8 can be poor to the PBX.

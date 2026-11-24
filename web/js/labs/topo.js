@@ -40,11 +40,15 @@ export function drawTopology(run, sel) {
   const pos = (id) => L[id] || [480, 280];
   const links = [];
   const portLabels = [];
+  // parallel links between the same two devices are drawn side by side
+  const pairKey = (a, b) => [a, b].sort().join("|");
+  const pairTotal = new Map(), pairSeen = new Map();
+  for (const seg of lab.segments) { const mem = seg.members.filter((m) => lab.dev(m.dev)); if (mem.length === 2) { const k = pairKey(mem[0].dev, mem[1].dev); pairTotal.set(k, (pairTotal.get(k) || 0) + 1); } }
   for (const seg of lab.segments) {
     const mem = seg.members.filter((m) => lab.dev(m.dev));
     const statusOf = (m) => {
       const d = lab.dev(m.dev);
-      if (seg.down) return "down";
+      if (seg.down || m.down) return "down";
       if (d instanceof FortiGate) {
         const i = lab.fgtIntfs(d).find((x) => x.seg === seg);
         if (!i) return "unset";
@@ -64,7 +68,14 @@ export function drawTopology(run, sel) {
       }
     } else if (mem.length === 2) {
       const [a, b] = mem;
-      const pa = pos(a.dev), pb = pos(b.dev);
+      let pa = pos(a.dev), pb = pos(b.dev);
+      const k = pairKey(a.dev, b.dev), tot = pairTotal.get(k) || 1, idx = pairSeen.get(k) || 0;
+      pairSeen.set(k, idx + 1);
+      if (tot > 1) {
+        const off = (idx - (tot - 1) / 2) * 16, dx = pb[0] - pa[0], dy = pb[1] - pa[1], len = Math.hypot(dx, dy) || 1;
+        const ox = (-dy / len) * off, oy = (dx / len) * off;
+        pa = [pa[0] + ox, pa[1] + oy]; pb = [pb[0] + ox, pb[1] + oy];
+      }
       const st = [statusOf(a), statusOf(b)].includes("down") ? "down" : [statusOf(a), statusOf(b)].includes("noip") ? "noip" : "up";
       links.unshift(`<line x1="${pa[0]}" y1="${pa[1]}" x2="${pb[0]}" y2="${pb[1]}" class="tp-link ${st}"/>`);
       for (const [m, p, q, o] of [[a, pa, pb, b], [b, pb, pa, a]]) if (m.port && lab.dev(m.dev).kind !== "cloud" && m.port !== "eth0") portLabels.push(portLabel(p, q, m.port + (m.vlan ? `.${m.vlan}` : ""), statusOf(m), lab.dev(m.dev).kind, 1, lab.dev(o.dev).kind));

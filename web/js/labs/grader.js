@@ -20,6 +20,10 @@ function one(lab, c, answers) {
   if (c.ran) return ranCheck(lab, c.ran);
   if (c.backup) return backupCheck(lab, c.backup);
   if (c.answer) return answerCheck(c, answers[c.id]);
+  if (c.tunnel) return tunnelCheck(lab, c.tunnel);
+  if (c.ha) return haCheck(lab, c.ha);
+  if (c.client) return clientCheck(lab, c.client);
+  if (c.sdwan) return sdwanCheck(lab, c.sdwan);
   if (c.all) { const r = c.all.map((x) => one(lab, x, answers)); return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail }; }
   return { pass: false, detail: "Unknown check type" };
 }
@@ -168,4 +172,41 @@ function answerCheck(c, given) {
   const g = String(given).toLowerCase().replace(/\s+/g, " ").trim();
   const ok = [].concat(c.answer.accept).some((a) => (String(a).startsWith("~") ? new RegExp(String(a).slice(1), "i").test(g) : g === String(a).toLowerCase()));
   return ok ? { pass: true, detail: c.answer.why || "Correct." } : { pass: false, detail: c.answer.hint || "Not quite. Look at the evidence again." };
+}
+
+function tunnelCheck(lab, c) {
+  const fg = getDev(lab, c.dev);
+  const info = lab.tunnelInfo(fg, c.name);
+  if (!info) return { pass: false, detail: `${c.dev} has no tunnel ${c.name}.` };
+  if (c.phase1 && !c.up) return info.p1up ? { pass: true, detail: `Phase 1 of ${c.name} is up.` } : { pass: false, detail: `Phase 1 of ${c.name} is down: ${info.reason}.` };
+  if (c.up === false) return info.up ? { pass: false, detail: `${c.name} is up but shouldn't be.` } : { pass: true, detail: `${c.name} is down.` };
+  return info.up ? { pass: true, detail: `${c.name} is up (${(info.p2 || []).filter((x) => x.up).length} selector(s)).` } : { pass: false, detail: `${c.name} is down: ${info.reason}.` };
+}
+function haCheck(lab, c) {
+  const fg = getDev(lab, c.dev);
+  const role = lab.haRole(fg);
+  const cl = lab.haCluster ? lab.haCluster(fg) : null;
+  const size = cl ? cl.members.length : 1;
+  if (c.size && size !== c.size) return { pass: false, detail: `${c.dev} sees ${size} cluster member(s), expected ${c.size}.${lab.haClusters && lab.haClusters().why.get(fg) ? " Reason: " + lab.haClusters().why.get(fg) + "." : ""}` };
+  if (c.role && role !== c.role) return { pass: false, detail: `${c.dev} is ${role}, expected ${c.role}.` };
+  return { pass: true, detail: `${c.dev} is ${role}${size > 1 ? ` in a ${size}-unit cluster` : ""}.` };
+}
+function clientCheck(lab, c) {
+  const h = getDev(lab, c.host);
+  const up = !!(h.vpn && h.vpn.up);
+  if (c.connected === false) return up ? { pass: false, detail: `${c.host} is still connected.` } : { pass: true, detail: `${c.host} is disconnected.` };
+  if (!up) return { pass: false, detail: `${c.host}'s FortiClient isn't connected. Run forticlient connect on it.` };
+  if (c.in && !inPrefix(h.vpn.ip, parsePrefix(c.in))) return { pass: false, detail: `${c.host} got ${intToIp(h.vpn.ip)}, outside ${c.in}.` };
+  if (c.split === true && !h.vpn.split) return { pass: false, detail: `${c.host} sends all its traffic through the VPN; split tunnelling isn't on.` };
+  return { pass: true, detail: `${c.host} is connected with ${intToIp(h.vpn.ip)}.` };
+}
+function sdwanCheck(lab, c) {
+  const fg = getDev(lab, c.dev);
+  const cfg = lab.sdwanCfg(fg);
+  if (!cfg.on) return { pass: false, detail: "SD-WAN is disabled." };
+  const m = cfg.members.find((x) => x.intf === c.member);
+  if (!m) return { pass: false, detail: `${c.member} is not an SD-WAN member.` };
+  const alive = lab.memberAlive(fg, cfg, m);
+  if (c.alive !== undefined && alive !== c.alive) return { pass: false, detail: `${c.member} is ${alive ? "alive" : "dead"}.` };
+  return { pass: true, detail: `${c.member} is an SD-WAN member and ${alive ? "alive" : "dead"}.` };
 }

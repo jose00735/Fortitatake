@@ -1,0 +1,60 @@
+id: V4.02
+track: vpn
+tier: 4
+order: 22
+kind: ticket
+title: "\"Phase 1 is up but the tunnel passes nothing\""
+customer: Andes Logistics
+par: 25
+skills: [phase 2 selectors, TS_UNACCEPTABLE, IKE debug]
+brief: |
+  **Ticket 5214, priority 2.** HQ added a new network for its warehouse, 10.21.0.0/16, and an engineer "updated the VPN
+  so Cali can reach it". Since then Cali reaches nothing at HQ. `get vpn ipsec tunnel summary` on FGT-BOG shows
+  `selectors(total,up): 1/0`.
+topology:
+  use: andes-vpn-live
+  devices:
+    FGT-BOG:
+      config: |
+        config vpn ipsec phase2-interface
+        edit VPN-CLO-P2
+        set src-subnet 10.20.0.0/15
+        next
+        end
+tasks:
+  - "Read the IKE debug while the tunnel renegotiates."
+  - "Fix it so Cali reaches 10.20.0.0/16 and 10.21.0.0/16, and answer the root cause."
+checks:
+  - text: "VPN-CLO is fully up"
+    tunnel: {dev: FGT-BOG, name: VPN-CLO}
+  - text: "CLO-PC reaches the ERP (10.20.10.20)"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "Cali's selectors cover the new 10.21.0.0/16 too"
+    config: {dev: FGT-CLO, path: vpn ipsec phase2-interface, key: VPN-BOG-P2, attr: dst-subnet, equals: 10.20.0.0/15}
+  - text: "Root cause"
+    answer: {accept: ["~selector|ts_unacceptable|traffic selector|phase ?2|mirror|subnet"], hint: "Compare the phase2 subnets on both ends.", why: "HQ widened its local selector to 10.20.0.0/15, but Cali still proposed 10.20.0.0/16 as remote, so the selectors no longer mirror (TS_UNACCEPTABLE)."}
+hints:
+  - "The IKE debug on FGT-BOG shows a notify about traffic selectors."
+  - "Selectors must mirror: Cali's dst-subnet must match HQ's src-subnet. Remember Cali's route too."
+solution:
+  FGT-BOG: |
+    diagnose debug application ike -1
+    diagnose debug enable
+    diagnose vpn ike gateway clear
+  FGT-CLO: |
+    config vpn ipsec phase2-interface
+    edit VPN-BOG-P2
+    set dst-subnet 10.20.0.0/15
+    next
+    end
+    config router static
+    edit 2
+    set dst 10.20.0.0/15
+    next
+    edit 3
+    set dst 10.20.0.0/15
+    next
+    end
+explain: |
+  Phase 1 up and phase 2 down is almost always selectors, PFS or the phase 2 proposal. Many teams use 0.0.0.0/0 selectors on
+  route-based tunnels and let routing and policies decide, which avoids exactly this ticket.

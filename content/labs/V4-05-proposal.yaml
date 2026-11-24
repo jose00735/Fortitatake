@@ -1,0 +1,53 @@
+id: V4.05
+track: vpn
+tier: 4
+order: 25
+kind: ticket
+title: "\"After the crypto hardening, the tunnel won't come back\""
+customer: Andes Logistics
+par: 20
+skills: [IKE proposals, DH groups, hardening changes]
+brief: |
+  **Ticket 5255, priority 1.** The CISO's hardening standard v3 was applied at HQ tonight: "IKE: AES-256-GCM with PRF
+  SHA-384, DH 21 only". Cali was scheduled for tomorrow. VPN-CLO has been down since 22:10.
+topology:
+  use: andes-vpn-live
+  devices:
+    FGT-BOG:
+      config: |
+        config vpn ipsec phase1-interface
+        edit VPN-CLO
+        set proposal aes256gcm-prfsha384
+        set dhgrp 21
+        next
+        end
+tasks:
+  - "Prove the mismatch from the IKE debug."
+  - "Bring the tunnel up while still meeting the new standard."
+checks:
+  - text: "VPN-CLO is up"
+    tunnel: {dev: FGT-BOG, name: VPN-CLO}
+  - text: "HQ still enforces the v3 standard"
+    all:
+      - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: VPN-CLO, attr: proposal, equals: aes256gcm-prfsha384}
+      - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: VPN-CLO, attr: dhgrp, equals: "21"}
+  - text: "Root cause"
+    answer: {accept: ["~proposal|dh|group|crypto|cipher|no_proposal"], hint: "Which IKE notify does the debug show?", why: "Only HQ moved to aes256gcm-prfsha384 / DH 21; Cali still offered aes256-sha256 / DH 20, so there was no common proposal."}
+hints:
+  - "NO_PROPOSAL_CHOSEN means the two ends share no proposal or DH group."
+  - "Don't roll HQ back: apply the same standard on FGT-CLO's VPN-BOG."
+solution:
+  FGT-BOG: |
+    diagnose debug application ike -1
+    diagnose debug enable
+    diagnose vpn ike gateway clear
+  FGT-CLO: |
+    config vpn ipsec phase1-interface
+    edit VPN-BOG
+    set proposal aes256gcm-prfsha384
+    set dhgrp 21
+    next
+    end
+explain: |
+  Crypto changes are two-sided changes. Plan them as one window, or add the new proposal to both sides first and remove the
+  old one after: FortiOS picks the first common proposal.

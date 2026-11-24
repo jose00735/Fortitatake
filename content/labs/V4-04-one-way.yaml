@@ -1,0 +1,60 @@
+id: V4.04
+track: vpn
+tier: 4
+order: 24
+kind: ticket
+title: "\"HQ reaches Cali, but Cali can't open anything at HQ\""
+customer: Andes Logistics
+par: 25
+skills: [policy direction, debug flow across a tunnel]
+brief: |
+  **Ticket 5241, priority 2.** After a "rulebase cleanup" on FGT-BOG, HQ helpdesk can still remote into Cali PCs, but
+  Cali users get timeouts opening the ERP. The tunnel is green on both sides.
+topology:
+  use: andes-vpn-live
+  devices:
+    FGT-BOG:
+      config: |
+        config firewall policy
+        delete 2
+        end
+tasks:
+  - "Show where Cali's packet dies with a debug flow on the right FortiGate."
+  - "Fix it with least privilege (the ERP only: HTTPS and SQL)."
+checks:
+  - text: "CLO-PC reaches the ERP on 443"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "HQ-PC still reaches CLO-PC"
+    probe: {from: HQ-PC, to: 10.30.0.20}
+  - text: "Cali can't reach other HQ hosts on RDP"
+    probe: {from: CLO-PC, to: 10.20.10.50, proto: tcp, port: 3389, expect: fail}
+  - text: "Ran a debug flow on FGT-BOG"
+    ran: {dev: FGT-BOG, cmd: "debug flow", fail: "The packet leaves Cali fine: run the debug flow on FGT-BOG, where it arrives."}
+hints:
+  - "Debug flow on FGT-BOG shows the packet arriving from VPN-CLO, then 'Denied by forward policy check (policy 0)'."
+  - "Add a policy VPN-CLO → port2 to the ERP address with HTTPS and MS-SQL."
+solution:
+  FGT-BOG: |
+    diagnose debug flow filter addr 10.30.0.20
+    diagnose debug enable
+    diagnose debug flow trace start 5
+    config firewall address
+    edit ERP-SRV
+    set subnet 10.20.10.20/32
+    next
+    end
+    config firewall policy
+    edit 0
+    set name CLO-to-ERP
+    set srcintf VPN-CLO
+    set dstintf port2
+    set srcaddr all
+    set dstaddr ERP-SRV
+    set action accept
+    set schedule always
+    set service HTTPS MS-SQL
+    next
+    end
+explain: |
+  A tunnel is two interfaces with two rulebases. "One-way" VPN tickets are usually a policy or a route missing on the side
+  that receives the new session; debug on the receiver finds it in one trace.

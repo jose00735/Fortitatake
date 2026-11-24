@@ -454,3 +454,396 @@ retail-live:
         set nat enable
         next
         end
+
+# ---------------------------------------------------------------------------
+# Andes Logistics over the Internet: no MPLS, plus a remote worker at home.
+andes-vpn:
+  extends: andes
+  remove_devices: [MPLS-PE]
+  remove_segments: [bog-mpls, clo-mpls]
+  add_devices:
+    - id: ISP-HOME
+      kind: router
+      label: Movistar Hogar
+      ifaces: [{name: lan0, ip: 181.60.4.1/24}, {name: inet0, ip: 198.51.100.22/30}]
+      routes: [{dst: 0.0.0.0/0, dev: internet}]
+    - id: LAPTOP
+      kind: host
+      os: windows
+      hostname: LAPTOP-JGOMEZ
+      nic: {ip: 181.60.4.25/24, gw: 181.60.4.1, dns: [8.8.8.8]}
+      vpn: {name: Andes VPN, gw: 200.31.20.2, psk: "Andes-Remote-2026!", ike: 2, user: jgomez, password: "Cl4ve-Segura!", proposal: [aes256-sha256, aes128-sha256], dhgrp: [20, 14]}
+  add_segments:
+    - {id: home, members: ["ISP-HOME:lan0", LAPTOP]}
+    - {id: up3, members: ["ISP-HOME:inet0", INTERNET]}
+  layout: {ISP-HOME: [480, 200], LAPTOP: [480, 330]}
+
+# ---------------------------------------------------------------------------
+# Andes Cali branch with two Internet links for SD-WAN.
+sdwan-branch:
+  title: Andes Logistics · Cali branch, two ISPs
+  devices:
+    - id: FGT-CLO
+      kind: fortigate
+      model: FortiGate-60F
+      hostname: FGT-CLO-BR
+      serial: FGT60FTK23090315
+      ports: [{name: wan1, role: wan}, {name: wan2, role: wan}, {name: internal, role: lan}, {name: dmz, role: dmz}]
+      config: |
+        config system interface
+        edit wan1
+        set ip 190.14.8.2/29
+        set allowaccess ping
+        set alias "Emcali-fiber"
+        next
+        edit wan2
+        set ip 181.52.6.2/29
+        set allowaccess ping
+        set alias "Movistar-backup"
+        next
+        edit internal
+        set ip 10.30.0.1/24
+        set allowaccess ping https ssh
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        set secondary 1.1.1.1
+        end
+    - {id: CLO-PC, kind: host, os: windows, nic: {ip: 10.30.0.20/24, gw: 10.30.0.1, dns: [8.8.8.8]}}
+    - {id: CLO-PHONE, kind: host, os: linux, hostname: ip-phone-101, nic: {ip: 10.30.0.40/24, gw: 10.30.0.1, dns: [8.8.8.8]}}
+    - id: ISP-EMCALI
+      kind: router
+      label: Emcali fiber
+      quality: {latency: 18, jitter: 2, loss: 0}
+      ifaces: [{name: ge0, ip: 190.14.8.1/29}, {name: inet0, ip: 198.51.100.18/30}]
+      routes: [{dst: 0.0.0.0/0, dev: internet}]
+    - id: ISP-MOVISTAR
+      kind: router
+      label: Movistar backup
+      quality: {latency: 46, jitter: 7, loss: 0}
+      ifaces: [{name: ge0, ip: 181.52.6.1/29}, {name: inet0, ip: 198.51.100.26/30}]
+      routes: [{dst: 0.0.0.0/0, dev: internet}]
+    - id: INTERNET
+      kind: cloud
+      hosts:
+        - {name: dns.google, ip: 8.8.8.8, services: [udp/53]}
+        - {name: one.one.one.one, ip: 1.1.1.1, services: [udp/53]}
+        - {name: www.google.com, ip: 142.250.78.4, services: [tcp/80, tcp/443]}
+        - {name: outlook.office365.com, ip: 52.96.0.10, services: [tcp/443]}
+        - {name: login.microsoftonline.com, ip: 20.190.160.1, services: [tcp/443]}
+        - {name: voz.andes-pbx.co, ip: 45.79.20.10, services: [udp/5060, tcp/5061]}
+  segments:
+    - {id: wan-a, members: ["FGT-CLO:wan1", "ISP-EMCALI:ge0"]}
+    - {id: wan-b, members: ["FGT-CLO:wan2", "ISP-MOVISTAR:ge0"]}
+    - {id: lan, label: LAN 10.30.0.0/24, members: ["FGT-CLO:internal", CLO-PC, CLO-PHONE]}
+    - {id: up1, members: ["ISP-EMCALI:inet0", INTERNET]}
+    - {id: up2, members: ["ISP-MOVISTAR:inet0", INTERNET]}
+  layout:
+    INTERNET: [480, 65]
+    ISP-EMCALI: [280, 175]
+    ISP-MOVISTAR: [680, 175]
+    FGT-CLO: [480, 300]
+    seg:lan: [480, 430]
+    CLO-PC: [380, 505]
+    CLO-PHONE: [580, 505]
+
+# ---------------------------------------------------------------------------
+# Laboratorios Caribe, Barranquilla: two FortiGate-100F for an FGCP cluster.
+pharma-ha:
+  title: Laboratorios Caribe · Barranquilla HQ
+  devices:
+    - id: FGT-A
+      kind: fortigate
+      model: FortiGate-100F
+      hostname: FGT-LC-A
+      serial: FG100FTK21004417
+      ports: [{name: port1, role: wan}, {name: port2, role: lan}, {name: port3}, {name: port4}]
+      config: &pharmacfg |
+        config system interface
+        edit port1
+        set ip 186.31.40.2/29
+        set allowaccess ping
+        next
+        edit port2
+        set ip 10.50.0.1/24
+        set allowaccess ping https ssh
+        next
+        end
+        config system dns
+        set primary 8.8.8.8
+        end
+        config router static
+        edit 1
+        set gateway 186.31.40.1
+        set device port1
+        next
+        end
+        config firewall policy
+        edit 1
+        set name LAN-Internet
+        set srcintf port2
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    - id: FGT-B
+      kind: fortigate
+      model: FortiGate-100F
+      hostname: FGT-LC-B
+      serial: FG100FTK21004921
+      ports: [{name: port1, role: wan}, {name: port2, role: lan}, {name: port3}, {name: port4}]
+    - {id: LIMS-SRV, kind: server, os: linux, nic: {ip: 10.50.0.20/24, gw: 10.50.0.1}, services: [tcp/443]}
+    - {id: QA-PC, kind: host, os: windows, nic: {ip: 10.50.0.60/24, gw: 10.50.0.1, dns: [8.8.8.8]}}
+    - id: ISP-UNE
+      kind: router
+      label: UNE (ISP)
+      ifaces: [{name: ge0, ip: 186.31.40.1/29}, {name: inet0, ip: 198.51.100.30/30}]
+      routes: [{dst: 0.0.0.0/0, dev: internet}]
+    - id: INTERNET
+      kind: cloud
+      hosts:
+        - {name: dns.google, ip: 8.8.8.8, services: [udp/53]}
+        - {name: www.google.com, ip: 142.250.78.4, services: [tcp/80, tcp/443]}
+        - {name: portal.invima.gov.co, ip: 190.60.250.7, services: [tcp/443]}
+  segments:
+    - {id: wan, label: WAN switch, members: ["FGT-A:port1", "FGT-B:port1", "ISP-UNE:ge0"]}
+    - {id: lan, label: Core switch, members: ["FGT-A:port2", "FGT-B:port2", LIMS-SRV, QA-PC]}
+    - {id: hb1, label: HB1, members: ["FGT-A:port3", "FGT-B:port3"]}
+    - {id: hb2, label: HB2, members: ["FGT-A:port4", "FGT-B:port4"]}
+    - {id: up, members: ["ISP-UNE:inet0", INTERNET]}
+  layout:
+    INTERNET: [480, 60]
+    ISP-UNE: [480, 150]
+    seg:wan: [480, 225]
+    FGT-A: [330, 310]
+    FGT-B: [630, 310]
+    seg:lan: [480, 420]
+    LIMS-SRV: [380, 505]
+    QA-PC: [580, 505]
+
+# Bogotá ↔ Cali tunnel working (the state after V2.01).
+andes-vpn-live:
+  extends: andes-vpn
+  devices:
+    FGT-BOG:
+      config: |
+        config vpn ipsec phase1-interface
+        edit VPN-CLO
+        set interface port1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 190.14.8.2
+        set psksecret An3s-S2S-2026#
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit VPN-CLO-P2
+        set phase1name VPN-CLO
+        set proposal aes256-sha256
+        set dhgrp 20
+        set src-subnet 10.20.0.0/16
+        set dst-subnet 10.30.0.0/24
+        set auto-negotiate enable
+        next
+        end
+        config router static
+        edit 2
+        set dst 10.30.0.0/24
+        set device VPN-CLO
+        next
+        edit 3
+        set dst 10.30.0.0/24
+        set blackhole enable
+        set distance 254
+        next
+        end
+        config firewall policy
+        edit 1
+        set name BOG-to-CLO
+        set srcintf port2
+        set dstintf VPN-CLO
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 2
+        set name CLO-to-BOG
+        set srcintf VPN-CLO
+        set dstintf port2
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 3
+        set name HQ-Internet
+        set srcintf port2
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    FGT-CLO:
+      config: |
+        config vpn ipsec phase1-interface
+        edit VPN-BOG
+        set interface wan1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 200.31.20.2
+        set psksecret An3s-S2S-2026#
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit VPN-BOG-P2
+        set phase1name VPN-BOG
+        set proposal aes256-sha256
+        set dhgrp 20
+        set src-subnet 10.30.0.0/24
+        set dst-subnet 10.20.0.0/16
+        set auto-negotiate enable
+        next
+        end
+        config router static
+        edit 2
+        set dst 10.20.0.0/16
+        set device VPN-BOG
+        next
+        edit 3
+        set dst 10.20.0.0/16
+        set blackhole enable
+        set distance 254
+        next
+        end
+        config firewall policy
+        edit 1
+        set name CLO-to-BOG
+        set srcintf internal
+        set dstintf VPN-BOG
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 2
+        set name BOG-to-CLO
+        set srcintf VPN-BOG
+        set dstintf internal
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 3
+        set name CLO-Internet
+        set srcintf internal
+        set dstintf wan1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+
+# Cali branch with SD-WAN working (the state after S2.01 part b).
+sdwan-live:
+  extends: sdwan-branch
+  devices:
+    FGT-CLO:
+      config: |
+        config system sdwan
+        set status enable
+        config members
+        edit 1
+        set interface wan1
+        set gateway 190.14.8.1
+        next
+        edit 2
+        set interface wan2
+        set gateway 181.52.6.1
+        next
+        end
+        config health-check
+        edit HC-DNS
+        set server 8.8.8.8
+        set members 1 2
+        config sla
+        edit 1
+        set latency-threshold 150
+        set jitter-threshold 30
+        set packetloss-threshold 2
+        next
+        end
+        next
+        end
+        end
+        config router static
+        edit 1
+        set sdwan-zone virtual-wan-link
+        next
+        end
+        config firewall policy
+        edit 1
+        set name LAN-Internet
+        set srcintf internal
+        set dstintf virtual-wan-link
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+
+# The Laboratorios Caribe cluster working (both units carry the synced config).
+pharma-ha-live:
+  extends: pharma-ha
+  devices:
+    FGT-A:
+      config: |
+        config system ha
+        set group-name LC-CLUSTER
+        set mode a-p
+        set password Lc-Ha-2026!
+        set hbdev port3 50 port4 50
+        set session-pickup enable
+        set override enable
+        set priority 200
+        set monitor port1 port2
+        end
+    FGT-B:
+      config: |
+        config system ha
+        set group-name LC-CLUSTER
+        set mode a-p
+        set password Lc-Ha-2026!
+        set hbdev port3 50 port4 50
+        set session-pickup enable
+        set override enable
+        set priority 100
+        set monitor port1 port2
+        end

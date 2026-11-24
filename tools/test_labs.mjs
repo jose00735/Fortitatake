@@ -20,11 +20,11 @@ for (const def of labs) {
   if (warnings.length) { bad++; console.log(`✗ ${def.id}: start config errors\n  ${warnings.join("\n  ")}`); continue; }
   let ok = true;
   def.parts.forEach((p, i) => {
-    run.part = i;
+    run.goto(i);
     // answers: fill with the first accepted value for the solution run
     const before = run.check();
     if (!p.allow_pre_pass && before.every((r) => r.pass)) { ok = false; console.log(`✗ ${def.id}/${p.id}: passes before any work`); }
-    for (const c of p.checks) if (c.answer) run.answers[c.id] = String([].concat(c.answer.accept)[0]).replace(/^~/, "").replace(/[\\^$()|]/g, "").split("|")[0];
+    for (const c of p.checks) if (c.answer) run.answers[c.id] = c.answer.sample || String([].concat(c.answer.accept)[0]).replace(/^~/, "").split("|")[0].replace(/\.\?|\.\*|\.\+/g, "").replace(/[\\^$()]/g, "");
     const logLen = run.log.length;
     run.applySolution(p);
     const errs = [];

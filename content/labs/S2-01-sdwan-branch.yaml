@@ -1,0 +1,169 @@
+id: S2.01
+track: sdwan
+tier: 2
+order: 10
+kind: project
+title: "SD-WAN for the Cali branch: two ISPs, one policy"
+customer: Andes Logistics
+par: 70
+skills: [SD-WAN members, sdwan-zone routes, health checks, SLA rules]
+brief: |
+  **SOW 2026-166.** Cali added a Movistar backup line next to its Emcali fiber. The branch must use both, survive the loss
+  of either, and keep Microsoft 365 on whichever link is healthy.
+
+  | Member | Interface | Gateway |
+  | --- | --- | --- |
+  | 1 | wan1 (Emcali fiber) | 190.14.8.1 |
+  | 2 | wan2 (Movistar) | 181.52.6.1 |
+
+  SLA for Microsoft 365: latency ≤ 150 ms, jitter ≤ 30 ms, loss ≤ 2 %. Probe target: 8.8.8.8 (ping).
+topology: {use: sdwan-branch}
+parts:
+  - id: a
+    title: Members, zone and the default route
+    tasks:
+      - "Enable SD-WAN with members 1 (wan1) and 2 (wan2) in virtual-wan-link."
+      - "Default route through the SD-WAN zone, and a policy internal → virtual-wan-link with NAT."
+    checks:
+      - text: "CLO-PC browses the Internet"
+        probe: {from: CLO-PC, to: www.google.com, proto: tcp, port: 443}
+      - text: "Both links carry the default route"
+        all:
+          - route: {dev: FGT-CLO, dst: 0.0.0.0/0, via: 190.14.8.1}
+          - route: {dev: FGT-CLO, dst: 0.0.0.0/0, via: 181.52.6.1}
+      - text: "The policy targets the SD-WAN zone, not a single port"
+        config: {dev: FGT-CLO, path: firewall policy, attr: dstintf, has: [virtual-wan-link]}
+    hints:
+      - "`config system sdwan` / `set status enable` / `config members` / `edit 1` / `set interface wan1` / `set gateway 190.14.8.1` / `next` …"
+      - "The route: `config router static` / `edit 0` / `set sdwan-zone virtual-wan-link` / `next` / `end`."
+    solution:
+      FGT-CLO: |
+        config system sdwan
+        set status enable
+        config members
+        edit 1
+        set interface wan1
+        set gateway 190.14.8.1
+        next
+        edit 2
+        set interface wan2
+        set gateway 181.52.6.1
+        next
+        end
+        end
+        config router static
+        edit 0
+        set sdwan-zone virtual-wan-link
+        next
+        end
+        config firewall policy
+        edit 0
+        set name LAN-Internet
+        set srcintf internal
+        set dstintf virtual-wan-link
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    explain: |
+      Members join a zone; routes and policies point at the zone, so adding a third link later touches neither. FortiOS won't
+      let an interface become a member while policies or routes still reference it directly.
+  - id: b
+    title: Measure the links
+    tasks:
+      - "Health check HC-DNS: ping 8.8.8.8 on members 1 and 2, with SLA 1 = latency 150, jitter 30, loss 2."
+      - "Read `diagnose sys sdwan health-check` and answer below."
+    checks:
+      - text: "wan1 is alive in the health check"
+        sdwan: {dev: FGT-CLO, member: wan1, alive: true}
+      - text: "wan2 is alive in the health check"
+        sdwan: {dev: FGT-CLO, member: wan2, alive: true}
+      - text: "HC-DNS has SLA 1 with the agreed thresholds"
+        config: {dev: FGT-CLO, path: system sdwan, attr: status, equals: enable}
+      - text: "Which link has the lower latency right now?"
+        answer: {accept: ["~wan1|emcali|fiber|member 1"], hint: "Compare latency(...) on the two Seq lines.", why: "wan1 (Emcali fiber) measures about 20 ms against about 48 ms on Movistar."}
+    hints:
+      - "Health checks live in `config system sdwan` / `config health-check` / `edit HC-DNS`. The SLA is a table inside it: `config sla` / `edit 1`."
+      - "`set server 8.8.8.8`, `set members 1 2`, then in the SLA `set latency-threshold 150`, `set jitter-threshold 30`, `set packetloss-threshold 2`."
+    solution:
+      FGT-CLO: |
+        config system sdwan
+        config health-check
+        edit HC-DNS
+        set server 8.8.8.8
+        set members 1 2
+        config sla
+        edit 1
+        set latency-threshold 150
+        set jitter-threshold 30
+        set packetloss-threshold 2
+        next
+        end
+        next
+        end
+        end
+        diagnose sys sdwan health-check
+    explain: |
+      A health check marks members dead (removing their routes) and scores them against SLAs. Ping to a public resolver is the
+      usual probe; pick a target the ISP can't silently block, and never a private address.
+  - id: c
+    title: Keep Microsoft 365 on a healthy link
+    brief: |
+      **11:40.** Emcali reports congestion in Cali: latency on the fiber jumped above 200 ms. Users complain Teams and Outlook
+      are slow. Your SLA rule should move Microsoft 365 to whichever link meets the SLA.
+    events:
+      - {router: ISP-EMCALI, quality: {latency: 220, jitter: 4, loss: 0}}
+    tasks:
+      - "FQDN addresses for outlook.office365.com and login.microsoftonline.com, grouped as MS365."
+      - "SD-WAN rule 1 'O365': destination MS365, mode SLA on HC-DNS SLA 1, preferred members 1 then 2."
+    checks:
+      - text: "Outlook now leaves through wan2, the link that meets the SLA"
+        probe: {from: CLO-PC, to: outlook.office365.com, proto: tcp, port: 443, egress: wan2}
+      - text: "Microsoft login also goes through wan2"
+        probe: {from: CLO-PC, to: login.microsoftonline.com, proto: tcp, port: 443, egress: wan2}
+      - text: "Other traffic still works"
+        probe: {from: CLO-PC, to: www.google.com, proto: tcp, port: 443}
+    hints:
+      - "`config system sdwan` / `config service` / `edit 1` / `set name O365` / `set mode sla` / `set dst MS365` / `set priority-members 1 2`."
+      - "The SLA reference is a small table in the rule: `config sla` / `edit HC-DNS` / `set id 1` / `next` / `end`."
+    solution:
+      FGT-CLO: |
+        config firewall address
+        edit MS-OUTLOOK
+        set type fqdn
+        set fqdn outlook.office365.com
+        next
+        edit MS-LOGIN
+        set type fqdn
+        set fqdn login.microsoftonline.com
+        next
+        end
+        config firewall addrgrp
+        edit MS365
+        set member MS-OUTLOOK MS-LOGIN
+        next
+        end
+        config system sdwan
+        config service
+        edit 1
+        set name O365
+        set mode sla
+        set dst MS365
+        set priority-members 1 2
+        config sla
+        edit HC-DNS
+        set id 1
+        next
+        end
+        next
+        end
+        end
+        diagnose sys sdwan service
+    explain: |
+      In SLA mode the rule takes the first member (in priority order) that meets the SLA; when none do, it falls back to the
+      first alive one. The rest of the traffic keeps using the implicit rule. In production, use the Internet Service Database
+      object for Microsoft 365 instead of a few FQDNs.

@@ -1,0 +1,52 @@
+id: S4.01
+track: sdwan
+tier: 4
+order: 31
+kind: ticket
+title: "\"Since last night Cali has no Internet at all\""
+customer: Andes Logistics
+par: 20
+skills: [health checks, SD-WAN member state, update-static-route]
+brief: |
+  **Ticket 5302, priority 1.** "Both ISPs say their lines are fine and the modems show green." Last night the security
+  team changed the SD-WAN health check to "use our own monitoring server instead of Google".
+topology:
+  use: sdwan-live
+  devices:
+    FGT-CLO:
+      config: |
+        config system sdwan
+        config health-check
+        edit HC-DNS
+        set server 10.255.255.1
+        next
+        end
+        end
+tasks:
+  - "Check the members' state and the routing table."
+  - "Fix it and answer the root cause."
+checks:
+  - text: "CLO-PC browses the Internet"
+    probe: {from: CLO-PC, to: www.google.com, proto: tcp, port: 443}
+  - text: "Both members alive"
+    all:
+      - sdwan: {dev: FGT-CLO, member: wan1, alive: true}
+      - sdwan: {dev: FGT-CLO, member: wan2, alive: true}
+  - text: "Root cause"
+    answer: {accept: ["~health.?check|server|10\\.255|unreachable|private|probe"], hint: "`diagnose sys sdwan health-check`: why are both members dead?", why: "The new probe target, 10.255.255.1, isn't reachable through either ISP, so both members were declared dead and their routes removed."}
+hints:
+  - "`diagnose sys sdwan health-check` and `get router info routing-table all`: what happened to the default route?"
+  - "Point HC-DNS back at a public target such as 8.8.8.8."
+solution:
+  FGT-CLO: |
+    diagnose sys sdwan health-check
+    config system sdwan
+    config health-check
+    edit HC-DNS
+    set server 8.8.8.8
+    next
+    end
+    end
+explain: |
+  With update-static-route enabled (the default), a dead member's routes leave the table. A probe target that's unreachable
+  through every member takes the whole site down. Use targets reachable through each ISP, and two of them.

@@ -15,6 +15,14 @@ Lab.prototype.diagnose = function (fg, toks, line) {
   const rest = w.slice(1);
   const known = (prefix) => fg.schema.cmds.some((c) => c.startsWith(prefix));
   try {
+    const raw = toks.slice(1);
+    for (const fn of [this.vpnDiag, this.sdwanDiag]) {
+      if (head !== "diagnose" || !fn) continue;
+      const r = fn.call(this, fg, rest, raw);
+      if (r !== null && r !== undefined) return r;
+    }
+    if (this.haDiag) { const r = this.haDiag(fg, rest, raw, head); if (r !== null && r !== undefined) return r; }
+    if (head === "get" && match(rest, ["vpn", "ipsec", "tunnel", "summary"]) && this.vpnSummary) return this.vpnSummary(fg);
     if (head === "get") return getCmd(this, fg, rest, toks.slice(1));
     if (head === "diagnose") return diagCmd(this, fg, rest, toks.slice(1));
     if (head === "execute") return execCmd(this, fg, rest, toks.slice(1));
@@ -297,7 +305,7 @@ export function hostRun(lab, h, line) {
   const c = t[0].toLowerCase();
   const win = h.os === "windows";
   if (c === "help" || c === "?") return win
-    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, nslookup <name>, curl [-k] [-I] <url>, tnc <host> -port <n>, cls"
+    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, nslookup <name>, curl [-k] [-I] <url>, tnc <host> -port <n>, forticlient connect|status|disconnect, cls"
     : "Commands: ip a, ip route, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, clear";
   if (c === "ipconfig" || (c === "ip" && t[1] && "address".startsWith(t[1])) || c === "ifconfig") {
     if (t[1] && t[1].toLowerCase() === "/renew") { const ok = lab.renew(h); if (!ok) return "An error occurred while renewing interface Ethernet0 : unable to contact your DHCP server. Request has timed out."; }
@@ -341,6 +349,7 @@ export function hostRun(lab, h, line) {
     if (c === "nc") return p.ok ? `Connection to ${host} ${port} port [tcp/*] succeeded!` : `nc: connect to ${host} port ${port} (tcp) failed: ${p.drop && p.drop.refused ? "Connection refused" : "Connection timed out"}`;
     return `ComputerName     : ${host}\nRemoteAddress    : ${intToIp(r.ip)}\nRemotePort       : ${port}\nInterfaceAlias   : Ethernet0\nSourceAddress    : ${intToIp(h.ip() || 0)}\nTcpTestSucceeded : ${p.ok ? "True" : "False"}`;
   }
+  if (c === "forticlient" || c === "fortivpn") return lab.forticlient ? lab.forticlient(h, t.slice(1)) : "FortiClient is not installed.";
   if (c === "ss" || c === "netstat") return [...h.services].filter((s) => s.startsWith("tcp/")).map((s) => `LISTEN 0 511 0.0.0.0:${s.slice(4)} 0.0.0.0:*`).join("\n") || "(no listening ports)";
   if (c === "hostname") return h.hostname;
   return win ? `'${t[0]}' is not recognized as an internal or external command,\noperable program or batch file. Type help for the commands this lab PC knows.` : `bash: ${t[0]}: command not found (type help)`;

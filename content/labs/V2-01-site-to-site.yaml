@@ -1,0 +1,222 @@
+id: V2.01
+track: vpn
+tier: 2
+order: 1
+kind: project
+title: "Andes Logistics: site-to-site IPsec, Bogotá ↔ Cali"
+customer: Andes Logistics
+par: 70
+skills: [phase1-interface, phase2-interface, route-based VPN, blackhole route, IKE debug]
+brief: |
+  **SOW 2026-152.** The MPLS contract ends this month. Replace it with a route-based IPsec tunnel over the Internet.
+
+  | | Bogotá (FGT-BOG) | Cali (FGT-CLO) |
+  | --- | --- | --- |
+  | Public IP | port1 200.31.20.2 | wan1 190.14.8.2 |
+  | LAN | 10.20.0.0/16 (ERP 10.20.10.20) | 10.30.0.0/24 |
+
+  **Crypto standard (customer security policy):** IKEv2, AES-256 with SHA-256, DH group 20, PSK
+  `An3s-S2S-2026#` exchanged by phone. Names: VPN-CLO on Bogotá, VPN-BOG on Cali.
+topology: {use: andes-vpn}
+parts:
+  - id: a
+    title: Bring the tunnel up
+    tasks:
+      - "FGT-BOG: phase1-interface VPN-CLO on port1 to 190.14.8.2, IKEv2, aes256-sha256, DH 20, the PSK."
+      - "FGT-BOG: phase2-interface VPN-CLO-P2: 10.20.0.0/16 ↔ 10.30.0.0/24, aes256-sha256, PFS DH 20."
+      - "FGT-CLO: the mirror: VPN-BOG on wan1 to 200.31.20.2, phase2 10.30.0.0/24 ↔ 10.20.0.0/16."
+      - "Check with `get vpn ipsec tunnel summary` and `diagnose vpn ike gateway list`."
+    checks:
+      - text: "VPN-CLO is up on FGT-BOG"
+        tunnel: {dev: FGT-BOG, name: VPN-CLO}
+      - text: "VPN-BOG is up on FGT-CLO"
+        tunnel: {dev: FGT-CLO, name: VPN-BOG}
+      - text: "The crypto follows the standard (IKEv2, aes256-sha256, DH 20)"
+        all:
+          - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: VPN-CLO, attr: ike-version, equals: "2"}
+          - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: VPN-CLO, attr: proposal, equals: aes256-sha256}
+          - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: VPN-CLO, attr: dhgrp, equals: "20"}
+    hints:
+      - "Both ends must agree on version, proposal, DH group and PSK. The phase2 selectors are each other's mirror."
+      - "To watch it negotiate: `diagnose debug application ike -1`, `diagnose debug enable`, `diagnose vpn ike gateway clear`."
+      - "`config vpn ipsec phase1-interface` / `edit VPN-CLO` / `set interface port1` / `set ike-version 2` / `set peertype any` / `set net-device disable` / `set proposal aes256-sha256` / `set dhgrp 20` / `set remote-gw 190.14.8.2` / `set psksecret An3s-S2S-2026#`."
+    solution:
+      FGT-BOG: |
+        config vpn ipsec phase1-interface
+        edit VPN-CLO
+        set interface port1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 190.14.8.2
+        set psksecret An3s-S2S-2026#
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit VPN-CLO-P2
+        set phase1name VPN-CLO
+        set proposal aes256-sha256
+        set dhgrp 20
+        set src-subnet 10.20.0.0/16
+        set dst-subnet 10.30.0.0/24
+        set auto-negotiate enable
+        next
+        end
+      FGT-CLO: |
+        config vpn ipsec phase1-interface
+        edit VPN-BOG
+        set interface wan1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 20
+        set remote-gw 200.31.20.2
+        set psksecret An3s-S2S-2026#
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit VPN-BOG-P2
+        set phase1name VPN-BOG
+        set proposal aes256-sha256
+        set dhgrp 20
+        set src-subnet 10.30.0.0/24
+        set dst-subnet 10.20.0.0/16
+        set auto-negotiate enable
+        next
+        end
+        get vpn ipsec tunnel summary
+    explain: |
+      Phase 1 (IKE SA) authenticates the gateways; phase 2 (IPsec SA) defines which traffic is protected: the selectors.
+      On a route-based VPN the tunnel is also an interface, so routing and policies decide what enters it.
+  - id: b
+    title: Routes and policies
+    tasks:
+      - "Each side: a static route to the other LAN through the tunnel interface."
+      - "Each side: policies LAN ↔ tunnel in both directions, no NAT."
+      - "Test from CLO-PC: tnc 10.20.10.20 -port 443."
+    checks:
+      - text: "CLO-PC reaches the ERP on 443 through the tunnel, unNATed"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443, seen_src: 10.30.0.20}
+      - text: "HQ-PC reaches CLO-PC"
+        probe: {from: HQ-PC, to: 10.30.0.20}
+      - text: "CLO-PC still browses the Internet through its own ISP"
+        probe: {from: CLO-PC, to: www.google.com, proto: tcp, port: 443, snat: 190.14.8.2}
+    hints:
+      - "The route's device is the tunnel interface (VPN-CLO / VPN-BOG); no gateway needed."
+      - "Cali's Internet policy (internal → wan1, NAT) is already there? Check `show firewall policy` on FGT-CLO."
+    solution:
+      FGT-BOG: |
+        config router static
+        edit 0
+        set dst 10.30.0.0/24
+        set device VPN-CLO
+        next
+        end
+        config firewall policy
+        edit 0
+        set name BOG-to-CLO
+        set srcintf port2
+        set dstintf VPN-CLO
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 0
+        set name CLO-to-BOG
+        set srcintf VPN-CLO
+        set dstintf port2
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        end
+      FGT-CLO: |
+        config router static
+        edit 0
+        set dst 10.20.0.0/16
+        set device VPN-BOG
+        next
+        end
+        config firewall policy
+        edit 0
+        set name CLO-to-BOG
+        set srcintf internal
+        set dstintf VPN-BOG
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 0
+        set name BOG-to-CLO
+        set srcintf VPN-BOG
+        set dstintf internal
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        next
+        edit 0
+        set name CLO-Internet
+        set srcintf internal
+        set dstintf wan1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        end
+    explain: |
+      An up tunnel carries nothing until a route points into it and a policy allows it, on both ends. Debug flow on the
+      receiving side shows the packet arriving "from VPN-BOG" — the tunnel is just another interface to the policy engine.
+  - id: c
+    title: Don't leak to the Internet when the tunnel drops
+    brief: |
+      The security team noticed that when the tunnel is down, Cali's traffic to 10.20.0.0/16 follows the default route and
+      leaves unencrypted towards the ISP. Fix it on both sides.
+    tasks:
+      - "Each side: a blackhole route to the remote LAN with distance 254."
+      - "Prove it: answer what route Cali uses for 10.20.10.20 if the tunnel goes down."
+    checks:
+      - text: "FGT-CLO has a blackhole for 10.20.0.0/16 at distance 254"
+        config: {dev: FGT-CLO, path: router static, where: {dst: 10.20.0.0/16, blackhole: enable}, attr: distance, equals: "254"}
+      - text: "FGT-BOG has a blackhole for 10.30.0.0/24 at distance 254"
+        config: {dev: FGT-BOG, path: router static, where: {dst: 10.30.0.0/24, blackhole: enable}, attr: distance, equals: "254"}
+      - text: "Traffic still flows while the tunnel is up"
+        probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+      - text: "If VPN-BOG drops, which route does FGT-CLO use for 10.20.10.20?"
+        answer: {accept: ["~blackhole|null|254"], hint: "A route through a down tunnel leaves the table. What's left with the next-best distance?", why: "The blackhole (distance 254) takes over, so the traffic is dropped instead of leaking out wan1 in clear text."}
+    hints:
+      - "Think about what's left in the routing table once the tunnel's route disappears."
+      - "`set blackhole enable` and `set distance 254` in a new static route; no device or gateway."
+    solution:
+      FGT-CLO: |
+        config router static
+        edit 0
+        set dst 10.20.0.0/16
+        set blackhole enable
+        set distance 254
+        next
+        end
+      FGT-BOG: |
+        config router static
+        edit 0
+        set dst 10.30.0.0/24
+        set blackhole enable
+        set distance 254
+        next
+        end
+    explain: |
+      When a tunnel goes down FortiOS removes the routes through it; without a blackhole the default route takes over and
+      sends internal traffic, and sometimes internal DNS queries, to the ISP. The blackhole costs nothing while the tunnel is up.

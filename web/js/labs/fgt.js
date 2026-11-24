@@ -69,8 +69,10 @@ const quote = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
 const pad = (s, n) => (s.length >= n ? s + " " : s + " ".repeat(n - s.length));
 
 export class FortiGate {
-  constructor(spec, schema) {
+  constructor(spec, schema, hooks = {}) {
     this.id = spec.id;
+    this.onCommit = hooks.onCommit || null;
+    this.onDelete = hooks.onDelete || null;
     this.kind = "fortigate";
     this.model = spec.model || "FortiGate-VM64";
     this.version = "v8.0.2";
@@ -124,7 +126,7 @@ export class FortiGate {
   refNames(kind) {
     const names = (p) => this.entries(p).map((e) => e.key);
     switch (kind) {
-      case "intf": return [...names("system interface"), ...names("system zone"), ...names("system sdwan:zone"), "any"];
+      case "intf": return [...names("system interface"), ...names("system zone"), ...this.sdwanZoneNames(), "any"];
       case "intfonly": return names("system interface");
       case "intfany": return [...names("system interface"), "any"];
       case "addr": return [...names("firewall address"), ...names("firewall addrgrp")];
@@ -136,6 +138,12 @@ export class FortiGate {
       case "accprofile": return [...names("system accprofile"), "super_admin", "prof_admin"];
       default: return [];
     }
+  }
+
+  sdwanZoneNames() {
+    const sd = this.cfg.get("system sdwan");
+    const z = sd && sd.children.get("zone");
+    return z ? z.list().map((e) => e.key) : [];
   }
 
   // ---------- CLI ----------
@@ -266,6 +274,7 @@ export class FortiGate {
           if (users.length) return `The entry is used by other ${users.length} entries\nCommand fail. Return code -23`;
         }
         table.entries.delete(key);
+        if (this.onDelete && f.child.length === 0) this.onDelete(this, f.path, key);
         return "";
       }
       case "purge":
@@ -376,6 +385,7 @@ export class FortiGate {
         }
         if (f.commit) f.commit(e);
         this.frames.pop();
+        if (f.child.length === 0 && this.onCommit) this.onCommit(this, f.path, null);
         return "";
       }
       case "abort":
@@ -446,6 +456,12 @@ export class FortiGate {
         }
       }
     }
+    if (f.path === "system sdwan" && f.child[0] === "members" && name === "interface") {
+      const v = vals[0];
+      const pol = this.entries("firewall policy").filter((p) => ["srcintf", "dstintf"].some((a) => (p.attrs.get(a) || []).includes(v))).map((p) => "firewall policy " + p.key);
+      const rt = this.entries("router static").filter((r) => (r.attrs.get("device") || []).includes(v)).map((r) => "router static " + r.key);
+      if (pol.length || rt.length) return { err: `Interface ${v} is used by ${[...pol, ...rt].join(", ")}; remove those references before adding it to SD-WAN.\nCommand fail. Return code -23` };
+    }
     if (f.path === "system zone" && name === "interface" && f.child.length === 0) {
       for (const v of vals) {
         const used = this.entries("firewall policy").filter((p) => ["srcintf", "dstintf"].some((a) => (p.attrs.get(a) || []).includes(v)));
@@ -453,7 +469,7 @@ export class FortiGate {
       }
     }
     if (sp.ml && vals.some((v) => v.length > sp.ml)) return bad(vals.find((v) => v.length > sp.ml));
-    if (y === "user" && !sp.m) return { val: [vals.join(" ")] };
+    if (y === "user") return { val: vals };
     return { val: vals };
   }
 
@@ -491,7 +507,7 @@ export class FortiGate {
     const y = (sp && sp.y) || "string";
     if (/^password/.test(y)) return "ENC " + Buffer64(vals[0] || "");
     if (STRINGY.has(y) && y !== "user") return vals.map(quote).join(" ");
-    if (y === "user") return vals.map((v) => (/\s/.test(v) || /[a-z]/i.test(v) && !/^\d/.test(v) ? quote(v) : v)).join(" ");
+    if (y === "user") return vals.map((v) => (/^[a-z]/i.test(v) ? quote(v) : v)).join(" ");
     return vals.join(" ");
   }
   attrOrder(path, sch, e, full, child) {
@@ -724,5 +740,6 @@ function factory(dev, spec) {
   for (const [n, body] of SERVICES) lines.push(`edit "${n}"`, ...body.split("\n"), "next");
   lines.push("end", "config firewall schedule recurring", 'edit "always"', "set day sunday monday tuesday wednesday thursday friday saturday", "next", "end");
   lines.push("config system admin", 'edit "admin"', 'set accprofile "super_admin"', 'set vdom "root"', "next", "end");
+  lines.push("config system sdwan", "config zone", 'edit "virtual-wan-link"', "next", "end", "end");
   return lines.join("\n");
 }

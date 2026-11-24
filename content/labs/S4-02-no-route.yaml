@@ -1,0 +1,44 @@
+id: S4.02
+track: sdwan
+tier: 4
+order: 32
+kind: ticket
+title: "\"Internet died the moment we enabled SD-WAN\""
+customer: Andes Logistics
+par: 20
+skills: [SD-WAN migration, sdwan-zone static route]
+brief: |
+  **Ticket 5310, priority 1.** A junior engineer moved Cali to SD-WAN at 07:00: "FortiOS made me delete the default route
+  and the Internet policy before it accepted wan1 as a member, so I did, then recreated the policy on the SD-WAN zone".
+  Nothing has worked since.
+topology:
+  use: sdwan-live
+  devices:
+    FGT-CLO:
+      config: |
+        config router static
+        delete 1
+        end
+tasks:
+  - "Find what's missing and fix it."
+checks:
+  - text: "CLO-PC browses the Internet"
+    probe: {from: CLO-PC, to: www.google.com, proto: tcp, port: 443}
+  - text: "The default route uses the SD-WAN zone"
+    route: {dev: FGT-CLO, dst: 0.0.0.0/0, via: 190.14.8.1}
+  - text: "Root cause"
+    answer: {accept: ["~route|default|sdwan-zone|routing"], hint: "`get router info routing-table all`.", why: "The default route was deleted and never recreated with sdwan-zone, so there was no route to the Internet."}
+hints:
+  - "Debug flow would show 'no route' before any policy is checked."
+  - "`config router static` / `edit 0` / `set sdwan-zone virtual-wan-link`."
+solution:
+  FGT-CLO: |
+    get router info routing-table all
+    config router static
+    edit 0
+    set sdwan-zone virtual-wan-link
+    next
+    end
+explain: |
+  An SD-WAN migration has a fixed order: remove references, add members, then recreate both the routes and the policies
+  against the zone. Keep a console session open and a rollback script ready: this change cuts the session you're using.

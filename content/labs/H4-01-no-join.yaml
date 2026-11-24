@@ -1,0 +1,42 @@
+id: H4.01
+track: ha
+tier: 4
+order: 41
+kind: ticket
+title: "\"The replacement unit never joins the cluster\""
+customer: Laboratorios Caribe
+par: 20
+skills: [HA formation, get system ha status]
+brief: |
+  **Ticket 6102, priority 2.** FGT-B was RMA'd. The field engineer configured HA on the replacement "exactly like the
+  documentation" and left. FGT-A has been running alone for two days.
+topology:
+  use: pharma-ha-live
+  devices:
+    FGT-B:
+      config: |
+        config system ha
+        set group-name LC-CLUSTR
+        end
+tasks:
+  - "Compare `get system ha status` and the HA settings on both units."
+  - "Fix it and answer the root cause."
+checks:
+  - text: "FGT-A sees a two-unit cluster"
+    ha: {dev: FGT-A, size: 2, role: primary}
+  - text: "FGT-B is secondary"
+    ha: {dev: FGT-B, role: secondary}
+  - text: "Root cause"
+    answer: {accept: ["~group.?name|typo|lc-clustr|group"], hint: "Compare `show system ha` on both units line by line.", why: "FGT-B was configured with group-name LC-CLUSTR instead of LC-CLUSTER; units with different group names never join."}
+hints:
+  - "The heartbeat is cabled and up; something in the HA identity differs."
+  - "On FGT-B: `config system ha` / `set group-name LC-CLUSTER`."
+solution:
+  FGT-B: |
+    show system ha
+    config system ha
+    set group-name LC-CLUSTER
+    end
+explain: |
+  Group name, group ID, password and mode must match, plus the same model and firmware. A typo leaves two standalone-acting
+  units that both look "fine" on their own: always check the cluster from both sides.

@@ -1,0 +1,110 @@
+id: H2.01
+track: ha
+tier: 2
+order: 20
+kind: project
+title: "Laboratorios Caribe: an FGCP cluster that survives a link failure"
+customer: Laboratorios Caribe (pharma, Barranquilla)
+par: 60
+skills: [FGCP, heartbeat, priority and override, monitored interfaces, failover testing]
+brief: |
+  **SOW 2026-171.** The lab's LIMS and its INVIMA reporting can't stop, so a second FortiGate-100F (FGT-B) arrives to form
+  an active-passive cluster with FGT-A. Cabling is done: port1 WAN switch, port2 core switch, **port3 and port4 back-to-back
+  heartbeats**.
+
+  Design: group **LC-CLUSTER**, password `Lc-Ha-2026!`, FGT-A preferred as primary (priority 200, override), FGT-B priority
+  100, session pickup on. Acceptance includes a pulled-cable failover test.
+topology: {use: pharma-ha}
+parts:
+  - id: a
+    title: Form the cluster
+    tasks:
+      - "On both units: mode a-p, group-name LC-CLUSTER, the password, hbdev port3 and port4 (priority 50 each), session-pickup."
+      - "FGT-A: priority 200 and override enable. FGT-B: priority 100."
+      - "Check with `get system ha status` on both, and `diagnose sys ha checksum cluster`."
+    checks:
+      - text: "FGT-A sees a two-unit cluster and is primary"
+        ha: {dev: FGT-A, size: 2, role: primary}
+      - text: "FGT-B joined as secondary"
+        ha: {dev: FGT-B, size: 2, role: secondary}
+      - text: "FGT-B received the configuration (policy 1 synced)"
+        config: {dev: FGT-B, path: firewall policy, key: "1"}
+      - text: "QA-PC still reaches the INVIMA portal"
+        probe: {from: QA-PC, to: portal.invima.gov.co, proto: tcp, port: 443}
+    hints:
+      - "A cluster forms only when mode, group-name, group-id and password match and a heartbeat link connects the units."
+      - "`config system ha` / `set mode a-p` / `set group-name LC-CLUSTER` / `set password Lc-Ha-2026!` / `set hbdev port3 50 port4 50`."
+      - "Priority and override are per unit: they don't sync."
+    solution:
+      FGT-A: |
+        config system ha
+        set group-name LC-CLUSTER
+        set mode a-p
+        set password Lc-Ha-2026!
+        set hbdev port3 50 port4 50
+        set session-pickup enable
+        set override enable
+        set priority 200
+        end
+      FGT-B: |
+        config system ha
+        set group-name LC-CLUSTER
+        set mode a-p
+        set password Lc-Ha-2026!
+        set hbdev port3 50 port4 50
+        set session-pickup enable
+        set priority 100
+        end
+        get system ha status
+    explain: |
+      Once the heartbeat sees a matching peer, the units elect a primary and the primary pushes its configuration. With
+      override enabled, priority beats uptime in the election, so FGT-A takes the role back after a reboot: decide that on
+      purpose, because it means an extra failover when the preferred unit returns.
+  - id: b
+    title: Monitor the links that matter
+    tasks:
+      - "Monitor port1 and port2 so a dead WAN or core link triggers a failover."
+    checks:
+      - text: "FGT-A monitors port1 and port2"
+        config: {dev: FGT-A, path: system ha, attr: monitor, has: [port1, port2]}
+      - text: "The setting reached FGT-B"
+        config: {dev: FGT-B, path: system ha, attr: monitor, has: [port1, port2]}
+    hints:
+      - "`set monitor port1 port2` under `config system ha` on the primary."
+      - "Most HA settings sync from the primary; priority and override don't."
+    solution:
+      FGT-A: |
+        config system ha
+        set monitor port1 port2
+        end
+    explain: |
+      Without monitored interfaces, FGCP only fails over when a whole unit dies. A primary with a dead WAN port would keep the
+      role and blackhole the site.
+  - id: c
+    title: The failover test
+    brief: |
+      **Acceptance test, step 4:** the customer's engineer pulls FGT-A's WAN cable (port1).
+    events:
+      - {link: "FGT-A:port1", down: true}
+    tasks:
+      - "Confirm which unit is primary now and why (`get system ha status` on FGT-B)."
+      - "Confirm QA-PC still reaches the Internet."
+    checks:
+      - text: "FGT-B took over as primary"
+        ha: {dev: FGT-B, role: primary}
+      - text: "QA-PC still reaches the INVIMA portal"
+        probe: {from: QA-PC, to: portal.invima.gov.co, proto: tcp, port: 443}
+      - text: "Why did FGT-B become primary despite the lower priority?"
+        answer: {accept: ["~monitor|link|port1|interface"], hint: "Look at 'Primary selected using' in `get system ha status`.", why: "Monitored interfaces are compared first: FGT-B had both monitored ports up, FGT-A only one."}
+    hints:
+      - "The election compares monitored interfaces up before priority, even with override."
+      - "`get system ha status` on FGT-B shows the reason in 'Primary selected using'."
+    solution:
+      FGT-B: |
+        get system ha status
+      QA-PC: |
+        curl https://portal.invima.gov.co
+    explain: |
+      In FGCP the new primary takes over the cluster's virtual MAC addresses, so neighbours keep using the same gateway IP;
+      with session pickup on, established TCP sessions survive. Document the test result in the acceptance report with the
+      output of `get system ha status` before and after.

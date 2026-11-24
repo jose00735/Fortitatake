@@ -1,0 +1,58 @@
+id: H4.02
+track: ha
+tier: 4
+order: 42
+kind: ticket
+title: "\"Duplicate IP alarms after the core switch upgrade\""
+customer: Laboratorios Caribe
+par: 25
+skills: [split brain, heartbeat redundancy]
+brief: |
+  **Ticket 6110, priority 1.** Since tonight's maintenance, the core switch logs *duplicate IP 10.50.0.1* and users see
+  random disconnects. Both FortiGates' dashboards say **Primary**. The HA design document says "heartbeat: port3"
+  only. port4 is cabled back-to-back but unused.
+topology:
+  use: pharma-ha-live
+  devices:
+    FGT-A:
+      config: |
+        config system ha
+        set hbdev port3 50
+        end
+    FGT-B:
+      config: |
+        config system ha
+        set hbdev port3 50
+        end
+events:
+  - {segment: hb1, down: true}
+tasks:
+  - "Prove the state from both consoles."
+  - "Restore a single cluster without touching cabling, and make the heartbeat redundant."
+checks:
+  - text: "FGT-A is the only primary"
+    ha: {dev: FGT-A, size: 2, role: primary}
+  - text: "FGT-B is secondary"
+    ha: {dev: FGT-B, role: secondary}
+  - text: "Both units use port3 and port4 as heartbeats"
+    all:
+      - config: {dev: FGT-A, path: system ha, attr: hbdev, has: [port3, port4]}
+      - config: {dev: FGT-B, path: system ha, attr: hbdev, has: [port3, port4]}
+  - text: "What is this failure called?"
+    answer: {accept: ["~split.?brain"], hint: "Two primaries that can't see each other.", why: "Split brain: with the only heartbeat link down, each unit believed the other was dead and both became primary."}
+hints:
+  - "`get system ha status` on each unit: how many members does each see?"
+  - "Add port4 as a second heartbeat on both units: `set hbdev port3 50 port4 50`."
+solution:
+  FGT-A: |
+    get system ha status
+    config system ha
+    set hbdev port3 50 port4 50
+    end
+  FGT-B: |
+    config system ha
+    set hbdev port3 50 port4 50
+    end
+explain: |
+  Always use two heartbeat links on separate paths. In a split brain both units answer ARP for the same addresses, which is
+  exactly what the switch reported. After recovery, check `diagnose sys ha checksum cluster` before closing the ticket.

@@ -1,0 +1,130 @@
+id: V2.02
+track: vpn
+tier: 2
+order: 2
+kind: project
+title: Replace SSL VPN with IPsec dial-up for remote staff
+customer: Andes Logistics
+par: 55
+skills: [dial-up IPsec, mode-cfg, EAP user groups, split tunnel, FortiClient]
+brief: |
+  **SOW 2026-158.** FortiOS 8.0 no longer offers SSL VPN tunnel mode, so Andes moves its 60 remote users to
+  **IPsec dial-up with FortiClient**. Users authenticate with their FortiGate account (group **VPN-USERS**);
+  they must reach the ERP at HQ but browse the Internet from home (**split tunnel**).
+
+  FortiClient profile already pushed to laptops: gateway **200.31.20.2**, IKEv2, PSK `Andes-Remote-2026!`.
+  Client pool: **10.212.134.10 – 10.212.134.200**.
+topology: {use: andes-vpn-live}
+parts:
+  - id: a
+    title: Users and the dial-up gateway
+    tasks:
+      - "Local user jgomez (password `Cl4ve-Segura!`), member of group VPN-USERS."
+      - "phase1-interface RA-DIALUP on port1: type dynamic, IKEv2, aes256-sha256 / aes128-sha256, DH 20 14, the PSK, EAP with VPN-USERS, mode-cfg with the client pool."
+      - "phase2-interface RA-DIALUP-P2 for RA-DIALUP (selectors 0.0.0.0/0)."
+      - "On LAPTOP: forticlient connect."
+    checks:
+      - text: "LAPTOP connects and gets an address from the pool"
+        client: {host: LAPTOP, in: 10.212.134.0/24}
+      - text: "The gateway authenticates users against VPN-USERS"
+        config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: RA-DIALUP, attr: authusrgrp, equals: VPN-USERS}
+    hints:
+      - "Dial-up means `set type dynamic`: there's no remote-gw. mode-cfg hands out the IP: `set mode-cfg enable`, `set ipv4-start-ip`, `set ipv4-end-ip`."
+      - "IKEv2 user auth is EAP: `set eap enable`, `set eap-identity send-request`, `set authusrgrp VPN-USERS`."
+      - "Users: `config user local` / `edit jgomez` / `set type password` / `set passwd ...`; group: `config user group` / `edit VPN-USERS` / `set member jgomez`."
+    solution:
+      FGT-BOG: |
+        config user local
+        edit jgomez
+        set type password
+        set passwd Cl4ve-Segura!
+        next
+        end
+        config user group
+        edit VPN-USERS
+        set member jgomez
+        next
+        end
+        config vpn ipsec phase1-interface
+        edit RA-DIALUP
+        set type dynamic
+        set interface port1
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set mode-cfg enable
+        set proposal aes256-sha256 aes128-sha256
+        set dhgrp 20 14
+        set eap enable
+        set eap-identity send-request
+        set authusrgrp VPN-USERS
+        set ipv4-start-ip 10.212.134.10
+        set ipv4-end-ip 10.212.134.200
+        set ipv4-netmask 255.255.255.0
+        set psksecret Andes-Remote-2026!
+        next
+        end
+        config vpn ipsec phase2-interface
+        edit RA-DIALUP-P2
+        set phase1name RA-DIALUP
+        set proposal aes256-sha256 aes128-sha256
+        set dhgrp 20 14
+        next
+        end
+      LAPTOP: |
+        forticlient connect
+    explain: |
+      A dial-up phase1 (type dynamic) accepts any peer that proves the PSK and, with EAP, a user in the group. mode-cfg
+      assigns the client its tunnel IP; add-route (on by default) installs a /32 route back to each client.
+  - id: b
+    title: Split tunnel and access to the ERP
+    tasks:
+      - "Address RA-POOL = 10.212.134.0/24 and HQ-NETS = 10.20.0.0/16."
+      - "Split tunnel: only HQ-NETS goes through the VPN."
+      - "Policy RA-DIALUP → port2 from RA-POOL to the ERP (HTTPS and SQL), no NAT."
+      - "Reconnect the laptop and test: tnc 10.20.10.20 -port 443, then curl https://www.google.com."
+    checks:
+      - text: "The laptop's VPN is split-tunnel"
+        client: {host: LAPTOP, split: true}
+      - text: "The laptop opens the ERP on 443 through the VPN"
+        probe: {from: LAPTOP, to: 10.20.10.20, proto: tcp, port: 443}
+      - text: "The ERP sees the tunnel address, not NAT"
+        probe: {from: LAPTOP, to: 10.20.10.20, proto: tcp, port: 443, seen_src: 10.212.134.10}
+      - text: "The laptop browses the Internet from home, not through HQ"
+        probe: {from: LAPTOP, to: www.google.com, proto: tcp, port: 443, seen_src: 181.60.4.25}
+    hints:
+      - "Split tunnel: `set ipv4-split-include HQ-NETS` on the phase1, then reconnect (forticlient disconnect, connect)."
+      - "The policy's source interface is the dial-up tunnel, RA-DIALUP."
+    solution:
+      FGT-BOG: |
+        config firewall address
+        edit RA-POOL
+        set subnet 10.212.134.0/24
+        next
+        edit HQ-NETS
+        set subnet 10.20.0.0/16
+        next
+        end
+        config vpn ipsec phase1-interface
+        edit RA-DIALUP
+        set ipv4-split-include HQ-NETS
+        next
+        end
+        config firewall policy
+        edit 0
+        set name RA-to-ERP
+        set srcintf RA-DIALUP
+        set dstintf port2
+        set srcaddr RA-POOL
+        set dstaddr HQ-NETS
+        set action accept
+        set schedule always
+        set service HTTPS MS-SQL
+        next
+        end
+      LAPTOP: |
+        forticlient disconnect
+        forticlient connect
+    explain: |
+      Split tunnel keeps home browsing off the HQ link; the trade-off is that Internet traffic isn't inspected by HQ's
+      profiles. Without NAT the ERP logs the real tunnel address, which ties each session to a user.

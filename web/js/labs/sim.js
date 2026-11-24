@@ -25,6 +25,8 @@ class Host {
     this.lease = null;
     this.history = [];
     this.hostname = spec.hostname || spec.id;
+    this.vpnSpec = spec.vpn || null;
+    this.vpn = null;
   }
   addr() { return this.dhcp ? (this.lease && this.lease.prefix) : this.static; }
   ip() { const a = this.addr(); return a ? a.ip : null; }
@@ -46,6 +48,7 @@ class Router {
     this.label = spec.label || "ISP router";
     this.dropPrivate = spec.drop_private !== false; // ISPs don't route RFC 1918 sources back
     this.mtu = spec.mtu || 1500;
+    this.quality = spec.quality || null;
   }
 }
 
@@ -71,9 +74,11 @@ export class Lab {
     for (const d of def.devices || []) {
       let dev;
       if (d.kind === "fortigate") {
-        dev = new FortiGate(d, schemas.fortios);
+        dev = new FortiGate(d, schemas.fortios, {
+          onCommit: (fg, path, key) => { this.onCommit(fg, path, key); if (this.ready) this.dirty(fg); },
+          onDelete: (fg, path, key) => { this.onDelete(fg, path, key); if (this.ready) this.dirty(fg); },
+        });
         dev.diag = (fg, toks, line) => this.diagnose(fg, toks, line);
-        dev.onCommit = () => this.dirty();
         dev.sessions = new Map();
         dev.dbg = { enabled: false, flowFilter: {}, flowCount: 0, traceId: 0, sniffer: null, pingSrc: null };
         dev.async = [];
@@ -95,16 +100,19 @@ export class Lab {
         return { dev, port: port || null, vlan: (typeof m === "object" && m.vlan) || 0 };
       }),
     }));
+    this.ver = 1;
+    this.haSyncAll();
     this.renewAll();
+    this.ready = true;
   }
 
-  dirty() { this.renewAll(); }
+  dirty(fg) { this.ver = (this.ver || 0) + 1; this.haSync(fg); this.renewAll(); this.ver++; }
   dev(id) { return this.devices.get(id); }
   now() { this.clock += 37 + Math.floor(this.rand() * 40); return this.clock; }
 
   // ----- segments and addressing -----
   segOf(devId, port, vlan = 0) {
-    return this.segments.find((s) => s.members.some((m) => m.dev === devId && (m.port === port || (!m.port && !port) || (!m.port && port === "eth0")) && (m.vlan || 0) === vlan));
+    return this.segments.find((s) => s.members.some((m) => !m.down && m.dev === devId && (m.port === port || (!m.port && !port) || (!m.port && port === "eth0")) && (m.vlan || 0) === vlan));
   }
   // logical FortiGate interfaces derived from config
   fgtIntfs(fg) {
@@ -115,10 +123,10 @@ export class Lab {
       const parent = type === "vlan" ? fg.one("system interface", e, "interface") : null;
       const vlan = type === "vlan" ? Number(fg.one("system interface", e, "vlanid") || 0) : 0;
       const admin = fg.one("system interface", e, "status") !== "down";
-      const seg = type === "loopback" ? null : this.segOf(fg.id, parent || e.key, vlan);
+      const seg = type === "loopback" || type === "tunnel" ? null : this.segOf(fg.id, parent || e.key, vlan);
       let parentUp = true;
       if (parent) { const pe = fg.entry("system interface", parent); parentUp = !pe || fg.one("system interface", pe, "status") !== "down"; }
-      const up = admin && parentUp && (type === "loopback" || (!!seg && !seg.down));
+      const up = type === "tunnel" ? admin && this.tunnelUp(fg, e.key) : admin && parentUp && (type === "loopback" || (!!seg && !seg.down));
       return {
         name: e.key, type, prefix: p && p.ip ? p : null, up, admin, seg, parent, vlan,
         allow: fg.val("system interface", e, "allowaccess"), role: fg.one("system interface", e, "role"),
@@ -132,11 +140,12 @@ export class Lab {
     if (!seg || seg.down) return null;
     for (const m of seg.members) {
       const d = this.dev(m.dev);
-      if (!d) continue;
+      if (!d || m.down) continue;
       if (d instanceof Host && d.ip() === ip) return { dev: d, port: d.port };
       if (d instanceof Router) { const i = d.ifaces.find((x) => x.name === m.port && x.up && x.prefix && x.prefix.ip === ip); if (i) return { dev: d, port: i.name }; }
       if (d instanceof Cloud) { if (d.hosts.some((h) => h.ip === ip) || this.cloudGw(d, seg) === ip) return { dev: d, port: "net" }; }
       if (d instanceof FortiGate) {
+        if (this.haRole(d) === "secondary") continue;
         for (const i of this.fgtIntfs(d)) {
           if (!i.up || i.seg !== seg) continue;
           if (i.prefix && i.prefix.ip === ip) return { dev: d, port: i.name };
@@ -203,6 +212,11 @@ export class Lab {
     for (const r of fg.entries("router static")) {
       if (fg.one("router static", r, "status") === "disable") continue;
       const dst = parsePrefix(fg.one("router static", r, "dst"));
+      const zone = fg.one("router static", r, "sdwan-zone");
+      if (zone) {
+        for (const m of this.sdwanMembers(fg, zone)) if (m.alive) routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw: m.gw, dev: m.intf, distance: Number(fg.one("router static", r, "distance")), priority: Number(m.priority || 1), sdwan: true });
+        continue;
+      }
       const devName = fg.one("router static", r, "device");
       const bh = fg.one("router static", r, "blackhole") === "enable";
       const i = intfs.find((x) => x.name === devName);
@@ -210,6 +224,7 @@ export class Lab {
       const gw = ipToInt(fg.one("router static", r, "gateway") || "0.0.0.0");
       routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw, dev: bh ? "Null" : devName, distance: Number(fg.one("router static", r, "distance")), priority: Number(fg.one("router static", r, "priority")), blackhole: bh });
     }
+    routes.push(...this.extraRoutes(fg, intfs));
     // RIB: for each prefix keep the lowest distance; FIB = those
     const best = new Map();
     for (const r of routes) {
@@ -347,6 +362,7 @@ export class Lab {
 
   // ----- tracing helpers -----
   trace(fg, pkt, lines) {
+    if (this.quiet) return;
     const d = fg.dbg;
     if (!d.enabled || d.flowCount <= 0) return;
     const f = d.flowFilter;
@@ -361,6 +377,7 @@ export class Lab {
     for (const [fn, ln, msg] of lines) fg.async.push(`id=${id} trace_id=${d.traceId} func=${fn} line=${ln} msg="${msg}"`);
   }
   sniff(fg, intf, dir, pkt) {
+    if (this.quiet) return;
     const s = fg.dbg.sniffer;
     if (!s || s.left <= 0) return;
     if (s.intf !== "any" && s.intf !== intf) return;
@@ -407,16 +424,19 @@ export class Lab {
     const me = h.addr();
     if (origin) {
       if (!me) { res.drop = { dev: h.id, reason: "no IP address (DHCP failed)" }; return null; }
+      if (h.vpn && h.vpn.up && pkt.src === h.vpn.ip) { const t = this.clientTunnel(h, pkt, res); if (t) return t; }
       const seg = this.segOf(h.id, h.port) || this.segOf(h.id, null);
       const nh = inPrefix(pkt.dst, me) ? pkt.dst : h.gateway();
       if (!nh) { res.drop = { dev: h.id, reason: "no default gateway" }; return null; }
       return this.forwardOnSeg(seg, nh, pkt, res, h.id, nh === pkt.dst ? `no ARP reply from ${intToIp(nh)}` : `gateway ${intToIp(nh)} does not answer ARP`);
     }
-    if (me && pkt.dst === me.ip) return { delivered: true, pkt };
+    if ((me && pkt.dst === me.ip) || (h.vpn && h.vpn.up && pkt.dst === h.vpn.ip)) return { delivered: true, pkt };
     res.drop = { dev: h.id, reason: "not for this host" };
     return null;
   }
   routerProcess(r, inPort, pkt, res) {
+    if (r.quality) { res.q = res.q || { latency: 0, jitter: 0, loss: 0 }; res.q.latency += r.quality.latency || 0; res.q.jitter += r.quality.jitter || 0; res.q.loss = Math.max(res.q.loss, r.quality.loss || 0); }
+    if (r.quality && (r.quality.loss || 0) >= 100) { res.drop = { dev: r.id, reason: "link down at the ISP (100% loss)" }; return null; }
     if (r.ifaces.some((i) => i.prefix && i.prefix.ip === pkt.dst)) return { delivered: true, pkt };
     pkt = { ...pkt, ttl: pkt.ttl - 1 };
     if (pkt.ttl <= 0) { res.drop = { dev: r.id, reason: "ttl exceeded", ttl: true }; return null; }
@@ -472,7 +492,7 @@ export class Lab {
 
     // local-out (packets the FortiGate itself sends: ping, DNS, etc.)
     if (origin) {
-      const rt = this.fgtLookup(fg, pkt.dst);
+      const rt = pkt.via ? { type: pkt.via.gw ? "S" : "C", dev: pkt.via.intf, gw: pkt.via.gw } : this.fgtLookup(fg, pkt.dst);
       if (!rt || rt.blackhole) { res.drop = { dev: fg.id, reason: "no route", noroute: true }; ev.drop = "noroute"; return null; }
       const outI = intfs.find((i) => i.name === rt.dev);
       this.sniff(fg, outI.name, "out", pkt);
@@ -499,6 +519,7 @@ export class Lab {
       if (s.snat) { out.dst = s.orig.src; if (pkt.proto !== ICMP) out.dport = s.orig.sport; tl.push(["__ip_session_run_tuple", 3500, `DNAT ${intToIp(pkt.dst)}:${pkt.proto === ICMP ? sport : pkt.dport}->${intToIp(out.dst)}:${pkt.proto === ICMP ? sport : out.dport}`]); }
       if (s.dnat) { out.src = s.orig.dst; if (pkt.proto !== ICMP) out.sport = s.orig.dport; tl.push(["__ip_session_run_tuple", 3500, `SNAT ${intToIp(pkt.src)}->${intToIp(out.src)}:${out.sport || sport}`]); }
       const back = intfs.find((i) => i.name === s.in);
+      if (back && back.type === "tunnel" && back.up) return this.tunnelForward(fg, back, out, res, tl, done, ev);
       tl.push(["__vf_ip_route_input_rcu", 1988, `find a route: flag=00000000 gw-${intToIp(out.dst)} via ${s.in}`]);
       done();
       this.sniff(fg, s.in, "out", out);
@@ -535,7 +556,7 @@ export class Lab {
     if (!vip && this.isLocal(fg, dst)) {
       tl.push(["__vf_ip_route_input_rcu", 1988, `find a route: flag=84000000 gw-${intToIp(dst)} via root`]);
       const svc = localSvc(pkt, fg);
-      const allowed = svc && inI.allow.includes(svc) && this.trusted(fg, pkt.src, svc);
+      const allowed = svc === "ike" ? this.ikeAccepted(fg, inI.name, pkt.src) : svc && inI.allow.includes(svc) && this.trusted(fg, pkt.src, svc);
       ev.local = true; ev.localSvc = svc;
       if (!allowed) {
         tl.push(["iprope_in_check", 1029, `iprope_in_check() check failed on policy 0, drop`]);
@@ -552,7 +573,7 @@ export class Lab {
     }
 
     // route to destination
-    const rt = this.fgtLookup(fg, dst);
+    const rt = this.sdwanSelect(fg, { ...pkt, dst, dport }, inI.name, tl) || this.fgtLookup(fg, dst);
     if (!rt) {
       tl.push(["__vf_ip_route_input_rcu", 1988, `find a route: flag=00000000 gw-0.0.0.0 via root`]);
       tl.push(["ip_route_input_slowpath", 2210, `no route to destination ${intToIp(dst)}, drop`]);
@@ -632,7 +653,8 @@ export class Lab {
       res.drop = { dev: fg.id, reason: `packet of ${out.size} bytes with DF set exceeds MTU ${outI.mtu} on ${outI.name}`, mtu: outI.mtu };
       return null;
     }
-    done();
+    const isTunnel = outI.type === "tunnel";
+    if (!isTunnel) done();
     // create the session and remember the reply tuple
     const sess = { id: sid, proto: pkt.proto, in: inI.name, out: outI.name, policy: pol.id, orig: { src: pkt.src, sport: pkt.proto === ICMP ? sport : pkt.sport, dst: pkt.dst, dport: pkt.proto === ICMP ? sport : pkt.dport },
       snat, dnat: vip ? { ip: dst, port: dport } : null, gw, prevHop: res.prevHop || null, start: now, bytes: 0 };
@@ -642,6 +664,7 @@ export class Lab {
     fg.sessList = fg.sessList || [];
     fg.sessList.push(sess);
     if (fg.sessList.length > 200) fg.sessList.shift();
+    if (isTunnel) return this.tunnelForward(fg, outI, out, res, tl, done, ev);
     this.sniff(fg, outI.name, "out", out);
     return this.forwardOnSeg(outI.seg, gw, out, res, fg.id, rt.type === "C" ? `no ARP reply from ${intToIp(gw)} on ${outI.name}` : `gateway ${intToIp(gw)} does not answer ARP on ${outI.name}`);
   }
@@ -660,7 +683,7 @@ export class Lab {
     const src = this.dev(fromId);
     let srcIp = req.src;
     if (srcIp === undefined) {
-      if (src instanceof Host) srcIp = src.ip();
+      if (src instanceof Host) srcIp = src.vpn && src.vpn.up && (!src.vpn.split || src.vpn.split.some((p) => inPrefix(req.dst, p))) ? src.vpn.ip : src.ip();
       else if (src instanceof FortiGate) {
         const rt = this.fgtLookup(src, req.dst);
         const i = rt && this.fgtIntfs(src).find((x) => x.name === rt.dev);
@@ -668,7 +691,7 @@ export class Lab {
       }
     }
     const proto = req.proto || ICMP;
-    const pkt = { src: srcIp, dst: req.dst, proto, sport: req.sport || 49152 + Math.floor(this.rand() * 10000), dport: req.dport || 0, icmpType: proto === ICMP ? 8 : undefined, icmpId: req.icmpId || 1, seq: req.seq || 1, flags: "S", size: req.size, df: req.df, ttl: req.ttl || 64 };
+    const pkt = { via: req.via, src: srcIp, dst: req.dst, proto, sport: req.sport || 49152 + Math.floor(this.rand() * 10000), dport: req.dport || 0, icmpType: proto === ICMP ? 8 : undefined, icmpId: req.icmpId || 1, seq: req.seq || 1, flags: "S", size: req.size, df: req.df, ttl: req.ttl || 64 };
     if (srcIp === null || srcIp === undefined) return { ok: false, drop: { dev: fromId, reason: src instanceof Host ? "no IP address (DHCP failed)" : "no source address" }, fwd: { fgt: [] } };
     const fwd = this.send(fromId, pkt);
     const out = { ok: false, fwd, req: pkt };
@@ -733,6 +756,21 @@ export class Lab {
   }
 }
 
+// Defaults, replaced by vpn.js / sdwan.js / ha.js
+Lab.prototype.tunnelUp = function () { return false; };
+Lab.prototype.extraRoutes = function () { return []; };
+Lab.prototype.sdwanMembers = function () { return []; };
+Lab.prototype.sdwanSelect = function () { return null; };
+Lab.prototype.tunnelForward = function (fg, outI, out, res, tl, done) { done(); res.drop = { dev: fg.id, reason: "tunnel not simulated" }; return null; };
+Lab.prototype.ikeAccepted = function () { return false; };
+Lab.prototype.haRole = function () { return "standalone"; };
+Lab.prototype.haSync = function () {};
+Lab.prototype.haSyncAll = function () {};
+Lab.prototype.onCommit = function () {};
+Lab.prototype.postLoad = function () {};
+Lab.prototype.onDelete = function () {};
+Lab.prototype.clientTunnel = function (h, pkt, res) { res.drop = { dev: h.id, reason: "VPN not simulated" }; return null; };
+
 function maskLen(m) { const n = ipToInt(m); let l = 0; for (let i = 31; i >= 0; i--) if ((n >>> i) & 1) l++; return l; }
 export function sessKey(proto, a, ap, b, bp) { return `${proto}|${a}|${ap}|${b}|${bp}`; }
 function localSvc(pkt, fg) {
@@ -746,6 +784,7 @@ function localSvc(pkt, fg) {
     if (pkt.dport === 23) return "telnet";
     if (pkt.dport === 541) return "fgfm";
   }
+  if (pkt.proto === UDP && (pkt.dport === 500 || pkt.dport === 4500)) return "ike";
   if (pkt.proto === UDP && pkt.dport === 161) return "snmp";
   if (pkt.proto === UDP && pkt.dport === 53) return "dns";
   return null;

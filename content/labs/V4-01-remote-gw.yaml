@@ -1,0 +1,55 @@
+id: V4.01
+track: vpn
+tier: 4
+order: 21
+kind: ticket
+title: "\"Cali lost the ERP after their new fiber went live\""
+customer: Andes Logistics
+par: 25
+skills: [IKE debug, remote-gw, ISP changes]
+brief: |
+  **Ticket 5203, priority 1.** Cali moved to a new Emcali fiber this morning. The provider readdressed FGT-CLO:
+  wan1 is now **190.14.9.66/29**, gateway **190.14.9.65**. Cali has Internet, but the ERP at HQ is unreachable and
+  HQ's dashboard shows VPN-CLO down.
+topology:
+  use: andes-vpn-live
+  devices:
+    FGT-CLO:
+      config: |
+        config system interface
+        edit wan1
+        set ip 190.14.9.66/29
+        next
+        end
+        config router static
+        edit 1
+        set gateway 190.14.9.65
+        next
+        end
+    ISP-EMCALI: {ifaces: [{name: ge0, ip: 190.14.9.65/29}, {name: inet0, ip: 198.51.100.18/30}]}
+tasks:
+  - "Run the IKE debug on both FortiGates and read it."
+  - "Fix it and answer the root cause."
+checks:
+  - text: "VPN-CLO is up again"
+    tunnel: {dev: FGT-BOG, name: VPN-CLO}
+  - text: "CLO-PC reaches the ERP"
+    probe: {from: CLO-PC, to: 10.20.10.20, proto: tcp, port: 443}
+  - text: "Root cause"
+    answer: {accept: ["~remote.?gw|old ip|190\\.14\\.8\\.2|peer address|gateway address"], hint: "Where does HQ send its IKE packets?", why: "HQ's phase1 still pointed remote-gw at Cali's old IP, 190.14.8.2; nothing answers there any more."}
+hints:
+  - "On FGT-BOG: `diagnose debug application ike -1`, `diagnose debug enable`, `diagnose vpn ike gateway clear`. Who answers?"
+  - "`set remote-gw 190.14.9.66` on FGT-BOG's VPN-CLO."
+solution:
+  FGT-BOG: |
+    diagnose debug application ike -1
+    diagnose debug enable
+    diagnose vpn ike gateway clear
+    config vpn ipsec phase1-interface
+    edit VPN-CLO
+    set remote-gw 190.14.9.66
+    next
+    end
+explain: |
+  "negotiation timeout" with no reply means the IKE packets go nowhere: wrong peer address or something blocking UDP 500/4500.
+  Sites with dynamic or changing IPs should use DDNS (`set type ddns`) or a dial-up design so an ISP change doesn't break the tunnel.

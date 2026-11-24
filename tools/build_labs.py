@@ -12,7 +12,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACKS = {"fortigate", "fortimanager", "fortianalyzer", "fortiswitch", "fortisiem", "fortiedr", "secops", "integration", "sdwan", "vpn", "ha"}
 KINDS = {"project", "ticket", "drill", "capstone", "investigation"}
-CHECK_TYPES = {"probe", "config", "dhcp", "route", "ran", "backup", "answer", "all", "state", "soc"}
+CHECK_TYPES = {"probe", "config", "dhcp", "route", "ran", "backup", "answer", "all", "state", "soc", "tunnel", "ha", "client", "sdwan"}
 
 
 def merge_topology(t, templates, lab_id):
@@ -69,7 +69,7 @@ def merge_topology(t, templates, lab_id):
 def normalise(lab):
     if "parts" not in lab:
         part = {"id": "a", "title": lab.get("title")}
-        for k in ("brief_part", "tasks", "checks", "hints", "solution", "explain", "expect_fail", "allow_pre_pass"):
+        for k in ("brief_part", "tasks", "checks", "hints", "solution", "explain", "expect_fail", "allow_pre_pass", "events"):
             if k in lab:
                 part[k.replace("brief_part", "brief")] = lab.pop(k)
         lab["parts"] = [part]

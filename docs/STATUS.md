@@ -11,6 +11,7 @@
 | P2 Android + LAN sync (FTSP/1) | **Built, v0.2.0 (21 Nov 2026).** Protocol tested on Linux (unit, security and property tests; two-instance UI test). Not yet run on a real phone or across real Wi-Fi |
 | P3 Advanced items (topology, packet diagrams, voice capture) | Not started |
 | L1 Labs engine + tiers 0, 1, 4 | **Built, v0.4.0 (23 Nov 2026).** Emulated FortiOS 8.0.2 CLI, network simulator, grader, 24 labs |
+| L2 Core PS labs: IPsec, SD-WAN, HA | **Built, v0.5.0 (24 Nov 2026).** 14 more labs (38 total, 50 parts) |
 
 ### What v0.1.0 does
 
@@ -82,6 +83,20 @@
 | 1 Fundamentals | F1.01 (5-part clinic deployment), F1.02–F1.12 (F1.07 has 2 parts) |
 | 4 Break-fix | B4.01–B4.08 |
 
+### What v0.5.0 adds (Labs)
+
+- `vpn.js`: route-based IPsec between FortiGates (phase1/phase2 negotiation: version, proposals, DH, PSK, mode, peer ID, mirrored selectors, PFS), tunnel interfaces created with each phase1, routes removed when a tunnel is down, encryption path with selector checks and tunnel MTU, IKE debug (`diagnose debug application ike -1` + `diagnose vpn ike gateway clear`), `get vpn ipsec tunnel summary`, `diagnose vpn ike gateway list`, `diagnose vpn tunnel list`. Dial-up: FortiClient on lab laptops (`forticlient connect`), mode-cfg pools, EAP/XAuth user groups, split tunnel, add-route.
+- `sdwan.js`: members, zones (policies and `sdwan-zone` static routes), health checks fed by ISP link quality (latency, jitter, loss), dead members removed from routing, service rules (manual, best quality, SLA), `diagnose sys sdwan health-check|member|service`, and the FortiOS rule that a member can't be referenced elsewhere.
+- `ha.js`: FGCP formation over the heartbeat (mode, group name/ID, password, model), election (monitored ports, override, priority, uptime, serial), config sync (priority/override per unit), only the primary answers ARP, failover on monitored link loss, `get system ha status`, `diagnose sys ha checksum cluster`, `execute ha failover set`.
+- Part events: a part can fail a link or port, degrade an ISP, or change DNS when it starts (used for failover and SLA tests).
+- New topologies: andes-vpn(-live), sdwan-branch / sdwan-live, pharma-ha(-live).
+
+| Track | Labs |
+|---|---|
+| VPN | V2.01 (3-part site-to-site), V2.02 (2-part dial-up replacing SSL VPN), V4.01–V4.05 tickets |
+| SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
+| HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
+
 ## Amendments to the blueprint
 
 1. **All learning logic lives in the shared web JS** (FSRS, projections, planner, XP, medals, mastery). The Go core only stores events, serves content, opens the window and, later, syncs. Android will reuse the same `web/` folder unchanged.
@@ -125,8 +140,8 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 ### Next in the queue (labs)
 
-1. v0.5.0 Core PS labs: IPsec (site-to-site, dial-up FortiClient), SD-WAN (members, health checks, rules), FGCP HA, security profiles and SSL inspection, users (LDAP/FSSO).
-2. v0.6.0 FortiManager and FortiAnalyzer devices + GUI panels, FortiSwitch, BGP/OSPF/ADVPN, VDOMs, more break-fix.
+1. v0.6.0 security profiles and SSL inspection (URL filter, AV, certificate vs deep inspection, exemptions), users (LDAP/FSSO), integration labs (VPN over SD-WAN, HA + VPN).
+2. v0.6.x FortiManager and FortiAnalyzer devices + GUI panels, FortiSwitch, BGP/OSPF/ADVPN, VDOMs, more break-fix.
 3. v0.7.0 SecOps consoles: FortiAnalyzer SOC, FortiSIEM, FortiEDR, log generator.
 4. v0.8.0 Capstones and multi-product integration labs.
 
