@@ -98,6 +98,11 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.7.2 fixes
+
+- `get router info routing-table database` lists static routes whose gateway is off the interface's subnet as `inactive` (they were hidden).
+- B4.08: hint, root-cause explanation and lab notes now match what the simulator (and FortiOS) does: the old-gateway default route stays inactive, so there is no default route and debug flow shows "no route to destination".
+
 ### What v0.7.1 fixes
 
 - A misspelling of a lab's own domain (edit distance 2 or less) no longer resolves to a generic public web host; it returns NXDOMAIN, so a typo can't look like a working site (found in B4.02).

@@ -45,9 +45,9 @@ checks:
   - text: "Only one default route, via 200.31.30.1"
     route: {dev: FGT-BOG, dst: 0.0.0.0/0, via: 200.31.30.1}
   - text: "Root cause"
-    answer: {accept: ["~gateway|route|200\\.31\\.20\\.1|next.?hop|old"], hint: "`get router info routing-table all`: where does the default route point?", why: "The static default route still pointed to the old gateway 200.31.20.1, which no longer exists on the segment, so ARP for the next hop failed."}
+    answer: {accept: ["~gateway|route|200\\.31\\.20\\.1|next.?hop|old"], hint: "`get router info routing-table all`: where does the default route point?", why: "The static default route still pointed to the old gateway 200.31.20.1, which isn't on the new 200.31.30.0/29 subnet, so FortiOS kept it inactive and HQ had no default route."}
 hints:
-  - "The debug flow shows the route lookup choosing gw-200.31.20.1."
+  - "`get router info routing-table all` has no default route; `get router info routing-table database` shows why."
   - "Edit static route 1 and set gateway 200.31.30.1."
 solution:
   FGT-BOG: |
@@ -58,5 +58,7 @@ solution:
     next
     end
 explain: |
-  FortiOS keeps a static route active while its interface is up, even if the gateway is unreachable. ISP migrations need a
+  FortiOS only installs a static route whose gateway is reachable on the route's interface. After the readdressing, the
+  old gateway 200.31.20.1 was off the new subnet, so the default route stayed in the database as inactive and the
+  routing table had no default route: traffic to the Internet was dropped for lack of a route. ISP migrations need a
   checklist: interface IP, default route, VIPs, IP pools, IPsec peers and anything the remote side whitelists.

@@ -57,14 +57,14 @@ function getCmd(lab, fg, r, raw) {
   }
   if (match(r, ["router", "info", "routing-table"])) {
     const what = r[3] || "all";
-    const { all, active } = lab.fgtRoutes(fg);
+    const { all, active, inactive = [] } = lab.fgtRoutes(fg);
     if ("details".startsWith(what) && r[4]) {
       const ip = ipToInt(r[4]);
       const rt = lab.fgtLookup(fg, ip);
       if (!rt) return `Network not in table`;
       return `Routing table for VRF=0\nRouting entry for ${prefixStr(rt.dst)}\n  Known via "${rt.type === "C" ? "connected" : rt.type === "B" ? "bgp" : rt.type.startsWith("O") ? "ospf" : "static"}", distance ${rt.distance}, metric ${rt.metric || 0}, best\n  * ${rt.type === "C" ? `directly connected, ${rt.dev}` : `vrf 0 ${intToIp(rt.gw)}, via ${rt.dev}`}`;
     }
-    const list = "database".startsWith(what) ? all : active;
+    const list = "database".startsWith(what) ? [...all, ...inactive] : active;
     const lines = [`Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP`, `       O - OSPF, IA - OSPF inter area`, `       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2`, `       E1 - OSPF external type 1, E2 - OSPF external type 2`, `       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area`, `       V - BGP VPNv4`, `       * - candidate default`, ``, `Routing table for VRF=0`];
     const sorted = [...list].sort((a, b) => (a.dst.ip - b.dst.ip) || (a.dst.len - b.dst.len));
     for (const x of sorted) {
@@ -74,6 +74,7 @@ function getCmd(lab, fg, r, raw) {
       if (x.type === "C") lines.push(`${code}${mark}${prefixStr(x.dst)} is directly connected, ${x.dev}`);
       else if (x.type === "B" && x.recursive) lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.nh)} (recursive via ${intToIp(x.gw)}, ${x.dev}), 00:12:41`);
       else if (x.type.startsWith("O") || x.type === "B") lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}, ${x.dev}, 00:12:41`);
+      else if (x.inactive) lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/0] via ${intToIp(x.gw)}, ${x.dev} inactive, [${x.priority}/0]`);
       else if (x.blackhole) lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/0] is a summary, Null, [${x.priority}/0]`);
       else lines.push(`${code}${mark}${prefixStr(x.dst)} [${x.distance}/0] via ${intToIp(x.gw)}, ${x.dev}, [${x.priority}/0]`);
     }

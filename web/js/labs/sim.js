@@ -260,7 +260,7 @@ export class Lab {
   // ----- FortiGate routing -----
   fgtRoutes(fg) {
     const intfs = this.fgtIntfs(fg);
-    const routes = [];
+    const routes = [], inactive = [];
     for (const i of intfs) if (i.up && i.prefix) routes.push({ type: "C", dst: { ip: network(i.prefix), len: i.prefix.len }, dev: i.name, distance: 0, priority: 0 });
     for (const r of fg.entries("router static")) {
       if (fg.one("router static", r, "status") === "disable") continue;
@@ -276,7 +276,7 @@ export class Lab {
       if (!bh && (!i || !i.up)) continue;
       const gw = ipToInt(fg.one("router static", r, "gateway") || "0.0.0.0");
       // FortiOS doesn't install a static route whose gateway isn't on the interface's subnet
-      if (!bh && gw && i && i.prefix && i.type !== "tunnel" && !inPrefix(gw, i.prefix)) continue;
+      if (!bh && gw && i && i.prefix && i.type !== "tunnel" && !inPrefix(gw, i.prefix)) { inactive.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw, dev: devName, distance: Number(fg.one("router static", r, "distance")), priority: Number(fg.one("router static", r, "priority")), inactive: true }); continue; }
       routes.push({ type: "S", id: r.key, dst: { ip: network(dst), len: dst.len }, gw, dev: bh ? "Null" : devName, distance: Number(fg.one("router static", r, "distance")), priority: Number(fg.one("router static", r, "priority")), blackhole: bh });
     }
     for (const r of fg.product !== "fortios" ? fg.entries("system route") : []) {
@@ -294,7 +294,7 @@ export class Lab {
       if (!cur || r.distance < cur[0].distance) best.set(k, [r]);
       else if (r.distance === cur[0].distance) cur.push(r);
     }
-    return { all: routes, active: [...best.values()].flat() };
+    return { all: routes, active: [...best.values()].flat(), inactive };
   }
   fgtLookup(fg, dst, onlyIntf) {
     const { active } = this.fgtRoutes(fg);
