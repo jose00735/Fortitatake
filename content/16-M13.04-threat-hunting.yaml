@@ -1,0 +1,366 @@
+id: M13.04
+title: "Threat hunting and investigation: hypotheses, pivots and purple teaming with FortiAnalyzer, FortiSIEM and FortiEDR"
+stage: S13
+stage_title: "S13 · SOC & SecOps (consultant level)"
+order: 15.4
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Run a hunt from a hypothesis to a finding and a new detection
+  - Use stacking, rarity and time-series analysis on FortiGate and endpoint data
+  - Pivot cleanly across IP, user, host, process and hash, and keep a defensible timeline
+  - Plan a purple-team exercise that measures detection coverage
+sources:
+  - "MITRE ATT&CK (techniques and data sources); vendor-neutral hunting practice (hypothesis-driven hunting, stacking)"
+  - "FortiAnalyzer 8.0.2 Administration Guide: Log View, FortiView, incidents and events (as cited in M6.03, M6.04)"
+  - "FortiSIEM 7.6.1 User Guide: analytics and advanced search (pp. 1312–1367)"
+  - "FortiEDR: forensics and threat hunting (as cited in M10.03)"
+
+units:
+  - id: M13.04.u1
+    title: The hunting loop
+    tier: 2
+    est_min: 12
+    body: |
+      Hunting looks for attackers that no rule has caught. It is not "browsing logs"; it is testing a hypothesis.
+
+      1. **Hypothesis.** From intel ("this ransomware crew uses AnyDesk for persistence"), from ATT&CK ("we have no
+         coverage for scheduled-task persistence") or from an anomaly ("this server started talking to the
+         internet last week").
+      2. **Data.** What would prove or disprove it, and do we have it? Missing data is itself a finding.
+      3. **Analysis.** Stack, filter, compare to baseline, look for the rare.
+      4. **Outcome.** Either a finding (open an incident) or a clean result. Both count: a clean result is
+         evidence for the coverage map.
+      5. **Automate.** Every hunt that worked becomes a rule, a dashboard or a scheduled report, so you never hunt
+         the same thing by hand twice.
+
+      **Good hunts are bounded**: a hypothesis, a data set, a time box (for example, 4 hours), a written result.
+
+      :::recall
+      Q: What should every successful hunt produce besides the finding?
+      A: An automated detection (rule, dashboard or report) so the same hunt doesn't need to be repeated by hand.
+      :::
+
+      :::why
+      Q: Why is a hunt that finds nothing still valuable?
+      A: It's evidence about coverage and data quality, and it can reveal missing data sources.
+      :::
+  - id: M13.04.u2
+    title: "Analysis techniques: stacking, rarity and rhythm"
+    tier: 3
+    est_min: 15
+    body: |
+      **Stacking (frequency analysis).** Count occurrences of a value across many hosts and read the bottom of the
+      list. If 2,000 laptops run the same 40 services, the service on 2 laptops is interesting. Stack parent →
+      child pairs, scheduled task names, autoruns, user agents, destination countries.
+
+      **Rarity in time.** First-seen analysis: destinations, processes or admin logons never seen before in the
+      last 30 days. Rare plus privileged is a strong combination (a first-ever admin logon from a workstation to a DC).
+
+      **Rhythm.** Beacons have a period. Group connections by host and destination, compute the interval between
+      connections, and look for low variance over long durations. Humans are bursty; malware is regular (unless
+      jittered — then look at the distribution, not the exact period).
+
+      **Ratios.** Bytes out vs bytes in (exfil), denies vs allows per source (scanning), failed vs successful
+      logons per user (spraying), DNS queries vs unique names per domain (tunnelling).
+
+      **Where in the Fortinet stack:**
+
+      - **FortiAnalyzer**: Log View filters and FortiView rankings for top and rare sources, destinations,
+        applications, countries; exports or datasets for interval maths.
+      - **FortiSIEM**: analytics with group-by and aggregate functions across all sources, baselines and UEBA
+        anomalies.
+      - **FortiEDR**: threat-hunting search across endpoint activity (process, file, network, registry) for the
+        host-side half of the story.
+
+      :::recall
+      Q: In stacking, which end of the list do you read?
+      A: The bottom: values seen on very few hosts.
+      :::
+
+      :::why
+      Q: Why is "rare + privileged" a better hunting filter than either alone?
+      A: Rare alone is noisy (new software), privileged alone is routine (admins work); the combination is what attackers produce.
+      :::
+  - id: M13.04.u3
+    title: "Investigation craft: pivots and timelines"
+    tier: 3
+    est_min: 14
+    body: |
+      An investigation is a chain of pivots, each answering one question:
+
+      | From | Pivot | Question | Where |
+      |---|---|---|---|
+      | Alert IP | → user | Who was logged on there? | DC 4624, FortiGate user (FSSO), VPN logs |
+      | User | → hosts | Where else did this account log on? | DC 4624/4768 by account |
+      | Host | → processes | What ran around the time? | FortiEDR event graph, Sysmon 1 |
+      | Process | → network | What did it talk to? | FortiEDR, Sysmon 3, FortiGate logs by source |
+      | Destination | → other hosts | Who else talks to it? | FortiAnalyzer by destination |
+      | Hash | → other hosts | Where else does the file exist? | FortiEDR, threat intel |
+
+      **Timeline discipline.**
+
+      - One time zone (UTC or the customer's, stated at the top).
+      - Each line: time, source, host, event, why it matters, confidence.
+      - Separate **facts** (logged) from **inferences** (likely).
+      - Keep the queries you ran so someone else can repeat them.
+
+      **The two traps.** Tunnel vision (the first theory explains everything, so you stop pivoting) and scope
+      creep (chasing every odd thing). Write down open questions and decide which ones matter to the case.
+
+      :::recall
+      Q: Which pivot answers "where else did this account log on?"
+      A: Account → hosts, from DC logon events (4624, 4768) for that user.
+      :::
+
+      :::why
+      Q: Why separate facts from inferences in the timeline?
+      A: Decisions (containment, notification) and later readers need to know what was proven and what was assumed.
+      :::
+  - id: M13.04.u4
+    title: "Purple teaming: measuring coverage with the attacker's playbook"
+    tier: 4
+    est_min: 14
+    body: |
+      Purple teaming puts the red team (or an emulation tool) and the SOC in the same room with one goal: measure
+      and improve detection, technique by technique.
+
+      **Run it like a project:**
+
+      1. **Scope.** Pick 10–20 techniques from the customer's threat profile and recent incidents (for example,
+         spraying, Kerberoasting, PsExec lateral movement, LSASS access, scheduled-task persistence, DNS tunnelling).
+      2. **Rules of engagement.** Written approval, test accounts and hosts, time windows, stop conditions, who to
+         call.
+      3. **Execute one technique at a time.** For each: was it logged? Did a rule fire? How fast? Was it blocked?
+      4. **Score.** Blocked / detected / logged only / not logged. "Logged only" is the cheapest win: the data is
+         there, a rule is missing.
+      5. **Fix and re-test** the same week if possible.
+
+      **Your edge.** With OSCP, CRTP and CRTE behind you, you can describe what each technique does on the wire and
+      on the host, which is exactly what the SOC needs to write the rule. Present it as lab-proven knowledge, not
+      as SOC experience.
+
+      :::recall
+      Q: Four scores per technique in a purple-team run?
+      A: Blocked, detected, logged only, not logged.
+      :::
+
+      :::why
+      Q: Why is "logged only" the cheapest gap to close?
+      A: The data already arrives; only the rule (and its test) is missing.
+      :::
+
+cards:
+  - {id: M13.04.c01, unit: M13.04.u1, tier: 1, front: "Five steps of the hunting loop", back: "Hypothesis, data, analysis, outcome, automate."}
+  - {id: M13.04.c02, unit: M13.04.u1, tier: 2, front: "Three hypothesis sources", back: "Threat intel, ATT&CK coverage gaps, observed anomalies."}
+  - {id: M13.04.c03, unit: M13.04.u1, tier: 2, front: "A bounded hunt has", back: "A hypothesis, a data set, a time box and a written result."}
+  - {id: M13.04.c04, unit: M13.04.u2, tier: 2, front: "Stacking", back: "Count a value across many hosts and read the rare end."}
+  - {id: M13.04.c05, unit: M13.04.u2, tier: 3, front: "First-seen analysis", back: "Values (destinations, processes, logons) not seen in the last N days."}
+  - {id: M13.04.c06, unit: M13.04.u2, tier: 3, front: "Beacon vs human traffic", back: "Malware is regular (low interval variance); humans are bursty."}
+  - {id: M13.04.c07, unit: M13.04.u2, tier: 3, front: "Ratios worth hunting", back: "Bytes out/in, denies/allows per source, failures/successes per user, queries/unique names per domain."}
+  - {id: M13.04.c08, unit: M13.04.u2, tier: 3, front: "FortiEDR's half of a hunt", back: "Search endpoint activity: process, file, network, registry."}
+  - {id: M13.04.c09, unit: M13.04.u3, tier: 2, front: "Pivot: IP → user", back: "DC logons, FortiGate user identity (FSSO), VPN logs."}
+  - {id: M13.04.c10, unit: M13.04.u3, tier: 3, front: "Pivot: destination → other hosts", back: "FortiAnalyzer logs filtered by destination IP/domain."}
+  - {id: M13.04.c11, unit: M13.04.u3, tier: 2, front: "Timeline line fields", back: "Time, source, host, event, why it matters, confidence."}
+  - {id: M13.04.c12, unit: M13.04.u3, tier: 3, front: "Two investigation traps", back: "Tunnel vision and scope creep."}
+  - {id: M13.04.c13, unit: M13.04.u4, tier: 3, front: "Purple-team score per technique", back: "Blocked, detected, logged only, not logged."}
+  - {id: M13.04.c14, unit: M13.04.u4, tier: 3, front: "Purple-team rules of engagement", back: "Written approval, test accounts/hosts, windows, stop conditions, contacts."}
+
+quiz:
+  - id: M13.04.q01
+    type: output
+    tier: 3
+    pretest: true
+    output: |
+      Stack: scheduled tasks across 1,840 Windows endpoints (FortiEDR search, last 30 days)
+      count   task name                              action
+      1,840   \Microsoft\Windows\UpdateOrchestrator   usoclient.exe StartScan
+      1,836   \GoogleUpdateTaskMachineCore            GoogleUpdate.exe /c
+        912   \Adobe Acrobat Update Task              AdobeARM.exe
+          3   \OneDrive Sync Helper                   C:\Users\Public\odsync.exe -k 4f9a
+          1   \Backup-FS01-nightly                    robocopy.exe \\FS01\data E:\bk /MIR
+    stem: "Which line deserves your next hour?"
+    options:
+      - {id: a, text: "OneDrive Sync Helper: rare, Microsoft-looking name, binary in C:\\Users\\Public with a key argument", correct: true}
+      - {id: b, text: "Backup-FS01-nightly: it exists on a single host and copies the whole file server to another local drive", trap: near-miss, why_wrong: "Rare, but a named backup job with robocopy to a local disk is easy to confirm with IT in minutes."}
+      - {id: c, text: "GoogleUpdate: four endpoints are missing it, which may mean the browser has been tampered with", trap: near-miss, why_wrong: "Missing updaters are a hygiene issue; the hunt is for what was added, not what's absent."}
+      - {id: d, text: "Adobe Acrobat Update Task: it runs on half of the fleet, unlike the other common tasks", trap: misconception, why_wrong: "Half the fleet having Acrobat is normal software distribution, not an anomaly."}
+    explanation: "Stacking surfaces the rare. A Microsoft-sounding task running an odd binary from a world-writable folder with a key argument is the classic persistence pattern."
+  - id: M13.04.q02
+    type: single
+    tier: 3
+    stem: "You suspect a beacon with jitter (±30 % around 300 s). Why might an 'interval standard deviation < 5 s' filter miss it, and what works better?"
+    options:
+      - {id: a, text: "Jitter widens the spread; look at a stable interval distribution over hours instead", correct: true}
+      - {id: b, text: "Jitter hides the destination; use DNS logs to find the real domain behind the IP", trap: near-miss, why_wrong: "Jitter changes timing, not addressing; the destination is still visible."}
+      - {id: c, text: "Jitter shortens sessions; filter on sessions under 1 second instead of on intervals", trap: near-miss, why_wrong: "Session length isn't what jitter changes, and short sessions are everywhere."}
+      - {id: d, text: "Jitter is a UDP feature; filter the traffic logs on UDP to the internet instead", trap: misconception, why_wrong: "Jitter is a timing feature of the implant over any protocol, mostly HTTPS."}
+    explanation: "Jittered beacons still have a stable distribution (same mean and range for hours) to one destination; the exact-period test is too strict."
+  - id: M13.04.q03
+    type: order
+    tier: 3
+    stem: "An alert names 10.20.10.66. Order the pivots to scope it."
+    items: ["IP → which user was logged on", "User → which other hosts that account used", "Host → which processes ran around the alert", "Process → which destinations it contacted", "Destination → which other hosts contact it"]
+    explanation: "Each pivot answers one question and feeds the next: IP, user, hosts, processes, destinations, other victims."
+  - id: M13.04.q04
+    type: single
+    tier: 4
+    stem: "Midway through an investigation your timeline says 'attacker used RDP from VPN-POOL to FS01 at 09:12'. The evidence is a 4624 type 10 on FS01 from 10.99.0.15 for user jperez. What's the right way to record it?"
+    options:
+      - {id: a, text: "Proven: an RDP logon by that account. Open: who held the pool address at that time", correct: true}
+      - {id: b, text: "Fact: attacker used RDP from the VPN pool. Confidence: high, as the account is known compromised", trap: near-miss, why_wrong: "Mixes inference into the fact; the real user could have logged on too."}
+      - {id: c, text: "Remove the line until the VPN logs confirm who held 10.99.0.15 at 09:12 on that day", trap: near-miss, why_wrong: "The logon itself is a fact worth keeping; only the attribution is uncertain."}
+      - {id: d, text: "Fact: jperez used RDP. No inference needed, since the event already names the user account", trap: misconception, why_wrong: "The event proves the account, not the person behind the keyboard."}
+    explanation: "Record what the log proves (account, source, type, time) and label the attribution as inference until the VPN mapping confirms it."
+  - id: M13.04.q05
+    type: single
+    tier: 3
+    stem: "Which hunting filter on DC logons gives the best signal for lateral movement by a stolen admin account?"
+    options:
+      - {id: a, text: "First-ever logons of admin accounts from workstations to servers in the last 30 days", correct: true}
+      - {id: b, text: "All logons of admin accounts outside business hours, from any device anywhere on the network", trap: near-miss, why_wrong: "Admins work odd hours; off-hours alone is noisy and misses daytime movement."}
+      - {id: c, text: "Logons of admin accounts with the highest count per day, ranked in descending order", trap: misconception, why_wrong: "The busiest admin is usually doing their job; rarity matters, not volume."}
+      - {id: d, text: "Failed logons of admin accounts above five per hour, grouped by domain controller", trap: near-miss, why_wrong: "A stolen credential succeeds; failures point to guessing, not to use of a stolen account."}
+    explanation: "Rare + privileged: a first-ever admin logon path is what stolen credentials create."
+  - id: M13.04.q06
+    type: multi
+    tier: 3
+    stem: "In a purple-team run, Kerberoasting produced 4769 events in FortiSIEM but no incident. Which conclusions follow? Select all that apply."
+    options:
+      - {id: a, text: "The score for this technique is 'logged only'", correct: true}
+      - {id: b, text: "The fix is a rule and its test, not new data collection", correct: true}
+      - {id: c, text: "The DCs must enable Kerberos service ticket auditing first", trap: near-miss, why_wrong: "They already log 4769; the events arrived."}
+      - {id: d, text: "Re-run the technique after the rule is in place to prove it", correct: true}
+      - {id: e, text: "The technique should be dropped from scope as undetectable", trap: misconception, why_wrong: "It is detectable; the data is there."}
+    explanation: "Data arrived, no rule fired: 'logged only', the cheapest gap. Write the rule, then re-test."
+  - id: M13.04.q07
+    type: single
+    tier: 2
+    stem: "A hunt for DNS tunnelling finds nothing in 30 days of FortiGate DNS logs. What is the most useful next step?"
+    options:
+      - {id: a, text: "Record the clean result and check that the logs cover DNS that bypasses the FortiGate", correct: true}
+      - {id: b, text: "Extend the time window to a full year until something suspicious finally shows up", trap: near-miss, why_wrong: "A hunt is bounded; stretching it to force a finding wastes time and biases the result."}
+      - {id: c, text: "Close the hunt without writing anything, because there is nothing for the SOC to act on", trap: misconception, why_wrong: "A clean result is evidence for coverage and should be recorded."}
+      - {id: d, text: "Switch the hypothesis to HTTP tunnelling and run it on the same data set right away", trap: near-miss, why_wrong: "A new hypothesis needs its own scoping; first close this one properly."}
+    explanation: "Clean hunts are recorded, and the data gap check (hosts using external DNS directly, DoH) is part of the result."
+  - id: M13.04.q08
+    type: single
+    tier: 4
+    format: first-step
+    stem: "A customer asks for a purple-team exercise next month. What do you do first?"
+    options:
+      - {id: a, text: "Agree the techniques in scope and the written rules of engagement with the customer", correct: true}
+      - {id: b, text: "Install an emulation framework in the lab and script the first ten ATT&CK techniques", trap: near-miss, why_wrong: "Useful later, but scripting before scope and approval builds the wrong exercise."}
+      - {id: c, text: "Ask the SOC to enable all detection rules available so the score looks as good as possible", trap: misconception, why_wrong: "The point is to measure real coverage, not to inflate it on the day."}
+      - {id: d, text: "Book the red team and the test window now, and settle the scope at the kickoff call", trap: near-miss, why_wrong: "Booking before scope fixes the date and the people before you know which techniques matter."}
+    explanation: "Scope from their threat profile, then written approval: accounts, hosts, windows, stop conditions and contacts."
+  - id: M13.04.q09
+    type: text
+    tier: 2
+    stem: "What is the name of the hunting technique that counts a value across many hosts and reads the rare end?"
+    accept: ["stacking", "frequency analysis", "stack counting", "least frequency analysis"]
+    explanation: "Stacking (frequency analysis)."
+
+labs:
+  - id: M13.04.lab1
+    title: Write a bounded hunt
+    goal: "Write a hunt plan for scheduled-task persistence."
+    worked:
+      config: |
+        # Hypothesis: an attacker with local admin persisted with a scheduled task (T1053.005)
+        # Data:       FortiEDR scheduled-task inventory + Windows 4698 (task created) in FortiSIEM
+        # Time box:   4 hours; window: last 30 days
+        # Analysis:   stack task name + action path across all endpoints; read entries on < 5 hosts;
+        #             flag binaries in user-writable paths (C:\Users\Public, %TEMP%, ProgramData)
+        # Outcome:    incident for confirmed malicious tasks; note for unexplained ones
+        # Automate:   FortiSIEM rule on 4698 where the action path is user-writable
+    faded:
+      template: |
+        # Analysis: {{stack}} task names across endpoints, read the {{rare}} end
+        # Automate: rule on event {{4698}}
+    solo:
+      prompt: "Write the five parts of a hunt plan, one per line."
+      required: ["hypothesis", "data", "time box", "analysis", "automate"]
+      solution: |
+        hypothesis
+        data
+        time box
+        analysis
+        automate
+      notes: "Plus the outcome you record either way."
+
+scenarios:
+  - id: M13.04.sc1
+    kind: situation
+    tier: 4
+    title: "Hunt or fluff?"
+    situation: |
+      A customer's MSSP sends a monthly 'threat hunting report': 40 pages of FortiView top-10 charts and a list of
+      blocked IPS signatures. The CISO asks you whether they're getting real hunting.
+    ask: "What do you tell her, and what should she ask the MSSP for?"
+    right_thinking:
+      - "Top-10 charts and blocks are reporting, not hunting: no hypotheses, no findings, no new detections"
+      - "Real hunting: hypotheses tied to her threats, data used, results (clean or not), detections created"
+      - "Ask for a hunt log with time boxes and outcomes, and coverage gained per month"
+      - "Offer a pilot: two hypothesis-driven hunts together to set the standard"
+    what: "A clear definition of hunting deliverables she can hold the MSSP to."
+    why: "A hunt that never produces a hypothesis or a detection is a dashboard with a new name."
+    how: ["Define hunting", "Deliverables", "Contract language", "Pilot"]
+    model_answer: |
+      "What you're getting is a monthly report, which has value, but it isn't hunting: there's no hypothesis, no
+      finding and no new detection. I'd ask the MSSP for a hunt log: each hunt's hypothesis tied to your threats,
+      the data used, the time spent, the result, and the detections it produced. Then measure it by coverage gained.
+      If it helps, we can run two hunts together — say scheduled-task persistence and admin logons from
+      workstations — so they see the standard."
+    best_way: "Reports show what was blocked; hunts find what wasn't — ask for hypotheses and new detections."
+    rubric: ["distinguishes reporting from hunting", "concrete deliverables", "measurable", "constructive"]
+  - id: M13.04.sc2
+    kind: situation
+    tier: 3
+    title: "Your first purple-team proposal"
+    situation: |
+      A manufacturing customer has FortiGate, FortiEDR and FortiAnalyzer, no SIEM. They had a pentest last year that
+      reached Domain Admin. They ask what a 'purple team' would give them.
+    ask: "Pitch it in two minutes."
+    right_thinking:
+      - "Tie to their pentest: replay its chain, technique by technique"
+      - "Explain the score (blocked, detected, logged only, not logged) and the fix-and-retest loop"
+      - "Be clear what their stack can see without a SIEM (EDR + FortiAnalyzer) and where a gap is data, not rules"
+      - "Deliverable: coverage map before/after, backlog with owners"
+    what: "A purple team built on their own pentest chain with a before/after coverage map."
+    why: "It turns a one-off pentest report into measured detection improvement."
+    how: ["Replay their chain", "Score per technique", "Fix and re-test", "Coverage map"]
+    model_answer: |
+      "Your pentest showed how someone gets to Domain Admin. A purple team replays that same chain one step at a time
+      with your team watching FortiEDR and FortiAnalyzer, and for each step we score it: blocked, detected, logged
+      but no alert, or not logged at all. 'Logged but no alert' we fix the same week with a handler or rule; 'not
+      logged' tells you where you need data — probably the domain controllers, which nothing collects today. You end
+      with a before-and-after coverage map and a backlog with owners."
+    best_way: "Replay your own breach, score every step, fix and prove it."
+    rubric: ["uses their history", "explains scoring", "honest about data gaps", "clear deliverable"]
+
+interview:
+  - id: M13.04.t01
+    stage: technical
+    question: "How do you find a beacon in FortiGate logs?"
+    testing: "Practical hunting with Fortinet data"
+    framework: "Group → measure rhythm → filter rare → confirm on host"
+    model_answer: |
+      "Group the traffic logs by source and destination, then look at the intervals between sessions: a beacon is
+      regular — low variance over hours — with small, similar byte counts, often to a destination nobody else talks
+      to. FortiAnalyzer gives me the logs and rankings; for the interval maths I'd use an export or a SIEM query. If
+      there's jitter I look at a stable distribution rather than an exact period. Then I confirm on the host with
+      FortiEDR: which process holds that connection."
+    best_way: "Regular, small, rare, long — then find the process."
+    target: "0:50"
+  - id: M13.04.t02
+    stage: technical
+    question: "What's the difference between threat hunting and monitoring?"
+    testing: "Concept clarity"
+    framework: "Define both → output of each"
+    model_answer: |
+      "Monitoring waits for rules to fire; hunting assumes something got past the rules and tests a hypothesis to find
+      it. Monitoring produces incidents; good hunting produces findings or clean results and, either way, new
+      detections, so the next time it's monitoring's job."
+    best_way: "Monitoring reacts to rules; hunting tests hypotheses and creates the next rules."
+    target: "0:30"

@@ -1,0 +1,322 @@
+id: M13.05
+title: "SOAR and automated response: playbooks with brakes across FortiGate, FortiAnalyzer, FortiEDR and FortiSOAR"
+stage: S13
+stage_title: "S13 · SOC & SecOps (consultant level)"
+order: 15.5
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Decide what to automate fully, what to automate with approval and what to leave to humans
+  - Design a playbook: trigger, enrichment, decision, approval, action, notification, case update, rollback
+  - Place each automation in the right Fortinet layer (stitches, FortiAnalyzer playbooks, FortiEDR playbooks, FortiSIEM notifications, FortiSOAR)
+  - Build guardrails: allow-lists of critical assets, rate limits, dry runs, audit trails, failure handling
+sources:
+  - "FortiOS 8.0.2 Administration Guide: Automation stitches (triggers and actions) — see M8.01"
+  - "FortiAnalyzer 8.0.2 Administration Guide: incidents and events, playbooks and connectors — see M6.04"
+  - "FortiEDR: playbooks (notification, investigation, remediation, custom actions) — see M10.04"
+  - "FortiSIEM 7.6.1 User Guide: incident notification policies, remediation library (pp. 1005–1052)"
+
+units:
+  - id: M13.05.u1
+    title: What to automate, and how far
+    tier: 2
+    est_min: 13
+    body: |
+      Automation has three speeds:
+
+      | Speed | Examples | Why |
+      |---|---|---|
+      | **Always automate** | Enrichment (reputation, CMDB owner, user's department, geo), case creation, notifications, evidence collection | No risk, saves the analyst's first 10 minutes on every alert |
+      | **Automate with approval** | Isolate a host, block an IP, disable an account, quarantine a mailbox | High value, but a wrong action hurts the business |
+      | **Leave to humans** | Wiping systems, mass password resets, actions on crown-jewel or safety systems, external communication | Irreversible or high blast radius |
+
+      An action can move up a speed when it has a **track record**: after 50 approved "isolate laptop for confirmed
+      ransomware" decisions with zero false positives, the customer may pre-approve it.
+
+      **Playbook anatomy:**
+
+      1. **Trigger**: an incident type, a log pattern, a schedule, a webhook.
+      2. **Enrichment**: who, what, how important, how bad.
+      3. **Decision**: branches based on enrichment (asset criticality, confidence).
+      4. **Approval** (when needed): a human says yes or no, with a timeout and a default.
+      5. **Action**: the change, ideally reversible.
+      6. **Notification and case update**: everything the playbook did, written to the case.
+      7. **Rollback path**: how to undo, documented and tested.
+
+      :::recall
+      Q: Which playbook steps are almost always safe to automate fully?
+      A: Enrichment, case creation, notification and evidence collection.
+      :::
+
+      :::why
+      Q: Why does every action step need a rollback path?
+      A: Automated actions run at machine speed; when one is wrong (a false positive, a bad lookup), undoing it fast limits the damage.
+      :::
+  - id: M13.05.u2
+    title: "The Fortinet automation layers"
+    tier: 3
+    est_min: 16
+    body: |
+      Each Fortinet product automates what it can see. Pick the layer closest to the evidence and the action.
+
+      | Layer | Triggers (examples) | Actions (examples) | Best for |
+      |---|---|---|---|
+      | **FortiGate automation stitches** | Compromised host (from FortiAnalyzer IOC), event log match, incoming webhook, schedule, config change | Access-layer quarantine (FortiSwitch/FortiAP), FortiClient quarantine via EMS, IP ban, email, webhook, CLI script, cloud functions, Slack/Teams | Fast network containment in one Fabric |
+      | **FortiAnalyzer playbooks** | Incidents and events from event handlers, schedules, manual run | Enrich with logs, create/update incidents, run actions through connectors (FortiOS, EMS and others) | Log-driven SOC on a Fortinet-centric estate |
+      | **FortiEDR playbooks** | Security events by classification (malicious, suspicious, PUP…) | Notify, isolate device, terminate process, remove file, clean persistence, custom actions through connectors | Endpoint response at the source |
+      | **FortiSIEM** | Incidents matching a notification policy | Notifications, remediation scripts from the remediation library, ticketing | Multi-vendor SOC with a CMDB |
+      | **FortiSOAR** | Alerts from any source (SIEM, EDR, email, cloud) | Multi-step playbooks with approvals, hundreds of connectors, cases and war room | Cross-tool orchestration and case management |
+
+      **Rule of thumb in design:** contain at the layer that sees the evidence first (EDR for endpoint behaviour,
+      FortiGate for network IOCs), and orchestrate in FortiSOAR (or FortiAnalyzer playbooks for smaller
+      Fortinet-only shops) when a decision needs data from several tools or a human approval.
+
+      **Duplicate automation** is a real risk: an EDR playbook isolates the host while a FortiGate stitch bans its
+      IP and a SOAR playbook disables the user. Map every automated action to one owner layer.
+
+      :::recall
+      Q: Which FortiGate stitch action contains a host at the switch or access point?
+      A: Access-layer quarantine (FortiSwitch/FortiAP through FortiLink).
+      :::
+
+      :::why
+      Q: Why is FortiSOAR (or a FortiAnalyzer playbook) the place for approvals rather than a FortiGate stitch?
+      A: Stitches are trigger → action with no human decision step; orchestration platforms have approval steps, timeouts and case records.
+      :::
+  - id: M13.05.u3
+    title: "Guardrails"
+    tier: 4
+    est_min: 15
+    body: |
+      The worst automation incident is self-inflicted: a playbook that blocks the payroll gateway because a
+      reputation feed listed a shared cloud IP.
+
+      **Guardrails every playbook needs:**
+
+      - **Crown-jewel allow-list**: DCs, payment gateways, ERP, clinical systems and the SOC's own tools are never
+        auto-contained; they go to a human.
+      - **Blast-radius limits**: no more than N hosts isolated or IPs blocked per hour without a human. A playbook
+        that wants to isolate 200 hosts is either facing a worm or broken; both need a person.
+      - **Confidence thresholds**: act on confirmed (EDR malicious, two sources agree), enrich-and-ask on suspicious.
+      - **Expiry on blocks**: temporary IP bans expire; permanent ones go through change control.
+      - **Dry run first**: run new playbooks in "log what I would do" mode for a week.
+      - **Least privilege**: API keys and service accounts scoped to the actions the playbook needs.
+      - **Failure handling**: if a connector fails (API down, timeout), the playbook escalates to a human; it
+        never fails silently.
+      - **Audit trail**: every action in the case: what, when, why, which playbook version.
+
+      **Measure it.** MTTR before and after, analyst hours saved, actions rolled back (should be near zero), and
+      approvals that timed out (a sign the approver isn't reachable).
+
+      :::recall
+      Q: Name four playbook guardrails.
+      A: Crown-jewel allow-list, blast-radius limit, confidence threshold, block expiry, dry run, least-privilege keys, failure escalation, audit trail.
+      :::
+
+      :::why
+      Q: Why should a playbook stop after isolating, say, 10 hosts in an hour?
+      A: Either a real outbreak (humans must take over) or a broken rule (stop the damage); both need a person.
+      :::
+
+cards:
+  - {id: M13.05.c01, unit: M13.05.u1, tier: 1, front: "Three automation speeds", back: "Always automate, automate with approval, leave to humans."}
+  - {id: M13.05.c02, unit: M13.05.u1, tier: 2, front: "Always-automate examples", back: "Enrichment, case creation, notifications, evidence collection."}
+  - {id: M13.05.c03, unit: M13.05.u1, tier: 2, front: "Playbook anatomy", back: "Trigger, enrichment, decision, approval, action, notification/case update, rollback."}
+  - {id: M13.05.c04, unit: M13.05.u1, tier: 3, front: "When an action can move to full automation", back: "After a track record of approved decisions with no false positives, pre-approved by the customer."}
+  - {id: M13.05.c05, unit: M13.05.u2, tier: 3, front: "FortiGate stitch triggers (examples)", back: "Compromised host, event log, incoming webhook, schedule, config change."}
+  - {id: M13.05.c06, unit: M13.05.u2, tier: 3, front: "FortiGate stitch actions (examples)", back: "Access-layer quarantine, FortiClient quarantine via EMS, IP ban, email, webhook, CLI script."}
+  - {id: M13.05.c07, unit: M13.05.u2, tier: 3, front: "FortiEDR playbook actions", back: "Notify, isolate device, terminate process, remove file, clean persistence, custom via connectors."}
+  - {id: M13.05.c08, unit: M13.05.u2, tier: 3, front: "When FortiSOAR fits best", back: "Multi-tool decisions, human approvals, case management across vendors."}
+  - {id: M13.05.c09, unit: M13.05.u2, tier: 3, front: "Duplicate automation risk", back: "Several layers act on the same alert; map each action to one owner layer."}
+  - {id: M13.05.c10, unit: M13.05.u3, tier: 3, front: "Crown-jewel allow-list", back: "Assets never auto-contained (DCs, payment, ERP, clinical, SOC tools): a human decides."}
+  - {id: M13.05.c11, unit: M13.05.u3, tier: 3, front: "Blast-radius limit", back: "Max hosts isolated or IPs blocked per hour before a human must take over."}
+  - {id: M13.05.c12, unit: M13.05.u3, tier: 3, front: "Dry-run mode", back: "The playbook logs what it would do for a week before acting."}
+  - {id: M13.05.c13, unit: M13.05.u3, tier: 3, front: "Connector failure in a playbook", back: "Escalate to a human; never fail silently."}
+  - {id: M13.05.c14, unit: M13.05.u3, tier: 3, front: "Automation metrics", back: "MTTR before/after, analyst hours saved, actions rolled back, approvals timed out."}
+
+quiz:
+  - id: M13.05.q01
+    type: single
+    tier: 3
+    pretest: true
+    stem: "A playbook auto-blocks IPs that a reputation feed marks malicious. On Monday it blocked an address of the payroll SaaS (shared cloud hosting). Which guardrail prevents a repeat while keeping the automation?"
+    options:
+      - {id: a, text: "A critical-destination allow-list that routes matches to an analyst for approval", correct: true}
+      - {id: b, text: "Removing the reputation feed and relying on FortiGuard web filtering categories", trap: near-miss, why_wrong: "Changes the source of truth but any feed can list shared cloud addresses; the guardrail is missing."}
+      - {id: c, text: "Raising the reputation score needed to trigger a block from 70 to 95 on the playbook", trap: near-miss, why_wrong: "Fewer false positives, but a shared address with a bad neighbour can still score high."}
+      - {id: d, text: "Switching the block to a DNS-filter rule so shared IPs aren't affected by it", trap: misconception, why_wrong: "Blocking by name doesn't apply to IP indicators and moves the problem."}
+    explanation: "Business-critical destinations never get auto-blocked; matches go to a human. Keep the automation for everything else."
+  - id: M13.05.q02
+    type: single
+    tier: 3
+    stem: "Which step of a phishing playbook is the best candidate for full automation from day one?"
+    options:
+      - {id: a, text: "Extract URLs and attachments, check reputation and sandbox them, and attach results to the case", correct: true}
+      - {id: b, text: "Delete the message from all mailboxes that received it, once the sandbox has called it malicious", trap: near-miss, why_wrong: "Valuable, but destructive at scale; start with approval until the track record exists."}
+      - {id: c, text: "Reset the passwords of the users who clicked the link and notify their managers by email", trap: near-miss, why_wrong: "Clicks aren't compromise; resetting without confirmation disrupts users for false positives."}
+      - {id: d, text: "Block the sender's domain on the mail gateway for 30 days when two users report the message", trap: near-miss, why_wrong: "Senders are often compromised partners; blocking a domain has business impact and needs a human."}
+    explanation: "Enrichment and evidence collection carry no business risk and save every analyst minutes on every case."
+  - id: M13.05.q03
+    type: single
+    tier: 3
+    stem: "FortiEDR classifies an event as malicious on a laptop and isolates it via its playbook. At the same time a FortiGate stitch bans its IP and a FortiSOAR playbook disables the user. What's the design problem?"
+    options:
+      - {id: a, text: "Three layers act on one alert with no single owner, which complicates rollback and audit", correct: true}
+      - {id: b, text: "FortiEDR isolation should run after the FortiGate ban so the network block applies first", trap: near-miss, why_wrong: "Order isn't the issue; overlapping uncoordinated actions are."}
+      - {id: c, text: "The FortiSOAR playbook should run first because it is the orchestration layer in charge", trap: near-miss, why_wrong: "Orchestration can coordinate, but here all three run independently; the fix is ownership, not who's first."}
+      - {id: d, text: "Isolation and IP bans can't both be applied to the same host at once in a Fortinet Fabric", trap: misconception, why_wrong: "They can coexist technically; the problem is design and traceability."}
+    explanation: "Map each automated action to one owner layer and let orchestration coordinate. Otherwise undoing a false positive means hunting through three products."
+  - id: M13.05.q04
+    type: order
+    tier: 2
+    stem: "Order the steps of a containment playbook."
+    items: ["Trigger on a confirmed EDR malicious event", "Enrich: asset criticality, user, other alerts", "Decide: crown jewel or blast-radius limit reached?", "Approval from the on-call analyst (timeout 15 min)", "Isolate the host and record it in the case", "Notify the owner and the SOC channel"]
+    explanation: "Trigger, enrich, decide, approve, act, notify; the decision step routes crown jewels to humans."
+  - id: M13.05.q05
+    type: multi
+    tier: 4
+    stem: "Which are good guardrails for a playbook that isolates endpoints? Select all that apply."
+    options:
+      - {id: a, text: "A maximum number of isolations per hour before a human must approve the rest", correct: true}
+      - {id: b, text: "Servers, clinical devices and SOC tools excluded from automatic isolation", correct: true}
+      - {id: c, text: "A week in log-only mode before the action is switched on", correct: true}
+      - {id: d, text: "A service account with domain admin rights so the playbook never lacks permission", trap: misconception, why_wrong: "Over-privileged keys turn a broken or hijacked playbook into a disaster; scope to the actions needed."}
+      - {id: e, text: "Silent retry on connector errors so analysts aren't bothered by temporary failures", trap: near-miss, why_wrong: "Retries are fine, silence isn't: after retries fail, a human must know the action didn't happen."}
+    explanation: "Rate limits, exclusions and dry runs are guardrails; over-privilege and silent failure are anti-patterns."
+  - id: M13.05.q06
+    type: single
+    tier: 4
+    format: first-step
+    stem: "A Fortinet-only customer (FortiGate, FortiEDR, FortiAnalyzer, 2 analysts, no SIEM) asks for 'SOAR'. What do you propose first?"
+    options:
+      - {id: a, text: "The playbooks built into the analyzer and the EDR, for the top two incident types", correct: true}
+      - {id: b, text: "A FortiSOAR deployment with the full connector set for the products they own today", trap: near-miss, why_wrong: "Powerful, but two analysts with three Fortinet products gain more from the built-in playbooks first."}
+      - {id: c, text: "FortiGate automation stitches that react to the IPS and antivirus events in the logs", trap: near-miss, why_wrong: "Stitches have no approval step; reacting to every event without enrichment is risky and noisy."}
+      - {id: d, text: "A FortiSIEM deployment first, since automation needs correlation to work well", trap: misconception, why_wrong: "FortiAnalyzer already correlates Fortinet logs into incidents; a SIEM isn't a prerequisite."}
+    explanation: "Right-size: start with the automation built into what they own, for the incidents they actually get, and grow to FortiSOAR when cross-tool orchestration is needed."
+  - id: M13.05.q07
+    type: single
+    tier: 3
+    stem: "An approval step in a containment playbook has a 15-minute timeout. What should happen when it times out at 03:00?"
+    options:
+      - {id: a, text: "Follow the default agreed per asset class, record it, and page the next approver", correct: true}
+      - {id: b, text: "Isolate the host anyway, since a missing answer means nobody objected to it", trap: near-miss, why_wrong: "A blanket 'yes' on timeout turns approval into decoration; defaults must depend on the asset."}
+      - {id: c, text: "Cancel the containment and close the case, because the approver did not respond", trap: misconception, why_wrong: "A confirmed threat doesn't go away because nobody answered."}
+      - {id: d, text: "Retry the approval request at 15-minute intervals until somebody eventually answers it", trap: near-miss, why_wrong: "Delay without escalation; the attacker keeps working while the playbook loops."}
+    explanation: "Timeouts need an agreed default per asset class (isolate laptops, escalate servers) and an escalation path."
+  - id: M13.05.q08
+    type: text
+    tier: 2
+    stem: "Which Fortinet product is the multi-vendor SOAR platform with approval steps and case management?"
+    accept: ["fortisoar", "forti soar"]
+    explanation: "FortiSOAR."
+
+labs:
+  - id: M13.05.lab1
+    title: A containment playbook with brakes
+    goal: "Write a playbook for confirmed malware on endpoints, with guardrails."
+    worked:
+      config: |
+        # Trigger:     FortiEDR event classified Malicious, device type = workstation
+        # Enrich:      CMDB owner and criticality; user department; other incidents for host/user (24 h)
+        # Decide:      criticality in {DC, server, clinical, SOC} -> human only
+        #              isolations in last hour >= 10 -> human only
+        # Approval:    analyst on call, timeout 15 min; default on timeout: isolate laptops, escalate others
+        # Action:      FortiEDR isolate device; record in the case
+        # Notify:      user's manager (template), SOC channel
+        # Rollback:    FortiEDR remove isolation; documented one-click
+        # Dry run:     7 days log-only before enabling the action
+    faded:
+      template: |
+        # Crown jewels go to a {{human}}
+        # Blast radius: max {{10}} isolations per hour
+        # Default on approval timeout depends on the {{asset}} class
+    solo:
+      prompt: "Write the seven playbook stages, one per line."
+      required: ["trigger", "enrich", "decide", "approv", "action", "notif", "rollback"]
+      solution: |
+        trigger
+        enrich
+        decide
+        approval
+        action
+        notification
+        rollback
+      notes: "Then the guardrails."
+
+scenarios:
+  - id: M13.05.sc1
+    kind: situation
+    tier: 4
+    title: "Automate everything"
+    situation: |
+      A new CISO tells you: "I want zero-touch SOC. Every alert should be handled by automation within 60 seconds."
+      They have FortiSOAR, FortiEDR, FortiGate and a 4-person SOC that is drowning.
+    ask: "How do you shape this into something safe and still ambitious?"
+    right_thinking:
+      - "Agree with the speed goal; split actions by risk (always, with approval, human)"
+      - "Start with enrichment and triage automation: that is where most analyst time goes"
+      - "Containment with approvals and guardrails, moving to pre-approved as the track record grows"
+      - "Measure: MTTR, hours saved, rollbacks; review monthly"
+    what: "A staged automation roadmap measured by MTTR and rollbacks."
+    why: "Unguarded automation creates outages; staged automation earns trust and speed."
+    how: ["Three speeds", "Enrich first", "Approvals with guardrails", "Graduate with data"]
+    model_answer: |
+      "Sixty seconds is a good target for the first response, and we can hit it for most alerts if we separate what
+      the machine does from what it decides. Month one, every alert gets automatic enrichment and triage, which gives
+      your four analysts most of their time back. Month two, containment for laptops with confirmed malware, with a
+      15-minute approval and guardrails for servers and critical systems. Every month we look at MTTR, hours saved
+      and rollbacks, and actions with a clean track record become pre-approved."
+    best_way: "Machine speed for everything safe, human brakes for what can hurt, and graduate with data."
+    rubric: ["keeps ambition", "risk-based split", "staged plan", "metrics"]
+  - id: M13.05.sc2
+    kind: situation
+    tier: 3
+    title: "The playbook that isolated the CEO"
+    situation: |
+      A FortiEDR playbook isolated the CEO's laptop during a board presentation: a signed but uncommon remote-support
+      tool was classified suspicious and the playbook acted on 'suspicious' too.
+    ask: "What do you change?"
+    right_thinking:
+      - "Restore and apologise fast; check the event truly was benign"
+      - "Act automatically on malicious only; suspicious goes to enrichment and approval"
+      - "VIP/executive devices in a class that always gets a human decision"
+      - "Add the tool to an exception with an owner and review date if it's approved software"
+    what: "Confidence thresholds and a VIP class with human approval."
+    why: "Suspicious is a question, not a verdict; automation should ask, not act."
+    how: ["Restore", "Malicious-only auto action", "VIP class", "Documented exception"]
+    model_answer: |
+      "First, restore the laptop and confirm the tool is approved. Then two changes: the playbook only acts on its
+      own for events classified malicious — suspicious goes to enrichment and a 15-minute approval — and executive
+      devices sit in a class that always needs a human. If the support tool is sanctioned, it gets a documented
+      exception with an owner and a review date."
+    best_way: "Suspicious asks, malicious acts, and VIPs always get a human."
+    rubric: ["fast recovery", "threshold fix", "asset class", "documented exception"]
+
+interview:
+  - id: M13.05.t01
+    stage: technical
+    question: "What would you automate in a SOC, and what wouldn't you?"
+    testing: "Automation judgement"
+    framework: "Three speeds with examples and guardrails"
+    model_answer: |
+      "I split it in three. Always automated: enrichment, case creation, notifications, evidence collection — no risk
+      and it saves the analyst's first minutes every time. Automated with approval: isolating a host, blocking an IP,
+      disabling an account, with guardrails like a crown-jewel allow-list and a limit per hour. Never automated:
+      wiping systems, mass resets, anything on safety-critical systems. Actions move up a level when they've built a
+      clean track record."
+    best_way: "Enrich always, contain with brakes, never automate the irreversible."
+    target: "0:45"
+  - id: M13.05.t02
+    stage: technical
+    question: "Where would you implement automated containment in a Fortinet Fabric, and why there?"
+    testing: "Product placement"
+    framework: "Closest layer to evidence and action; orchestration for multi-tool decisions"
+    model_answer: |
+      "At the layer that sees the evidence first. Endpoint behaviour is FortiEDR's: its playbook isolates the device
+      or kills the process at the source. Network indicators from FortiAnalyzer fit a FortiGate stitch — access-layer
+      quarantine through FortiSwitch or an IP ban. When the decision needs several tools or a human approval, that
+      belongs in FortiSOAR, or FortiAnalyzer playbooks for a smaller Fortinet-only shop. And each action gets one owner
+      layer, so nothing fires three times on the same alert."
+    best_way: "Act where the evidence is; orchestrate where decisions span tools."
+    target: "0:50"

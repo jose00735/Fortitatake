@@ -1,0 +1,284 @@
+id: M13.06
+title: "Designing and delivering a Fortinet SOC stack: architecture, sizing, phases and acceptance"
+stage: S13
+stage_title: "S13 · SOC & SecOps (consultant level)"
+order: 15.6
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Choose between FortiAnalyzer-centred and FortiSIEM-centred SOC designs, and where FortiSOAR, FortiEDR and FortiNDR fit
+  - Estimate log volume and storage from EPS, and explain the assumptions to a customer
+  - Plan a SOC delivery in phases with acceptance criteria that prove value
+  - Handle multi-tenant (MSSP) designs and the classic delivery pitfalls
+sources:
+  - "FortiAnalyzer 8.0.2 Administration Guide: ADOMs, log storage, Fabric View, playbooks (as cited in M6.01–M6.05)"
+  - "FortiSIEM 7.6.1 User Guide: architecture (supervisor, workers, collectors), CMDB, organizations (as cited in M9.01–M9.04)"
+  - "FortiEDR, FortiSOAR product roles (as cited in M10.01–M10.04, M8.01)"
+
+units:
+  - id: M13.06.u1
+    title: "Two reference designs"
+    tier: 3
+    est_min: 15
+    body: |
+      **Design A — FortiAnalyzer-centred (Fortinet-heavy estate).**
+      FortiGates, FortiSwitch/FortiAP, FortiClient EMS and FortiEDR log to FortiAnalyzer. Event handlers raise
+      incidents, Fabric View and FortiView give the investigation views, FortiAnalyzer playbooks and FortiGate
+      stitches do the response. Optional: FortiSOAR when approvals and cross-tool cases grow.
+      Fits: mostly Fortinet, one or two analysts, fast time to value.
+
+      **Design B — FortiSIEM-centred (multi-vendor estate).**
+      FortiSIEM collectors near the sources (Windows agents, syslog, API pulls from cloud and SaaS), workers for
+      scale, a supervisor with the CMDB (discovered devices, owners, criticality), correlation across vendors and
+      UEBA. FortiAnalyzer often stays as the Fortinet log store and forwards to FortiSIEM. FortiSOAR orchestrates.
+      Fits: many non-Fortinet sources (other firewalls, cloud, OT, apps), compliance reporting, larger SOCs or MSSPs.
+
+      **The supporting cast:**
+
+      - **FortiEDR**: endpoint prevention, detection and response; the source of host truth.
+      - **FortiNDR**: network detection from traffic (anomalies, lateral movement, malware on the wire).
+      - **FortiSandbox**: detonation of files from FortiGate, FortiMail, EDR.
+      - **FortiDeceptor**: decoys whose only purpose is to be touched by an attacker (very high-confidence alerts).
+
+      **Decision questions:** how many non-Fortinet sources? Who operates it (in-house, MSSP)? Compliance reports
+      needed? Budget for licences and people?
+
+      :::recall
+      Q: When does a FortiSIEM-centred design beat a FortiAnalyzer-centred one?
+      A: Many non-Fortinet sources, need for a CMDB and cross-vendor correlation, compliance reporting, larger SOC or MSSP.
+      :::
+
+      :::why
+      Q: Why does a deception alert carry such high confidence?
+      A: Decoys have no business use, so any interaction with them is suspicious by definition.
+      :::
+  - id: M13.06.u2
+    title: "Sizing from EPS: the maths you show the customer"
+    tier: 3
+    est_min: 14
+    body: |
+      Sizing starts with **events per second (EPS)** per source type, measured if possible, estimated if not.
+
+      **Daily volume = EPS × average event size × 86,400 s.**
+
+      Example: 2,500 EPS × 600 bytes × 86,400 = 129.6 GB of raw logs per day.
+
+      Then apply what the platform does (indexing, compression) and the retention: hot days searchable, the rest
+      archived. Ask the product team for the current sizing tool and compression ratios rather than quoting them
+      from memory; your job is the inputs and the reasoning.
+
+      **Peaks matter.** A ransomware event or a scanning storm can multiply EPS for hours. Licences and collectors
+      are sized for normal plus headroom; queues and buffers for the peak.
+
+      **What drives EPS:** firewall traffic logs (often the majority), DNS, proxy/web, Windows security logs on
+      DCs, EDR telemetry. Changing log settings (logging all sessions vs only denies, UTM only) changes EPS more
+      than any other decision; document the trade-off with the security team.
+
+      **Licensing shape (for the conversation, confirm current terms):** FortiAnalyzer VMs are sized by logs per
+      day and storage; FortiSIEM is licensed on monitored devices and EPS.
+
+      :::recall
+      Q: Formula for raw daily log volume?
+      A: EPS × average event size × 86,400.
+      :::
+
+      :::why
+      Q: Why size collectors and queues for peaks but licences for normal plus headroom?
+      A: Peaks are short; licensing for them wastes money, but dropping events during an incident is the worst time to lose data.
+      :::
+  - id: M13.06.u3
+    title: "Delivery in phases, with acceptance that proves value"
+    tier: 4
+    est_min: 16
+    body: |
+      | Phase | Work | Acceptance criteria |
+      |---|---|---|
+      | **0 Discovery** | Threat profile, sources and owners, retention, authority, RACI | Signed use-case list (top 10) and source inventory |
+      | **1 Platform** | Deploy, HA, NTP, RBAC, storage, backups | Platform runbook; restore test passed |
+      | **2 Onboarding** | Sources in priority order, parsing validation | Each source: sends, time right, parses, test event visible |
+      | **3 Use cases** | Rules, handlers, dashboards for the top 10 | Each use case fires on its test and stays quiet on baseline |
+      | **4 Response** | Runbooks, playbooks with guardrails, escalation | Tabletop per top incident; dry-run playbooks reviewed |
+      | **5 Tuning and handover** | Weekly tuning, training, documentation | Two weeks of customer-run tuning; handover package signed |
+
+      **Acceptance that proves value** is test-based. "The SIEM is installed" isn't acceptance; "the password-spray
+      use case raised a P2 within 5 minutes during the test on 14 May" is.
+
+      **Classic pitfalls:**
+
+      - Sources onboarded without owners (they break and nobody fixes them).
+      - Every rule on at go-live (noise kills the SOC in week one).
+      - Response playbooks automated before runbooks exist for humans.
+      - Retention promised without the storage maths.
+      - No time zone and NTP check before the first investigation.
+
+      **Multi-tenant (MSSP) designs:** FortiAnalyzer separates customers with ADOMs; FortiSIEM supports
+      organizations in its service-provider deployments; FortiSOAR supports multi-tenant operation. Design
+      per-tenant RBAC, data separation and reporting from day one.
+
+      :::recall
+      Q: What makes an acceptance criterion "test-based"?
+      A: It names a test (event or emulation), the expected result and the time, not just that a component is installed.
+      :::
+
+      :::why
+      Q: Why not enable every rule at go-live?
+      A: Untuned rules flood the analysts with noise, they lose trust in the tool and real incidents get missed.
+      :::
+
+cards:
+  - {id: M13.06.c01, unit: M13.06.u1, tier: 2, front: "Design A fits", back: "Mostly Fortinet estate, small SOC, fast time to value: FortiAnalyzer-centred."}
+  - {id: M13.06.c02, unit: M13.06.u1, tier: 2, front: "Design B fits", back: "Multi-vendor sources, CMDB, compliance, larger SOC/MSSP: FortiSIEM-centred."}
+  - {id: M13.06.c03, unit: M13.06.u1, tier: 2, front: "FortiSIEM components", back: "Collectors near sources, workers for scale, supervisor with CMDB."}
+  - {id: M13.06.c04, unit: M13.06.u1, tier: 2, front: "FortiNDR role", back: "Network detection from traffic: anomalies, lateral movement, malware on the wire."}
+  - {id: M13.06.c05, unit: M13.06.u1, tier: 2, front: "FortiDeceptor role", back: "Decoys that only attackers touch: very high-confidence alerts."}
+  - {id: M13.06.c06, unit: M13.06.u2, tier: 2, front: "Daily raw log volume", back: "EPS × average event size × 86,400."}
+  - {id: M13.06.c07, unit: M13.06.u2, tier: 3, front: "Biggest EPS lever", back: "Firewall log settings (all sessions vs denies, UTM only)."}
+  - {id: M13.06.c08, unit: M13.06.u2, tier: 3, front: "Size licences vs queues", back: "Licences for normal plus headroom; collectors and queues for peaks."}
+  - {id: M13.06.c09, unit: M13.06.u3, tier: 3, front: "Six SOC delivery phases", back: "Discovery, platform, onboarding, use cases, response, tuning and handover."}
+  - {id: M13.06.c10, unit: M13.06.u3, tier: 3, front: "Use-case acceptance", back: "Fires on its test, quiet on baseline, within the agreed time."}
+  - {id: M13.06.c11, unit: M13.06.u3, tier: 3, front: "MSSP separation", back: "FortiAnalyzer ADOMs, FortiSIEM organizations, FortiSOAR multi-tenancy; per-tenant RBAC."}
+  - {id: M13.06.c12, unit: M13.06.u3, tier: 3, front: "Five SOC delivery pitfalls", back: "No source owners, all rules on at go-live, automation before runbooks, retention without maths, no NTP check."}
+
+quiz:
+  - id: M13.06.q01
+    type: single
+    tier: 3
+    pretest: true
+    stem: "A retailer has 80 FortiGates, FortiEDR on 3,000 endpoints, two analysts, and no other security vendors. They want a SOC in 3 months. Which design fits best?"
+    options:
+      - {id: a, text: "FortiAnalyzer-centred, with event handlers, Fabric View and playbooks for response", correct: true}
+      - {id: b, text: "FortiSIEM-centred, because a SOC needs a SIEM with a CMDB to correlate events well", trap: near-miss, why_wrong: "A strong platform, but with a Fortinet-only estate and two analysts it adds cost and time without new sources to correlate."}
+      - {id: c, text: "FortiSOAR first, so the two analysts can automate most of the work from the start", trap: near-miss, why_wrong: "Orchestration without a working detection layer automates nothing useful."}
+      - {id: d, text: "A FortiNDR deployment on the core network, as it replaces the need for central logging", trap: misconception, why_wrong: "NDR adds network detection; it doesn't replace log collection and investigation."}
+    explanation: "Fortinet-only estate, small team, tight timeline: FortiAnalyzer gives correlation, investigation and playbooks with the least integration work."
+  - id: M13.06.q02
+    type: numeric
+    tier: 3
+    stem: "A customer averages 1,800 EPS with an average event size of 500 bytes. How many GB of raw logs per day? (1 GB = 10^9 bytes, one decimal)"
+    answer: 77.8
+    tolerance: 0.2
+    unit: GB/day
+    explanation: "1,800 × 500 × 86,400 = 77,760,000,000 bytes ≈ 77.8 GB/day before compression or indexing."
+  - id: M13.06.q03
+    type: single
+    tier: 4
+    stem: "Which acceptance criterion would you accept for the 'VPN password spraying' use case?"
+    options:
+      - {id: a, text: "A spray of 15 users from one test IP raised an incident within 5 minutes on 14 June", correct: true}
+      - {id: b, text: "The VPN logs arrive in FortiSIEM and the password-spraying rule is enabled for the tenant", trap: near-miss, why_wrong: "Arrival and enablement don't prove the rule fires on the technique."}
+      - {id: c, text: "The customer's SOC lead has reviewed the rule logic and signed the rule document", trap: near-miss, why_wrong: "Review is useful, but only a test shows it works on their real logs."}
+      - {id: d, text: "No incidents for spraying were raised during the two-week tuning period at all", trap: misconception, why_wrong: "Silence proves nothing; it may mean the rule never fires."}
+    explanation: "Test-based acceptance: a named test, the expected result, the time and the date."
+  - id: M13.06.q04
+    type: order
+    tier: 3
+    stem: "Order the SOC delivery phases."
+    items: ["Discovery: threat profile, sources, owners, authority", "Platform: deploy, HA, NTP, RBAC, backups", "Onboarding: sources in priority order with parsing checks", "Use cases: rules tested on attack and baseline", "Response: runbooks and guarded playbooks", "Tuning and handover: customer-run tuning, package signed"]
+    explanation: "Each phase depends on the previous one; playbooks come after the use cases they respond to."
+  - id: M13.06.q05
+    type: single
+    tier: 3
+    stem: "An MSSP will run one FortiAnalyzer for 25 small customers. What must the design guarantee first?"
+    options:
+      - {id: a, text: "Per-customer separation of logs, admin access and reports, using ADOMs and RBAC", correct: true}
+      - {id: b, text: "A dedicated FortiAnalyzer VM per customer so their logs don't share a disk", trap: near-miss, why_wrong: "Possible but expensive; ADOMs give logical separation on one platform."}
+      - {id: c, text: "A single shared dashboard so the MSSP analysts can compare customers side by side", trap: misconception, why_wrong: "Cross-tenant views without RBAC leak one customer's data to another."}
+      - {id: d, text: "Identical event handlers for all 25 customers so tuning is done once for everyone", trap: near-miss, why_wrong: "Shared baselines help, but each tenant needs its own tuning and exceptions."}
+    explanation: "Multi-tenancy is a data-protection requirement first: separate data, access and reporting per customer."
+  - id: M13.06.q06
+    type: single
+    tier: 4
+    format: first-step
+    stem: "Week one of a FortiSIEM deployment: the customer wants to turn on all 2,000 built-in rules 'to see what fires'. What do you do first?"
+    options:
+      - {id: a, text: "Agree to enable the top-10 use cases now and stage the rest by source and test", correct: true}
+      - {id: b, text: "Enable them all for one week in a separate view, then disable whatever was noisiest", trap: near-miss, why_wrong: "Rules that fire on untuned data teach the analysts to ignore the tool from day one."}
+      - {id: c, text: "Refuse, and point to the SOW that lists ten use cases as the agreed scope of work", trap: near-miss, why_wrong: "Right content, wrong tone; explain the why and offer a path instead of a refusal."}
+      - {id: d, text: "Enable them all and lower their severity to low until the tuning phase starts", trap: misconception, why_wrong: "Noise at low severity is still noise, and real hits get buried."}
+    explanation: "Stage rules with the sources that feed them and test each one; explain that noise in week one is how SIEM projects fail."
+  - id: M13.06.q07
+    type: text
+    tier: 2
+    stem: "Which Fortinet product provides decoys whose only purpose is to be touched by attackers?"
+    accept: ["fortideceptor", "forti deceptor"]
+    explanation: "FortiDeceptor."
+
+labs:
+  - id: M13.06.lab1
+    title: A sizing note the customer can follow
+    goal: "Write the sizing note for a FortiSIEM proposal."
+    worked:
+      config: |
+        # Sources (measured 7 days):  FortiGates 1,600 EPS, DCs 350, EDR 120, VPN 30, other 100  -> 2,200 EPS
+        # Peak observed:               5,900 EPS for 40 min (scan storm)
+        # Average event size:          550 bytes (sample of 100k events)
+        # Raw volume:                  2,200 x 550 x 86,400 = 104.5 GB/day
+        # Retention:                   90 days online, 365 days archive (customer policy)
+        # Licence basis:               devices + 2,500 EPS (normal + ~15% headroom)
+        # Collectors/queues:           sized for 6,000 EPS bursts
+        # Assumptions to confirm:      compression ratio and storage per the current sizing tool
+    faded:
+      template: |
+        # Raw volume = EPS x {{size}} x {{86400}}
+        # Licence for {{normal}} plus headroom, queues for {{peak}}
+    solo:
+      prompt: "Write the four inputs of a sizing note, one per line."
+      required: ["eps", "size", "retention", "peak"]
+      solution: |
+        EPS per source
+        average event size
+        retention (online and archive)
+        peak EPS
+      notes: "Then the assumptions you still need to confirm."
+
+scenarios:
+  - id: M13.06.sc1
+    kind: situation
+    tier: 4
+    title: "FortiAnalyzer or FortiSIEM?"
+    situation: |
+      A university has 12 FortiGates, a Palo Alto at the research network, Microsoft 365, AWS for research labs, and a
+      three-person security team. The account manager asks you which to propose: FortiAnalyzer or FortiSIEM.
+    ask: "What do you recommend and how do you explain it?"
+    right_thinking:
+      - "Count non-Fortinet sources: Palo Alto, M365, AWS — correlation across them matters"
+      - "FortiSIEM for cross-vendor correlation and CMDB; FortiAnalyzer can stay as the Fortinet log store"
+      - "Phase it: start with identity (M365) and edges, then cloud"
+      - "Size the team: three people need tuned use cases, not hundreds of rules"
+    what: "FortiSIEM-centred with FortiAnalyzer for Fortinet logs, phased by risk."
+    why: "Their attacks will cross vendors (cloud identity, research network); only a multi-vendor SIEM sees the whole path."
+    how: ["Source count", "Design B", "Phases", "Team-sized use cases"]
+    model_answer: |
+      "I'd propose FortiSIEM, because their risk crosses vendors: a phished M365 account, then access to AWS or the
+      research network behind the Palo Alto. FortiAnalyzer alone would see the FortiGate side well but not that path.
+      FortiAnalyzer can stay as the Fortinet log store and forward to FortiSIEM. We start with identity and the edges,
+      then cloud, and we keep the rule set small enough for three people to tune."
+    best_way: "Their attacks cross vendors, so their SIEM must too — phased to what three people can run."
+    rubric: ["counts sources", "right design", "phased plan", "fits the team"]
+
+interview:
+  - id: M13.06.t01
+    stage: technical
+    question: "How would you design a SOC for a customer that is mostly Fortinet?"
+    testing: "Architecture judgement"
+    framework: "Fit design to estate and team"
+    model_answer: |
+      "If the estate is mostly Fortinet and the team is small, I'd centre it on FortiAnalyzer: FortiGates, FortiEDR and
+      EMS log there, event handlers raise incidents, Fabric View and FortiView support investigations, and
+      FortiAnalyzer playbooks plus FortiGate stitches handle response. When non-Fortinet sources or cross-tool
+      approvals grow, FortiSIEM and FortiSOAR come in. I'd deliver it in phases with test-based acceptance for each use
+      case."
+    best_way: "Fit the stack to the estate and the team; prove each use case with a test."
+    target: "0:50"
+  - id: M13.06.t02
+    stage: technical
+    question: "How do you size a SIEM?"
+    testing: "Method and honesty about numbers"
+    framework: "Inputs → formula → peaks → assumptions"
+    model_answer: |
+      "From measured EPS per source type, the average event size, and retention online and in archive. Raw volume is
+      EPS times size times 86,400. I size licences for normal load with headroom and collectors and queues for peaks,
+      because losing events during an incident is the worst moment. Compression and current ratios I take from the
+      vendor's sizing tool rather than from memory, and I write every assumption into the proposal."
+    best_way: "Measured EPS, the formula, peaks, and written assumptions."
+    target: "0:45"
