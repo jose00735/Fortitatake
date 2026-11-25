@@ -1,0 +1,162 @@
+id: M11.05
+title: "Executive storytelling with threat data: readouts, risk registers and saying no well"
+stage: S11
+stage_title: "S11 · Professional Services mastery"
+order: 65
+quality: 2
+est_sessions: 1
+objectives:
+  - Structure an executive readout as bottom line, evidence, options and the ask
+  - Turn the customer's own logs (FortiAnalyzer, FortiSIEM, FortiEDR) into risk statements, not counts
+  - Use industry reports honestly: cite them, scope them, never let them replace the customer's data
+  - Keep a risk register and handle scope creep and escalations without losing the customer
+
+sources:
+  - "PS practice; Verizon DBIR and IBM Cost of a Data Breach as public reference reports (cite the edition you use)"
+  - "FortiAnalyzer and FortiSIEM report and dashboard features (FortiOS-family admin guides)"
+
+units:
+  - id: M11.05.u1
+    title: "The shape of a readout"
+    tier: 3
+    est_min: 12
+    body: |
+      Executives read the first sentence and decide whether to read the second. So:
+      1. **Bottom line** (one sentence): where they stand and what you need.
+      2. **Evidence** (three points at most), from *their* environment.
+      3. **Options** with cost, effort and the risk each one leaves.
+      4. **The ask**: a decision, an owner and a date.
+
+      Translate counts into consequences. "4.2 million blocked events" says nothing. "Two finance laptops talked to a
+      known command-and-control domain; the EDR stopped it on one, the other has no agent" is a risk they can act on.
+
+      :::recall
+      Q: What turns a log statistic into a risk statement?
+      A: Saying which business asset is exposed, how, and what happens if nothing changes.
+      :::
+  - id: M11.05.u2
+    title: "Using threat data honestly"
+    tier: 3
+    est_min: 10
+    body: |
+      Industry reports are context, not proof. Use them to show a pattern is common, then show the customer's own
+      evidence that it applies to them.
+      - **Cite** report, edition and the exact figure; never round up to sound scarier.
+      - **Scope**: a global average cost doesn't predict a 300-person company's loss in another country.
+      - **Prefer their data**: FortiAnalyzer reports, FortiSIEM incidents, FortiEDR events, pentest findings.
+      - **No fear selling**: if their posture is good, say so; credibility is what gets the next project funded.
+
+      :::why
+      Q: Why lead with the customer's logs instead of a breach-cost statistic?
+      A: Their own evidence is specific and hard to dismiss; a global average invites "that's not us".
+      :::
+  - id: M11.05.u3
+    title: "Risk registers, scope creep and escalations"
+    tier: 4
+    est_min: 12
+    body: |
+      A **risk register** row: risk, likelihood, impact, owner, mitigation, due date, status. Review it in every status
+      meeting; a risk with no owner is a risk you own.
+
+      **Scope creep** ("while you're here, can you also..."): say yes to the goal, route the work through **change
+      control** (effort, cost, date impact), and let the sponsor decide. Small favours that aren't recorded become
+      expected.
+
+      **Escalations**: facts first (what happened, impact, what's being done, next update time), no blame, one owner
+      for communication. Escalate early to your own manager; surprises are worse than bad news.
+
+      :::recall
+      Q: What four things go in the first message of an escalation?
+      A: What happened, the impact, what's being done, and when the next update comes.
+      :::
+
+cards:
+  - {id: M11.05.c01, unit: M11.05.u1, tier: 2, front: "Readout order", back: "Bottom line → evidence → options → the ask."}
+  - {id: M11.05.c02, unit: M11.05.u1, tier: 3, front: "Count vs risk statement", back: "Name the asset, the exposure and the consequence."}
+  - {id: M11.05.c03, unit: M11.05.u2, tier: 3, front: "Industry report rule", back: "Cite and scope it; let the customer's data carry the argument."}
+  - {id: M11.05.c04, unit: M11.05.u3, tier: 3, front: "Risk register columns", back: "Risk, likelihood, impact, owner, mitigation, due date, status."}
+  - {id: M11.05.c05, unit: M11.05.u3, tier: 3, front: "Scope creep response", back: "Yes to the goal, change request for the work, sponsor decides."}
+  - {id: M11.05.c06, unit: M11.05.u3, tier: 4, front: "Escalation first message", back: "What happened, impact, actions, next update time."}
+
+quiz:
+  - id: M11.05.q01
+    type: single
+    tier: 3
+    pretest: true
+    stem: "Which opening line best starts a five-minute readout to a CFO after a SOC assessment?"
+    options:
+      - {id: a, text: "\"Your detection covers the common attacks; one gap puts payroll at risk, and I need a decision on it.\"", correct: true}
+      - {id: b, text: "\"FortiSIEM processed 38 million events this month and raised 412 incidents across your sites.\"", trap: near-miss, why_wrong: "Real data, but counts without consequence give the CFO nothing to decide."}
+      - {id: c, text: "\"Industry studies put the average breach cost in the millions, so investment here pays back fast.\"", trap: misconception, why_wrong: "A global average isn't their risk; it invites 'that's not us'."}
+      - {id: d, text: "\"Let me walk you through our methodology first, so that the findings that follow have the right context.\"", trap: near-miss, why_wrong: "Method belongs in the appendix; executives need the bottom line first."}
+    explanation: "Bottom line first: where they stand, what's at stake, what you need."
+  - id: M11.05.q02
+    type: single
+    tier: 3
+    stem: "A FortiAnalyzer report shows 9,000 blocked malicious URLs a month. How do you present it to the board?"
+    options:
+      - {id: a, text: "As proof the web filter is working, plus the few users who clicked through and why that matters", correct: true}
+      - {id: b, text: "As 9,000 attacks stopped each month, which shows the value of the security budget they approved", trap: misconception, why_wrong: "Blocked URLs aren't attacks; inflating them costs credibility when questioned."}
+      - {id: c, text: "As a trend chart over twelve months with the top categories and the top users for each of them", trap: near-miss, why_wrong: "Useful in the appendix; the board needs what it means, not the chart."}
+      - {id: d, text: "As a sign of rising risk that justifies adding sandboxing and DNS filtering at the branch sites", trap: near-miss, why_wrong: "Maybe true, but a recommendation needs evidence of a gap, not a count of blocks."}
+    explanation: "Blocks show a control working; the risk lives in what got through."
+  - id: M11.05.q03
+    type: single
+    tier: 4
+    format: first-step
+    stem: "Mid-project, the customer's IT manager asks you to 'also set up the new branch while you're on site' — not in the SOW. First step?"
+    options:
+      - {id: a, text: "Say you'd like to help, estimate the effort, and raise a change request for the sponsor", correct: true}
+      - {id: b, text: "Do it this week as goodwill, since it's small and it builds the relationship with the IT team", trap: near-miss, why_wrong: "Unrecorded favours become expected and hide the real effort from your own team."}
+      - {id: c, text: "Decline politely, as the SOW is signed and the branch isn't part of this project", trap: near-miss, why_wrong: "Saying no to the goal damages the relationship; route it through change control instead."}
+      - {id: d, text: "Ask your sales rep to quote a new project, then pause until the paperwork arrives", trap: misconception, why_wrong: "Sales may help later; the first step is the change process with the sponsor."}
+    explanation: "Yes to the goal, change control for the work, the sponsor decides."
+  - id: M11.05.q04
+    type: order
+    tier: 3
+    stem: "Order the parts of a first escalation message after a failed cutover."
+    items:
+      - "What happened, in one sentence"
+      - "Business impact right now"
+      - "What is being done and by whom"
+      - "When the next update will come"
+    explanation: "Facts, impact, action, next update. Causes and blame wait for the review."
+  - id: M11.05.q05
+    type: multi
+    tier: 3
+    stem: "Which belong in a risk register row? Select all that apply."
+    options:
+      - {id: a, text: "A named owner for the risk", correct: true}
+      - {id: b, text: "The mitigation and its due date", correct: true}
+      - {id: c, text: "Likelihood and impact ratings", correct: true}
+      - {id: d, text: "The engineer who found the risk", trap: near-miss, why_wrong: "Nice to know, but the owner is who acts; finders aren't tracked."}
+      - {id: e, text: "The vendor's product SKU to buy", trap: misconception, why_wrong: "A mitigation isn't a purchase order; that belongs in a proposal."}
+    explanation: "Owner, mitigation, due date, likelihood and impact make a risk manageable."
+
+scenarios:
+  - id: M11.05.sc1
+    kind: situation
+    tier: 4
+    title: "The CISO wants scary numbers"
+    situation: "A CISO asks you to put a slide in the board deck saying 'we face 1,000 attacks a day', based on IPS blocks. Most are internet scans."
+    ask: "How do you handle it?"
+    right_thinking:
+      - "Support the goal (budget) without inflating"
+      - "Offer a stronger, true message: what was blocked that mattered, what got through, what the gap costs"
+      - "Point out the credibility risk if a board member asks"
+    what: "A truer message that still makes the case."
+    why: "Inflated numbers get questioned and cost the CISO credibility."
+    how: ["Agree with the goal", "Reframe with real evidence", "Offer to draft it"]
+    model_answer: "\"I want to help you get the budget, and I think we can make a stronger case. Most of those blocks are internet-wide scans, so if someone on the board asks, the number won't hold. What will hold is this: two exploit attempts against the VPN that IPS stopped, the unpatched server that one of them targeted, and what an outage there would cost. I can draft that slide for you today.\""
+    best_way: "Same goal, true evidence, offer to draft."
+    rubric: ["supports goal", "honest", "stronger alternative"]
+
+interview:
+  - id: M11.05.t01
+    stage: hm
+    question: "Tell me how you'd present security findings to an executive who isn't technical."
+    testing: "Executive communication"
+    framework: "Bottom line → evidence → options → ask"
+    model_answer: "\"I start with one sentence: where they stand and what I need from them. Then three pieces of evidence from their own environment, in business terms — which asset, what could happen. Then two or three options with cost and the risk each leaves, and a clear ask with a date. My QBRs with C-level customers at Netskope taught me that executives read the first line and decide whether to keep reading.\""
+    best_way: "Bottom line first, their evidence, options, a dated ask."
+    target: "0:45"

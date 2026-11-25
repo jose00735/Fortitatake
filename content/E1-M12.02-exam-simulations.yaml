@@ -1,0 +1,148 @@
+id: M12.02
+title: "Exam simulations: mixed-track timed sets and how to take them"
+stage: S12
+stage_title: "S12 · Capstone: design, exams and mock interviews"
+order: 222
+quality: 2
+est_sessions: 2
+objectives:
+  - Answer mixed FortiGate, FortiManager, FortiAnalyzer, Enterprise Firewall, FortiSIEM and FortiEDR items under time
+  - Use an exam routine: read the last line first, eliminate, flag and return
+  - Spot your weak tracks from the results and feed them back into review
+
+sources:
+  - "Everything before this stage; FortiOS 8.0.2 Administration Guide (debug flow, HA election, BGP)"
+  - "FortiSIEM and FortiEDR admin guides (architecture, policy modes)"
+
+units:
+  - id: M12.02.u1
+    title: "An exam routine"
+    tier: 3
+    est_min: 8
+    body: |
+      1. **Read the last line of the stem first**: what is actually asked (cause? first step? which would NOT work?).
+      2. **Look for the deciding detail**: a mode (central NAT, override), a version, an output line.
+      3. **Eliminate** what contradicts the evidence, then choose between the two that remain.
+      4. **Flag and move** after 90 seconds; come back with fresh eyes.
+      5. **Don't change** an answer without a concrete reason you missed the first time.
+
+      Use the sets below as timed runs: about 75 seconds per item. After each run, the review queue picks up what you
+      missed; the progress view shows which track it came from.
+
+      :::recall
+      Q: What do you read first in a long scenario question?
+      A: The last line of the stem, to know what is asked.
+      :::
+
+cards:
+  - {id: M12.02.c01, unit: M12.02.u1, tier: 2, front: "Exam pace", back: "About 75 seconds per item; flag and move after 90."}
+  - {id: M12.02.c02, unit: M12.02.u1, tier: 3, front: "Changing answers", back: "Only with a concrete reason you missed before."}
+  - {id: M12.02.c03, unit: M12.02.u1, tier: 3, front: "FGCP election, override off", back: "Monitored interfaces → uptime → priority → serial."}
+  - {id: M12.02.c04, unit: M12.02.u1, tier: 3, front: "FGCP election, override on", back: "Monitored interfaces → priority → uptime → serial."}
+  - {id: M12.02.c05, unit: M12.02.u1, tier: 3, front: "BGP first tie-breaker on FortiOS", back: "Highest weight (local to the router), then local preference."}
+
+quiz:
+  - id: M12.02.q01
+    type: output
+    tier: 3
+    output: |
+      id=20085 trace_id=1 func=print_pkt_detail msg="vd-root:0 received a packet(proto=6, 10.1.1.10:51514->93.184.216.34:443) from port2. flag [S]"
+      id=20085 trace_id=1 func=init_ip_session_common msg="allocate a new session-0001a2b3"
+      id=20085 trace_id=1 func=vf_ip_route_input_common msg="find a route: flag=04000000 gw-203.0.113.1 via port1"
+      id=20085 trace_id=1 func=fw_forward_handler msg="Denied by forward policy check (policy 0)"
+    stem: "[FGT Admin] What is the cause of the drop?"
+    options:
+      - {id: a, text: "No policy matches port2 to port1 for this traffic, so the implicit deny drops it", correct: true}
+      - {id: b, text: "There's no route back to 10.1.1.10, so the reverse path check drops the session", trap: near-miss, why_wrong: "RPF failures log 'reverse path check fail'; here the policy check denies."}
+      - {id: c, text: "Source NAT is disabled on the matching policy, so the packet can't leave port1", trap: misconception, why_wrong: "Missing NAT doesn't produce a policy deny; the session would pass and fail upstream."}
+      - {id: d, text: "The route lookup found no gateway, so the packet was dropped before policy", trap: near-miss, why_wrong: "The route was found (gw 203.0.113.1 via port1); policy 0 is the implicit deny."}
+    explanation: "'policy 0' is the implicit deny: route found, no matching policy."
+  - id: M12.02.q02
+    type: order
+    tier: 3
+    stem: "[FGT Admin] Order the FGCP primary election criteria with override disabled."
+    items:
+      - "Most connected monitored interfaces"
+      - "Highest HA uptime"
+      - "Highest device priority"
+      - "Highest serial number"
+    explanation: "With override disabled, uptime beats priority. Enabling override moves priority above uptime."
+  - id: M12.02.q03
+    type: single
+    tier: 3
+    stem: "[FGT Admin] After a firmware upgrade, the unit with HA priority 200 isn't primary again. Override is disabled. Why?"
+    options:
+      - {id: a, text: "The peer has run longer since the upgrade, and age is compared before the priority", correct: true}
+      - {id: b, text: "Priority set on a unit takes effect after the cluster is rebooted together", trap: misconception, why_wrong: "Priority is evaluated at each election; the order of criteria is the issue."}
+      - {id: c, text: "The other unit has a higher serial number, which is checked before device priority", trap: near-miss, why_wrong: "Serial number is the last tie-breaker, after priority."}
+      - {id: d, text: "A monitored interface on the priority-200 unit is down, so it lost the first criterion", trap: near-miss, why_wrong: "Possible in general, but nothing indicates a link failure here; uptime explains it after an upgrade."}
+    explanation: "With override disabled, uptime (age) wins over priority. Enable override if priority must decide."
+  - id: M12.02.q04
+    type: single
+    tier: 3
+    stem: "[Enterprise Firewall] Two BGP paths reach 10.50.0.0/16. Path A has local preference 200; path B has weight 100 and local preference 100. Which does the FortiGate prefer?"
+    options:
+      - {id: a, text: "Path B, since FortiOS compares its weight ahead of LP values", correct: true}
+      - {id: b, text: "Path A, as higher local preference is the first attribute compared", trap: near-miss, why_wrong: "Weight is checked first on FortiOS; local preference comes second."}
+      - {id: c, text: "Path A, as weight is ignored for paths learned over iBGP sessions", trap: near-miss, why_wrong: "Weight is local to the router and applies to any path, iBGP or eBGP."}
+      - {id: d, text: "The path with the shorter AS path, as it's compared ahead of the other two", trap: misconception, why_wrong: "AS path is reached after weight and local preference tie."}
+    explanation: "Best path: weight → local preference → locally originated → AS path → origin → MED..."
+  - id: M12.02.q05
+    type: numeric
+    tier: 2
+    stem: "[FGT Admin] How many usable host addresses does a /27 subnet have?"
+    answer: 30
+    tolerance: 0
+    unit: hosts
+    explanation: "2^5 = 32 addresses, minus network and broadcast = 30."
+  - id: M12.02.q06
+    type: single
+    tier: 3
+    stem: "[FortiSIEM Analyst] Ingest is growing past what the Supervisor can process. Which component do you add first?"
+    options:
+      - {id: a, text: "Workers, which take over event processing and queries from the Supervisor", correct: true}
+      - {id: b, text: "Collectors at each site, which parse and analyse events before they upload", trap: near-miss, why_wrong: "Collectors collect and forward; processing load is handled by Workers."}
+      - {id: c, text: "A second Supervisor in active-active mode to split the processing load", trap: misconception, why_wrong: "Supervisor HA is for availability, not to scale event processing."}
+      - {id: d, text: "Faster event database storage, since disk writes are the usual bottleneck", trap: near-miss, why_wrong: "Storage can matter, but processing load is scaled with Workers."}
+    explanation: "Scale processing horizontally with Workers; Collectors handle collection at remote sites."
+  - id: M12.02.q07
+    type: single
+    tier: 3
+    stem: "[FortiEDR Admin] During rollout, the customer wants to see what FortiEDR would block without disrupting users. Which setting?"
+    options:
+      - {id: a, text: "Security policies in Simulation mode, so events are logged but not blocked", correct: true}
+      - {id: b, text: "Collectors in a group with the policies unassigned until the pilot is done", trap: near-miss, why_wrong: "With no policy assigned you don't see what would be blocked."}
+      - {id: c, text: "Prevention mode with exceptions for the processes seen in the first week", trap: misconception, why_wrong: "Mass exceptions hide real threats; simulation gives the same visibility safely."}
+      - {id: d, text: "Prevention mode on a pilot group of volunteers who accept some disruption", trap: near-miss, why_wrong: "A sound later step, but it still blocks; the ask is to see blocks without disruption."}
+    explanation: "Simulation mode records what Prevention would block, so you can tune before enforcing."
+  - id: M12.02.q08
+    type: single
+    tier: 3
+    stem: "[FortiAnalyzer Analyst] Reports on last month's traffic are empty, but the logs exist on disk. What is the likely reason?"
+    options:
+      - {id: a, text: "Analytics retention ended; archive copies remain, but reports don't read those", correct: true}
+      - {id: b, text: "The ADOM's disk quota was reached, so FortiAnalyzer stopped writing any new logs", trap: near-miss, why_wrong: "A full quota affects new logs; here last month's logs exist but aren't queryable."}
+      - {id: c, text: "Log forwarding to the SIEM removed the logs from FortiAnalyzer after sending", trap: misconception, why_wrong: "Forwarding copies logs; it doesn't delete them."}
+      - {id: d, text: "The report's time zone differs from the device's, so it filters out the period", trap: near-miss, why_wrong: "Could shift hours, not empty a whole month."}
+    explanation: "Analytics (indexed) and archive (compressed) logs have separate retention. Reports need analytics logs; import archive logs back if needed."
+  - id: M12.02.q09
+    type: single
+    tier: 3
+    format: not-work
+    stem: "[FortiManager Admin] A FortiGate's local change keeps getting overwritten. Which would NOT keep the change?"
+    options:
+      - {id: a, text: "Leaving it on the FortiGate and installing the policy package again from FMG", correct: true}
+      - {id: b, text: "Retrieving the device config into FMG and then importing it into the package", trap: near-miss, why_wrong: "This brings the change into FortiManager, so the next install keeps it."}
+      - {id: c, text: "Making the same change in FMG's policy package and installing it to the device", trap: near-miss, why_wrong: "Configuring it in FortiManager is the normal way to keep it."}
+      - {id: d, text: "Adding it through a CLI script in FMG run against the device database first", trap: near-miss, why_wrong: "A script on the device database stores it in FortiManager, so installs keep it."}
+    explanation: "FortiManager installs its own copy; a change that exists only on the FortiGate is overwritten."
+
+interview:
+  - id: M12.02.t01
+    stage: technical
+    question: "How do you read a debug flow when traffic is dropped?"
+    testing: "Fluency with the main FortiGate tool"
+    framework: "Filter → run → read the last line → map to stage"
+    model_answer: "\"I set a filter on the host and port, run a few packets, and read top to bottom: received on which interface, session allocated, route found or not, then the policy check. The last line tells me the stage: 'policy 0' is the implicit deny, 'reverse path check fail' is routing back, no route is a routing gap. Then I fix that stage and run it again.\""
+    best_way: "Filter, run, read the last line, map it to the stage."
+    target: "0:40"

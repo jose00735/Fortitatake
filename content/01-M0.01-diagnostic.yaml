@@ -1,0 +1,137 @@
+id: M0.01
+title: "Diagnostic and baseline: where you stand across the tracks before the sprint"
+stage: S0
+stage_title: "S0 · Orientation and diagnostic"
+order: 1
+quality: 2
+est_sessions: 0.5
+objectives:
+  - Take a short placement test across networking, FortiGate, management, SOC and SASE
+  - Record a 90-second baseline pitch to compare against later
+  - Set interview dates and sessions per day so sprint mode can plan
+
+sources:
+  - "Sampled from every stage; FortiOS 8.0.2 Administration Guide"
+
+units:
+  - id: M0.01.u1
+    title: "How to use this diagnostic"
+    tier: 1
+    est_min: 6
+    body: |
+      Answer without looking anything up and without guessing when you have no idea: an honest miss puts the topic
+      in your review queue earlier, which is the point. Every item is a pretest, so it counts for scheduling, not for
+      your rank.
+
+      Afterwards:
+      1. Open **Progress** to see which tracks the misses came from.
+      2. Record your **90-second pitch** in the interview studio (no script). You'll redo it after S12.
+      3. In **Settings**, set interview dates and sessions per day; sprint mode orders modules from them.
+
+      :::recall
+      Q: Why is guessing on the diagnostic a bad idea?
+      A: A lucky guess hides a gap and delays its review.
+      :::
+
+cards:
+  - {id: M0.01.c01, unit: M0.01.u1, tier: 1, front: "Diagnostic rule", back: "Don't guess: honest misses schedule the review sooner."}
+
+quiz:
+  - id: M0.01.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "[Networking] A host on 10.1.1.0/24 can't reach a server on another subnet, but it pings its own gateway. What does the host do differently for the server?"
+    options:
+      - {id: a, text: "It addresses the frame to the router's MAC because the destination is off-link", correct: true}
+      - {id: b, text: "It ARPs for the server's IP directly and then waits for the server's MAC reply", trap: misconception, why_wrong: "Hosts ARP only for on-link addresses; off-subnet traffic goes to the gateway's MAC."}
+      - {id: c, text: "It sends an ICMP redirect request so the gateway can share a better route", trap: misconception, why_wrong: "Redirects come from routers to hosts; hosts don't request them."}
+      - {id: d, text: "It uses the gateway's IP as destination IP, so the router can forward it", trap: near-miss, why_wrong: "The destination IP stays the server's; only the L2 destination is the gateway."}
+    explanation: "Off-subnet: destination IP = server, destination MAC = gateway."
+  - id: M0.01.q02
+    type: single
+    tier: 2
+    pretest: true
+    stem: "[FortiGate] Traffic matches no firewall policy. What happens to it by default?"
+    options:
+      - {id: a, text: "The implicit deny at the end of the policy list drops it", correct: true}
+      - {id: b, text: "It's allowed if the interfaces are in the same zone by default", trap: near-miss, why_wrong: "Intra-zone traffic is blocked unless you allow it; the implicit deny applies."}
+      - {id: c, text: "It's forwarded without inspection and logged as a warning", trap: misconception, why_wrong: "FortiGate has no default allow; unmatched traffic is denied."}
+      - {id: d, text: "It's sent to the CPU for a slow-path lookup of the zone rules", trap: irrelevant, why_wrong: "Slow path vs offload doesn't decide allow or deny."}
+    explanation: "FortiOS ends every policy list with an implicit deny, shown as policy 0 in debug flow."
+  - id: M0.01.q03
+    type: single
+    tier: 2
+    pretest: true
+    stem: "[VPN] IPsec phase 1 is up but phase 2 never comes up. Where is the mismatch most likely?"
+    options:
+      - {id: a, text: "In the protected subnets or in the phase 2 proposal", correct: true}
+      - {id: b, text: "In the pre-shared key, which phase 2 checks again at setup", trap: near-miss, why_wrong: "The key authenticates phase 1, which is already up."}
+      - {id: c, text: "In the peer's public IP, which phase 2 also needs to resolve", trap: misconception, why_wrong: "Phase 2 rides inside the existing phase 1 SA."}
+      - {id: d, text: "In the firewall policy, which needs to exist before negotiation", trap: near-miss, why_wrong: "Policies control traffic after the SAs exist; negotiation doesn't depend on them for route-based tunnels."}
+    explanation: "Phase 2 negotiates selectors, ESP proposal and PFS; that's where it fails after phase 1."
+  - id: M0.01.q04
+    type: single
+    tier: 2
+    pretest: true
+    stem: "[FortiManager] An admin changes a policy directly on a managed FortiGate. What happens at the next install from FortiManager?"
+    options:
+      - {id: a, text: "FortiManager's copy is pushed and the local change is overwritten", correct: true}
+      - {id: b, text: "The install merges both, keeping the newer of the two sets of policies", trap: misconception, why_wrong: "FortiManager doesn't merge; it installs its own database."}
+      - {id: c, text: "The install stops and waits for the admin to approve the drift", trap: near-miss, why_wrong: "FortiManager flags out-of-sync status, but an install still pushes its copy."}
+      - {id: d, text: "The local change is kept, since device changes have priority", trap: misconception, why_wrong: "FortiManager's database is the source of truth once it manages the device."}
+    explanation: "Make changes in FortiManager, or retrieve and import local changes first."
+  - id: M0.01.q05
+    type: single
+    tier: 3
+    pretest: true
+    stem: "[SOC] Event 4769 with ticket encryption type 0x17 for many services from one user in a minute points to what?"
+    options:
+      - {id: a, text: "Kerberoasting: RC4 service tickets requested to crack offline", correct: true}
+      - {id: b, text: "Password spraying over Kerberos against many of the user accounts", trap: near-miss, why_wrong: "Spraying shows 4771 pre-auth failures across users, not 4769 service tickets."}
+      - {id: c, text: "AS-REP roasting of the accounts without Kerberos pre-auth", trap: near-miss, why_wrong: "That's 4768 with pre-auth type 0."}
+      - {id: d, text: "A normal user logon refreshing tickets for mapped drives", trap: misconception, why_wrong: "Normal logons use AES and touch few services."}
+    explanation: "Many RC4 service tickets in a burst from one account is the Kerberoasting signature."
+  - id: M0.01.q06
+    type: single
+    tier: 3
+    pretest: true
+    stem: "[SOC] A host is confirmed infected and beaconing. The attacker has domain admin. What contains it best?"
+    options:
+      - {id: a, text: "Contain all known footholds together and plan credential resets", correct: true}
+      - {id: b, text: "Isolate the one infected host right away with FortiEDR to stop it", trap: near-miss, why_wrong: "One host alone tips off an attacker who holds other footholds."}
+      - {id: c, text: "Reimage the infected host overnight and restore the user's files", trap: misconception, why_wrong: "With domain admin, the attacker isn't limited to that host."}
+      - {id: d, text: "Block the C2 domain on the FortiGate and keep watching the host", trap: near-miss, why_wrong: "Useful, but the attacker can switch C2 and still holds domain admin."}
+    explanation: "Scope first, then contain everything together, then reset credentials."
+  - id: M0.01.q07
+    type: single
+    tier: 3
+    pretest: true
+    stem: "[SASE] Remote users on FortiSASE need a private app in the data centre. What carries that traffic?"
+    options:
+      - {id: a, text: "Secure private access over an SPA hub or a ZTNA connector", correct: true}
+      - {id: b, text: "Internet access through the PoP, then a public IP on the data centre", trap: near-miss, why_wrong: "Publishing a private app to the Internet is what SPA avoids."}
+      - {id: c, text: "A split tunnel that sends private subnets straight from the laptop", trap: misconception, why_wrong: "A split tunnel bypasses FortiSASE; it can't reach the DC privately."}
+      - {id: d, text: "An IPsec tunnel from FortiClient straight to the DC FortiGate", trap: near-miss, why_wrong: "That bypasses FortiSASE; it's the old remote-access model."}
+    explanation: "SPA connects FortiSASE to private networks through a hub (or ZTNA connectors)."
+  - id: M0.01.q08
+    type: numeric
+    tier: 2
+    pretest: true
+    stem: "[Networking] How many usable host addresses does a /26 subnet have?"
+    answer: 62
+    tolerance: 0
+    unit: hosts
+    explanation: "2^6 = 64 addresses, minus network and broadcast = 62."
+  - id: M0.01.q09
+    type: single
+    tier: 3
+    pretest: true
+    format: first-step
+    stem: "[PS] Day one at a new customer for a FortiGate migration. What do you do first?"
+    options:
+      - {id: a, text: "Confirm scope, success criteria and contacts at a kickoff meeting", correct: true}
+      - {id: b, text: "Export the old firewall's rules and start the conversion tool run", trap: near-miss, why_wrong: "Needed soon, but scope and success criteria decide what to convert."}
+      - {id: c, text: "Rack and upgrade the new FortiGate to the target firmware version", trap: near-miss, why_wrong: "Useful prep, but without agreed scope you may build the wrong thing."}
+      - {id: d, text: "Draft the HLD from the pre-sales notes and send it for approval", trap: near-miss, why_wrong: "Pre-sales notes are input to discovery, not a substitute."}
+    explanation: "Kickoff: scope, criteria, contacts, communication plan. Everything else follows."

@@ -1,0 +1,227 @@
+id: M11.03
+title: "Vendor migrations: ASA, Palo Alto and Check Point to FortiGate without surprises"
+stage: S11
+stage_title: "S11 · Professional Services mastery"
+order: 63
+quality: 2
+est_sessions: 1
+objectives:
+  - Map ASA, Palo Alto and Check Point policy and NAT models onto FortiGate policy and central NAT
+  - Find the implicit behaviours that vanish in a conversion (security levels, intrazone allow, implied rules)
+  - Clean up a rulebase with hit counts before converting, not after
+  - Plan a phased cutover with a parallel run, acceptance tests and rollback
+sources:
+  - "FortiOS 8.0.2 Administration Guide: policies, central NAT, VIPs"
+  - "Public vendor documentation: Cisco ASA NAT order of operations, PAN-OS default security rules, Check Point implied rules"
+
+units:
+  - id: M11.03.u1
+    title: "Three models, one target"
+    tier: 3
+    est_min: 15
+    body: |
+      | | Cisco ASA | Palo Alto | Check Point | FortiGate |
+      |---|---|---|---|---|
+      | Access rules | ACL per interface (+ global ACL) | Zone-to-zone security rules | One ordered rulebase (layers) | Ordered policies per interface/zone pair |
+      | Addresses in rules | Real (untranslated) IPs since 8.3 | Pre-NAT IPs, post-NAT zone | Original (pre-NAT) | VIP object (policy NAT) or real IP (central NAT) |
+      | NAT | Twice NAT (section 1), object NAT (2), after-auto (3) | Separate NAT rulebase | Automatic (on objects) + manual rules | Policy NAT + IP pools, or central SNAT table + VIPs |
+      | Silent allows | Higher → lower security level with no ACL | Intrazone allowed by default | Implied rules (control connections) | None: implicit deny, even same-interface |
+
+      Conversion tools (FortiConverter, scripts) translate the explicit config well. What they can't see is
+      behaviour that **isn't written down**: those are the outages.
+
+      :::recall
+      Q: An ASA has no ACL on the inside interface and users browse fine. Why, and what does the FortiGate need?
+      A: Higher-to-lower security level traffic is allowed implicitly; the FortiGate needs an explicit policy.
+      :::
+  - id: M11.03.u2
+    title: "Clean before you convert"
+    tier: 3
+    est_min: 12
+    body: |
+      Old rulebases carry years of dead rules. Converting them as-is moves the mess and makes the review impossible.
+      1. **Export hit counts** for 60–90 days (cover month-end and quarter-end jobs).
+      2. **Flag** zero-hit, shadowed (never reachable under a broader rule above) and overly broad (any/any) rules.
+      3. **Agree** with the owner which to drop, keep disabled, or keep; record it in the migration workbook.
+      4. **Convert** the cleaned set, then **review** the FortiGate result rule by rule with the customer.
+
+      Typical conversion tasks: zones/interfaces mapping, object renaming (name length, special characters), service
+      objects for ASA `object-group service`, PAN-OS App-ID rules → FortiGate application control (not a 1:1 match),
+      Check Point time objects and user-based rules → FSSO / user groups.
+
+      :::why
+      Q: Why export hit counts for a quarter rather than a week?
+      A: Monthly and quarterly jobs (payroll, reporting, backups) would look unused in a week.
+      :::
+  - id: M11.03.u3
+    title: "Cutting over"
+    tier: 4
+    est_min: 12
+    body: |
+      Pick the cutover style by risk:
+      - **Big bang**: all traffic in one window. Simple, but one mistake affects everyone.
+      - **Phased by segment**: move VLANs or sites one at a time behind a transit link, rollback per segment.
+      - **Parallel run**: FortiGate in-line in monitor/log mode or on a mirror first, compare logs with the old rules.
+
+      Every window has: pre-checks (backups, config diff, ARP/MAC timers on upstream switches), an **acceptance test
+      plan** written with the app owners, a **go/no-go time**, and a rollback that has been rehearsed. After cutover,
+      watch deny logs for a week and fix gaps from evidence, never with an any/any "temporary" rule.
+
+      :::recall
+      Q: Users report a broken app after cutover. What should replace an any/any temporary rule?
+      A: Reading the deny logs for that source and adding the specific policy the app needs.
+      :::
+
+cards:
+  - {id: M11.03.c01, unit: M11.03.u1, tier: 2, front: "ASA security levels", back: "Higher → lower allowed without ACL; FortiGate needs explicit policies."}
+  - {id: M11.03.c02, unit: M11.03.u1, tier: 2, front: "PAN-OS default rules", back: "Intrazone allow, interzone deny; FortiGate denies intra-interface too."}
+  - {id: M11.03.c03, unit: M11.03.u1, tier: 3, front: "ASA 8.3+ ACL addresses", back: "Real (untranslated) IPs, like FortiGate central NAT policies."}
+  - {id: M11.03.c04, unit: M11.03.u1, tier: 3, front: "Policy NAT vs central NAT destination", back: "Policy NAT: VIP object in the policy. Central NAT: real (mapped) IP."}
+  - {id: M11.03.c05, unit: M11.03.u2, tier: 3, front: "Hit-count window", back: "60–90 days, covering month-end and quarter-end."}
+  - {id: M11.03.c06, unit: M11.03.u2, tier: 3, front: "App-ID conversion", back: "No 1:1 match; map to application control and test."}
+  - {id: M11.03.c07, unit: M11.03.u3, tier: 4, front: "Cutover window must have", back: "Pre-checks, acceptance test plan, go/no-go time, rehearsed rollback."}
+
+quiz:
+  - id: M11.03.q01
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      interface GigabitEthernet0/1
+       nameif inside
+       security-level 100
+      interface GigabitEthernet0/2
+       nameif dmz
+       security-level 50
+      interface GigabitEthernet0/0
+       nameif outside
+       security-level 0
+      access-group OUTSIDE_IN in interface outside
+      ! no access-group on inside or dmz
+    stem: "The converter produced FortiGate policies from the ASA ACLs. What do you check first before the cutover?"
+    options:
+      - {id: a, text: "Add policies for inside→dmz, inside→outside and dmz→outside that the levels allowed", correct: true}
+      - {id: b, text: "Convert OUTSIDE_IN so that it uses VIP objects as the destinations of each policy", trap: near-miss, why_wrong: "Needed in policy NAT mode, but the converter handles explicit ACLs; the missing flows aren't in any ACL."}
+      - {id: c, text: "Map the security levels to FortiGate zones with intra-zone traffic set to allow", trap: misconception, why_wrong: "Zones don't carry levels; the implicit flows run between different interfaces."}
+      - {id: d, text: "Check that the converter kept the OUTSIDE_IN rule order when it built the port1 policies", trap: near-miss, why_wrong: "Worth a look, but order of explicit rules is what converters handle; the missing level-based flows aren't in any ACL."}
+    explanation: "With no ACL on inside and dmz, the ASA allowed traffic to lower levels. That behaviour isn't in the config, so the converter can't produce it."
+  - id: M11.03.q02
+    type: single
+    tier: 3
+    stem: "After moving from Palo Alto, two servers in the same VLAN behind one FortiGate interface can't talk through the firewall. Why?"
+    options:
+      - {id: a, text: "PAN-OS allowed intrazone traffic by default; the FortiGate needs a same-interface policy", correct: true}
+      - {id: b, text: "The converter dropped the App-ID rule between them, so add an application control profile", trap: near-miss, why_wrong: "App-ID conversion matters, but this traffic was allowed by a default rule, not a written one."}
+      - {id: c, text: "FortiGate blocks intra-VLAN traffic in hardware unless the switch-controller is turned off", trap: misconception, why_wrong: "There's no such default; the implicit deny covers same-interface flows."}
+      - {id: d, text: "The servers' default gateway still points at the old Palo Alto address after cutover", trap: near-miss, why_wrong: "Possible in a cutover, but then they'd lose all routed traffic, not only each other."}
+    explanation: "PAN-OS intrazone-default allows; FortiGate's implicit deny applies even when ingress and egress are the same interface."
+  - id: M11.03.q03
+    type: single
+    tier: 3
+    stem: "The customer's FortiGate runs central NAT. How should a converted rule for a published web server reference the server?"
+    options:
+      - {id: a, text: "Use the server's real internal address as destination; the VIP does the DNAT", correct: true}
+      - {id: b, text: "Use the VIP object as the destination, as you would in a policy NAT mode design", trap: near-miss, why_wrong: "That's policy NAT mode; with central NAT the policy matches the mapped address."}
+      - {id: c, text: "Use the public address as destination and enable NAT on the firewall policy", trap: misconception, why_wrong: "Policy NAT settings are absent in central NAT, and DNAT happens before the lookup."}
+      - {id: d, text: "Use an address group with both public and private IPs to cover both modes", trap: near-miss, why_wrong: "Hides a design error and can match traffic you didn't intend."}
+    explanation: "In central NAT mode, DNAT from the VIP happens first and policies reference the real address, like ASA 8.3+ ACLs."
+  - id: M11.03.q04
+    type: single
+    tier: 4
+    stem: "A Check Point rulebase has 1,400 rules. The customer wants the conversion next week. What is your first move?"
+    options:
+      - {id: a, text: "Export 90 days of hit counts and agree with the owner which rules to drop", correct: true}
+      - {id: b, text: "Run the converter on all rules now and review the FortiGate result later", trap: near-miss, why_wrong: "Reviewing 1,400 converted rules afterwards is harder than cleaning first."}
+      - {id: c, text: "Convert the top 200 rules by position and allow the rest with any/any", trap: misconception, why_wrong: "Position isn't use; any/any undoes the security the project is for."}
+      - {id: d, text: "Rebuild the policy from scratch on the FortiGate with an interview per team", trap: near-miss, why_wrong: "Cleaner design but far longer, and misses flows people forget."}
+    explanation: "Usage data first: it shrinks the rulebase and gives the customer evidence for each decision."
+  - id: M11.03.q05
+    type: multi
+    tier: 3
+    stem: "Which belong in every migration cutover plan? Select all that apply."
+    options:
+      - {id: a, text: "Acceptance tests written with the app owners", correct: true}
+      - {id: b, text: "A go/no-go time for rolling back in the window", correct: true}
+      - {id: c, text: "Clearing ARP or MAC entries on upstream gear", correct: true}
+      - {id: d, text: "A temporary any/any rule as the safety net", trap: misconception, why_wrong: "It hides gaps and tends to become permanent."}
+      - {id: e, text: "A converter re-run on the final rulebase", trap: near-miss, why_wrong: "Re-running in the window adds unreviewed changes; convert and review beforehand."}
+    explanation: "Tests, a decision time and upstream cache handling make a cutover safe; any/any doesn't."
+
+labs:
+  - id: M11.03.lab1
+    title: Recreate an ASA level-based allow
+    goal: "Write the FortiGate policy for a flow the ASA allowed by security level."
+    worked:
+      config: |
+        config firewall policy
+        edit 20
+        set name "inside-to-dmz-migrated"
+        set srcintf "port2"
+        set dstintf "port3"
+        set srcaddr "inside-net"
+        set dstaddr "dmz-net"
+        set action accept
+        set schedule "always"
+        set service "HTTPS" "SSH"
+        set logtraffic all
+        next
+        end
+    faded:
+      template: |
+        config firewall policy
+        edit 21
+        set srcintf "{{port3}}"
+        set dstintf "{{port1}}"
+        set srcaddr "dmz-net"
+        set dstaddr "all"
+        set action {{accept}}
+        set nat {{enable}}
+        next
+        end
+    solo:
+      prompt: "Add policy 22 'inside-to-outside' from port2 to port1, source inside-net, any destination, HTTP/HTTPS, NAT on, log all."
+      required: ["edit 22", "port2", "port1", "inside-net", "nat enable", "logtraffic all"]
+      solution: |
+        config firewall policy
+        edit 22
+        set name "inside-to-outside"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "inside-net"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "HTTP" "HTTPS"
+        set nat enable
+        set logtraffic all
+        next
+        end
+      notes: "Prefer named services from the hit-count data over ALL."
+
+scenarios:
+  - id: M11.03.sc1
+    kind: situation
+    tier: 4
+    title: "Monday after the ASA cutover"
+    situation: "Saturday's ASA → FortiGate cutover passed the acceptance tests. Monday 08:30: payroll can't reach the bank's SFTP and the IT manager asks for 'any/any until you fix it'."
+    ask: "What do you do?"
+    right_thinking:
+      - "Decline any/any politely; offer a fast specific fix"
+      - "Filter deny logs for the payroll host, find the flow (likely a level-based allow or an object missing)"
+      - "Add the specific policy, test with the user, update the workbook and acceptance tests"
+    what: "Specific fix from logs in minutes."
+    why: "An any/any rule hides every other gap and tends to stay."
+    how: ["Deny logs", "Specific policy", "Update tests"]
+    model_answer: "\"I'd rather fix it properly in the next ten minutes. I'll filter the deny logs for the payroll PC, find the SFTP flow — probably something the ASA allowed by security level — and add a policy just for it. Then I'll test with the user and add the flow to our acceptance tests so the remaining sites don't hit it.\""
+    best_way: "Specific policy from deny logs, added to the tests."
+    rubric: ["declines any/any", "uses logs", "closes the loop"]
+
+interview:
+  - id: M11.03.t01
+    stage: technical
+    question: "What goes wrong most often when migrating from Cisco ASA to FortiGate?"
+    testing: "Real migration experience or depth"
+    framework: "Hidden behaviour → NAT model → process"
+    model_answer: "\"The things the ASA does without config: traffic from higher to lower security levels is allowed with no ACL, so the converter produces nothing for it. Second, NAT: ASA's three NAT sections and real-IP ACLs map best onto FortiGate central NAT, and mixing models causes mismatches. I clean the rulebase with hit counts first, test with app owners, and watch deny logs after cutover.\""
+    best_way: "Implicit allows and NAT model, then a clean-test-watch process."
+    target: "0:45"

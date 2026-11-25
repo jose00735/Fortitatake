@@ -1,0 +1,159 @@
+id: M12.03
+title: "Mock interview gauntlet: recruiter, hiring manager and a SecOps-heavy technical panel"
+stage: S12
+stage_title: "S12 · Capstone: design, exams and mock interviews"
+order: 224
+quality: 2
+est_sessions: 1
+objectives:
+  - Run three full mock interviews back to back, timed and self-scored on rubrics
+  - Answer SOC, SecOps and SASE questions with the honest framing of where your experience comes from
+  - Recover from a question you can't answer without bluffing
+  - Close each interview with questions that show you think like a consultant
+
+sources:
+  - "Your evidence: super-cv (Fortinet TAC P3, Netskope CSM and Scale CSM, SYKES), certifications, portfolio joseacostasec.com"
+  - "I1–I3 and the S13/S14 modules"
+
+units:
+  - id: M12.03.u1
+    title: "How to run the gauntlet"
+    tier: 3
+    est_min: 10
+    body: |
+      Three rounds, recorded (voice capture or phone), with a break between:
+      1. **Recruiter (15 min):** pitch at 90 seconds, why Fortinet again, logistics, two questions back.
+      2. **Hiring manager (30 min):** delivery stories (STAR), customer handling, a 30-60-90 plan, the hard questions.
+      3. **Technical panel (45 min):** one design (this stage's case), one troubleshooting walk-through, then a
+         SecOps block: SOC stack design, a detection, an incident, a FortiSASE question.
+
+      Score each answer on the rubric right after, while you remember it. Re-run the two weakest answers the next day.
+
+      **The honesty frame** for SOC and SecOps: what you did (TAC cases on FortiSIEM and FortiEDR, SIEM log streaming
+      at Netskope), what you studied and built (certifications, red-team labs, these capstones), and what you'd do in
+      the first months. Interviewers forgive gaps; they don't forgive bluffing.
+
+      :::recall
+      Q: Three parts of the honesty frame for an area where you lack production experience?
+      A: What you did hands-on, what you studied and built, and how you'll close the gap.
+      :::
+  - id: M12.03.u2
+    title: "When you don't know"
+    tier: 4
+    est_min: 8
+    body: |
+      A good "I don't know" has four parts: say it plainly, reason out loud from what you do know, say how you'd find
+      out (docs, lab, TAC, a colleague), and offer to follow up. Example:
+
+      > "I haven't configured that FortiSASE feature in production. From the architecture, I'd expect it to work
+      > through the SPA hub, so I'd check the admin guide for the supported topology and test it in a lab before the
+      > customer window. I can send you what I find."
+
+      What fails: guessing a number, naming a command you're unsure of, or talking for two minutes to hide the gap.
+
+      :::why
+      Q: Why reason out loud instead of just saying "I don't know"?
+      A: It shows how you think, which is what the panel is testing.
+      :::
+
+cards:
+  - {id: M12.03.c01, unit: M12.03.u1, tier: 2, front: "Gauntlet rounds", back: "Recruiter 15 min, hiring manager 30, technical panel 45."}
+  - {id: M12.03.c02, unit: M12.03.u1, tier: 3, front: "Honesty frame", back: "What I did, what I studied and built, how I'll close the gap."}
+  - {id: M12.03.c03, unit: M12.03.u2, tier: 3, front: "Good 'I don't know'", back: "Say it, reason out loud, how you'd find out, offer to follow up."}
+
+quiz:
+  - id: M12.03.q01
+    type: single
+    tier: 3
+    pretest: true
+    stem: "The panel asks: 'How many FortiSIEM deployments have you done?' Which answer is strongest?"
+    options:
+      - {id: a, text: "\"None as lead. I worked FortiSIEM cases at TAC and built the detections in my labs; here's one.\"", correct: true}
+      - {id: b, text: "\"Several, through TAC: I troubleshot many customer deployments, which is close to deploying them.\"", trap: misconception, why_wrong: "Stretching TAC cases into deployments falls apart on the first follow-up question."}
+      - {id: c, text: "\"None yet, but I'm a fast learner, and I'm sure I can pick it up in the first weeks on the job.\"", trap: near-miss, why_wrong: "Honest, but gives no evidence; the strong answer adds what you have done."}
+      - {id: d, text: "\"It depends on what you count as a deployment; can you tell me what scope you have in mind?\"", trap: near-miss, why_wrong: "Clarifying can help, but here it reads as evasion of a simple question."}
+    explanation: "Plain fact, then real evidence, then an offer to go deeper."
+  - id: M12.03.q02
+    type: single
+    tier: 3
+    stem: "Asked about a FortiSASE feature you haven't used, which response works best?"
+    options:
+      - {id: a, text: "Say so, reason from the architecture, explain how you'd verify, and offer to follow up", correct: true}
+      - {id: b, text: "Describe how a competitor's SSE does it, since the concepts transfer between vendors", trap: near-miss, why_wrong: "Transferable knowledge helps, but without saying you don't know the Fortinet side it sounds like a dodge."}
+      - {id: c, text: "Give the closest command you remember and say the syntax may differ in this version", trap: misconception, why_wrong: "Guessing a command invites the next question you can't answer."}
+      - {id: d, text: "Say plainly that you don't know it and move on, so the panel's time goes to other questions", trap: near-miss, why_wrong: "Honest, but it skips the reasoning and the path to an answer, which is what they're testing."}
+    explanation: "Honest, reasoned and with a path to the answer; that's what a consultant does with a customer too."
+  - id: M12.03.q03
+    type: order
+    tier: 3
+    stem: "Order a strong answer to 'Tell me about a difficult customer escalation.'"
+    items:
+      - "Situation and stakes in two sentences"
+      - "Your specific task and what made it hard"
+      - "The actions you took, in order"
+      - "The result, with a number if you have one"
+      - "What you'd do differently or reused later"
+    explanation: "STAR plus a lesson: the panel wants judgement, not just a happy ending."
+  - id: M12.03.q04
+    type: single
+    tier: 4
+    format: first-step
+    stem: "In the technical panel, you're handed a vague design question: 'Build us a SOC.' What do you do first?"
+    options:
+      - {id: a, text: "Ask about size, log sources, staff, compliance needs and whether they want 24/7 cover", correct: true}
+      - {id: b, text: "Draw the FortiSIEM, FortiEDR and FortiSOAR stack and explain how the data flows between them", trap: near-miss, why_wrong: "A fine second step; drawing before scoping misses the consultant part."}
+      - {id: c, text: "Describe the SOC tiers (L1, L2, L3) and a hiring plan for the analyst roles in each tier", trap: near-miss, why_wrong: "People matter, but you don't know yet whether they want in-house or managed."}
+      - {id: d, text: "State which SIEM you'd pick and why it beats the alternatives on the market", trap: misconception, why_wrong: "A product pick without requirements is sales, not design."}
+    explanation: "Scope first: size, sources, staff, compliance, hours. Then design."
+
+scenarios:
+  - id: M12.03.sc1
+    kind: situation
+    tier: 4
+    title: "Round 3, minute 30: 'Walk me through an incident you handled'"
+    situation: "The SecOps panellist asks you to walk through an incident you handled end to end. You've worked many incidents at TAC and Netskope escalations, but not as a SOC incident lead."
+    ask: "Answer in two minutes."
+    right_thinking:
+      - "Pick a real case where you owned a part (a TAC escalation with a security impact, a Netskope customer escalation)"
+      - "Be clear about your role in it"
+      - "Bridge to how you'd lead one: the K6.01 capstone flow (triage, scope, contain together, communicate)"
+    what: "Real case, clear role, bridge to the lead role."
+    why: "Honest evidence plus a method beats an invented story."
+    how: ["Real case", "Your role", "Method you'd use as lead"]
+    model_answer: "\"I haven't led a SOC incident, so let me give you one I worked and then how I'd lead one. At TAC I handled an escalation where [real case from your STAR bank]: my part was [your part], and the result was [result]. Leading an incident, I'd follow the same discipline I practised in my capstone labs: triage and severity, scope by account and host before blocking, contain all footholds together, and give the executive an update with facts, actions, unknowns and the next update time.\""
+    best_way: "Real case and role, then the method you'd lead with."
+    rubric: ["honest role", "real evidence", "clear method", "communication"]
+
+interview:
+  - id: M12.03.t01
+    stage: recruiter
+    question: "This role leans on SOC, SecOps and SASE. Where are you strongest and where are you still building?"
+    testing: "Self-awareness and fit"
+    framework: "Strength with evidence → gap with plan"
+    model_answer: "\"Strongest on the FortiGate and network-security side from TAC, and on SASE from two years at Netskope plus FortiSASE study and labs. In SOC I have the attacker's view from OSCP and red-team labs, and FortiSIEM and FortiEDR cases from TAC; what I'm building is production SOC delivery, which is why I've been working through detection and incident-response capstones.\""
+    best_way: "Strength with evidence, gap with a plan already running."
+    target: "0:45"
+  - id: M12.03.t02
+    stage: hm
+    question: "Your first customer wants FortiSIEM live in six weeks. What do you do in week one?"
+    testing: "PS delivery thinking in SecOps"
+    framework: "Scope → sources → use cases → plan"
+    model_answer: "\"Week one is scoping: which log sources matter most, the EPS estimate, who in their team owns the SIEM after we leave, and the top ten use cases they care about. Then I'd agree a phased plan: core sources and a few high-value rules in the first weeks, tuning against their baseline, then handover with runbooks. Six weeks works if the sources and access are ready in week two.\""
+    best_way: "Scope, priority sources and use cases, phased plan, conditions."
+    target: "1:00"
+  - id: M12.03.t03
+    stage: technical
+    question: "Write me a detection for Kerberoasting and tell me how you'd tune it."
+    testing: "Detection engineering depth"
+    framework: "Event → filter → threshold → tune"
+    model_answer: "\"On the DCs, event 4769 with ticket encryption type 0x17, RC4, for service accounts. I'd group by requesting account and count distinct service names, alerting at a threshold over a short window — a burst is the tell. To tune, I'd replay a normal week: exclude known legacy services that still use RC4 and the machine accounts, and long term push AES on service accounts so the rule gets quieter on its own.\""
+    best_way: "4769 + RC4, distinct SPNs per account, tune on a baseline."
+    target: "1:00"
+  - id: M12.03.t04
+    stage: technical
+    question: "A customer moving from Netskope to FortiSASE asks what changes for their users. What do you tell them?"
+    testing: "SASE migration and honest framing"
+    framework: "What stays → what changes → plan"
+    model_answer: "\"For users, the experience is similar: an agent that steers traffic to a cloud security service. What changes is the agent — FortiClient managed from FortiSASE instead of the Netskope client — and how policies are expressed. I'd map their steering and policies first, pilot a group, and run both agents' tunnels carefully so they don't conflict. I know the Netskope side from two years there; the FortiSASE side from study and labs, so I'd validate the mapping in a lab before rollout.\""
+    best_way: "Similar experience, different agent and policy model, phased with a lab check."
+    target: "1:00"

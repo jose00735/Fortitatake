@@ -1,0 +1,246 @@
+id: M12.01
+title: "Capstone design case: 40 branches, two data centres, a cloud VPC and a SOC on top"
+stage: S12
+stage_title: "S12 · Capstone: design, exams and mock interviews"
+order: 220
+quality: 2
+est_sessions: 2
+objectives:
+  - Turn a messy brief into requirements, constraints, assumptions and open questions
+  - Produce an HLD with SD-WAN, HA, management, logging and SOC decisions, each with a reason
+  - Write the LLD and MOP outline for the first wave, plus the acceptance test plan
+  - Present the design to an executive in five minutes and defend it to an architect in twenty
+
+sources:
+  - "Everything before this stage; FortiOS 8.0.2 Administration Guide (SD-WAN, ADVPN, FGCP, public cloud HA)"
+  - "FortiManager and FortiAnalyzer admin guides; FortiSIEM and FortiEDR admin guides"
+
+units:
+  - id: M12.01.u1
+    title: "The brief: Andes Logistics 2027"
+    tier: 4
+    est_min: 15
+    body: |
+      **Customer.** Andes Logistics: 40 branches in Colombia, Peru and Ecuador; DC1 Bogotá (primary), DC2 Medellín
+      (secondary); an AWS VPC with the tracking app; 2,600 users, 400 of them drivers on phones.
+
+      **Today.** MPLS to every branch, expiring in 9 months; one ASA pair per DC; local Internet breakout at 6
+      branches only; logs kept 7 days; no SOC; last year a phishing incident reached a finance laptop.
+
+      **Asks (from the RFP, verbatim-ish).**
+      - "Replace MPLS with broadband and LTE without hurting the warehouse scanners."
+      - "Branches must keep working if a data centre is lost."
+      - "Logs for a year; detect attacks; someone to call at night." (They have two security people.)
+      - "Drivers' phones need the tracking app, nothing else."
+      - Budget pressure; go-live of the first 10 branches in 4 months.
+
+      Before designing, separate **requirements** (measurable), **constraints** (MPLS date, budget, staff),
+      **assumptions** (write them down and confirm) and **open questions** (scanner latency? which AWS region? who
+      answers the phone at night?).
+
+      :::recall
+      Q: Which item in the brief is a constraint rather than a requirement?
+      A: The MPLS contract ending in 9 months (also budget and the two-person security team).
+      :::
+  - id: M12.01.u2
+    title: "A defensible HLD"
+    tier: 5
+    est_min: 20
+    body: |
+      | Area | Decision | Why |
+      |---|---|---|
+      | WAN | SD-WAN, dual hub (DC1, DC2), two underlays per branch (broadband + LTE), BGP on loopbacks, ADVPN for branch-to-branch | Survives a DC loss; spokes don't need full mesh config |
+      | Steering | Scanners (latency-sensitive) on the best-SLA member; bulk on broadband; LTE for failover and small critical flows | Keeps scanners away from LTE jitter and cost |
+      | DC edge | FGCP A-P pair per DC; hubs separate from the DC edge pair if throughput requires | Upgrades without outage, clear roles |
+      | Cloud | FortiGate pair in AWS (A-P with SDN connector failover, or a load-balancer sandwich), IPsec to both hubs | Tracking app reachable from every branch, cloud HA done the cloud way |
+      | Management | FortiManager with SD-WAN templates and Zero Touch Provisioning; ADOM per country if teams differ | 40 sites need templates, not hand config |
+      | Logging | FortiAnalyzer pair (or cloud), 1 year retention sized from measured log rate | Requirement: a year of logs |
+      | SOC | FortiEDR on endpoints and servers; FortiAnalyzer or FortiSIEM correlation; managed SOC (MDR/MSSP) for nights | Two people can't watch 24/7 |
+      | Drivers | FortiClient with ZTNA (or FortiSASE) to the tracking app only | Least privilege for unmanaged-ish phones |
+
+      Each decision needs a **reason tied to a requirement** and the **alternative you rejected**. An architect will
+      ask "why not X?" for half of them.
+
+      :::why
+      Q: Why dual hub rather than one hub with a strong HA pair?
+      A: An HA pair protects against a box failing, not against losing the whole site; the brief asks for surviving a DC loss.
+      :::
+  - id: M12.01.u3
+    title: "From HLD to wave 1"
+    tier: 5
+    est_min: 15
+    body: |
+      **LLD for wave 1** (10 branches): addressing plan (loopbacks, overlay ranges per hub), BGP AS numbers and
+      communities, SD-WAN zones and rules, template variables per branch, firewall policy set, log settings.
+
+      **MOP outline per branch:** pre-checks (circuits up, LTE signal, FortiManager device approved) → ZTP install
+      → overlay and BGP verification → move the branch default route from MPLS to SD-WAN → acceptance tests →
+      go/no-go → rollback (route back to MPLS, still available during the overlap).
+
+      **Acceptance tests** with app owners: scanner transactions per minute and latency during a broadband pull,
+      tracking app from a driver phone, DC1 shutdown drill (branches move to DC2 within the agreed time), logs
+      arriving at FortiAnalyzer, EDR test detection reaching the SOC.
+
+      The **MPLS overlap** is the rollback: keep it until each wave passes its tests.
+
+      :::recall
+      Q: What is the rollback for a branch cutover from MPLS to SD-WAN?
+      A: Moving the default route back to MPLS, which stays in service during the overlap.
+      :::
+
+cards:
+  - {id: M12.01.c01, unit: M12.01.u1, tier: 3, front: "Requirement vs constraint", back: "Requirement: measurable outcome. Constraint: limit you must work within (dates, budget, staff)."}
+  - {id: M12.01.c02, unit: M12.01.u2, tier: 4, front: "Survive a DC loss", back: "Dual hub; HA alone doesn't cover a site loss."}
+  - {id: M12.01.c03, unit: M12.01.u2, tier: 4, front: "Night coverage with two people", back: "Managed SOC / MDR for out-of-hours, internal team for business hours."}
+  - {id: M12.01.c04, unit: M12.01.u2, tier: 4, front: "40 sites config approach", back: "FortiManager templates + ZTP."}
+  - {id: M12.01.c05, unit: M12.01.u3, tier: 4, front: "MPLS overlap", back: "The rollback path until each wave passes acceptance."}
+  - {id: M12.01.c06, unit: M12.01.u3, tier: 5, front: "DC loss drill", back: "Shut DC1, measure branch convergence to DC2 against the agreed time."}
+
+quiz:
+  - id: M12.01.q01
+    type: numeric
+    tier: 4
+    stem: "Each of the 40 branches builds one IPsec overlay per underlay (2) to each hub. How many tunnels terminate on one hub?"
+    answer: 80
+    tolerance: 0
+    unit: tunnels
+    explanation: "40 branches × 2 underlays = 80 tunnels per hub (160 across both hubs)."
+  - id: M12.01.q02
+    type: single
+    tier: 4
+    stem: "Warehouse scanners time out when a branch's broadband degrades. Which SD-WAN rule design addresses this?"
+    options:
+      - {id: a, text: "An SLA rule for the scanner app that picks the member meeting the latency target", correct: true}
+      - {id: b, text: "A manual rule pinning scanner traffic to broadband, with LTE kept as the backup member", trap: near-miss, why_wrong: "Manual rules don't react to degradation, only to a member going down."}
+      - {id: c, text: "A best-quality rule on bandwidth that sends the scanners to the widest member", trap: near-miss, why_wrong: "Scanners need low latency and loss, not bandwidth."}
+      - {id: d, text: "A higher QoS priority for scanners on the broadband link's shaping profile", trap: misconception, why_wrong: "Shaping can't fix loss or latency on the ISP side."}
+    explanation: "SLA-based steering moves the flow when the measured latency or loss breaks the target."
+  - id: M12.01.q03
+    type: single
+    tier: 5
+    format: answer-reason
+    stem: "The architect asks: 'Why not one hub at DC1 with a strong FGCP pair and save the second hub's cost?' Best reply?"
+    options:
+      - {id: a, text: "HA covers a box failure; losing DC1's site or power would cut every branch from the apps", correct: true}
+      - {id: b, text: "FGCP can't keep 80 tunnels in sync, so a second hub is needed to carry the session load", trap: misconception, why_wrong: "FGCP synchronises IPsec SAs fine; the issue is the site, not capacity."}
+      - {id: c, text: "Two hubs halve the tunnel count per box, which lowers the CPU load on each one", trap: near-miss, why_wrong: "Each hub still terminates every branch; the reason is site resilience."}
+      - {id: d, text: "Branches in each country could use the nearer hub, which lowers latency to the DC apps", trap: near-miss, why_wrong: "A side benefit, but both hubs are in Colombia; the brief's reason is surviving a DC loss."}
+    explanation: "The brief asks to survive losing a data centre. HA protects a device; a second hub protects the site."
+  - id: M12.01.q04
+    type: single
+    tier: 4
+    stem: "The customer has two security staff and wants 'someone to call at night'. What fits the SOC part of the design?"
+    options:
+      - {id: a, text: "EDR and correlation in-house by day, a managed SOC with an agreed escalation path at night", correct: true}
+      - {id: b, text: "FortiSIEM with automated playbooks so that incidents get contained without people at night", trap: near-miss, why_wrong: "Automation helps, but someone still has to decide on what it can't handle."}
+      - {id: c, text: "A 24/7 in-house SOC with the two staff on a rota and on-call phones on alternate weeks", trap: misconception, why_wrong: "Two people can't sustain 24/7 without burning out and leaving gaps."}
+      - {id: d, text: "FortiAnalyzer alerts by email to the two staff, who then review them first thing each morning", trap: near-miss, why_wrong: "Logs and alerts exist, but nobody acts at night, which is the ask."}
+    explanation: "Match coverage to staff: managed service for nights, clear escalation, internal team in hours."
+  - id: M12.01.q05
+    type: order
+    tier: 4
+    stem: "Order the MOP steps for cutting a branch from MPLS to SD-WAN."
+    items:
+      - "Pre-checks: circuits, LTE signal, device approved in FortiManager"
+      - "Zero-touch install of the branch template"
+      - "Verify overlays and BGP to both hubs"
+      - "Move the default route from MPLS to SD-WAN"
+      - "Run the acceptance tests, then go/no-go"
+    explanation: "Prepare, install, verify control plane, move traffic, test, decide."
+
+labs:
+  - id: M12.01.lab1
+    title: SD-WAN rule for the scanners
+    goal: "Write the SLA rule that keeps scanner traffic on a member meeting the latency target."
+    worked:
+      config: |
+        config system sdwan
+        config service
+        edit 10
+        set name "scanners"
+        set mode sla
+        set dst "scanner-servers"
+        config sla
+        edit "dc-latency"
+        set id 1
+        next
+        end
+        set priority-members 1 2
+        next
+        end
+        end
+    faded:
+      template: |
+        config system sdwan
+        config service
+        edit 11
+        set name "{{tracking-app}}"
+        set mode {{sla}}
+        set dst "aws-tracking"
+        config sla
+        edit "{{dc-latency}}"
+        set id 1
+        next
+        end
+        set priority-members 1 2
+        next
+        end
+        end
+    solo:
+      prompt: "Create SD-WAN rule 12 'voice' in SLA mode to 'pbx-servers', using health check 'voice-sla' id 1, members 2 then 1."
+      required: ["edit 12", "voice", "mode sla", "pbx-servers", "voice-sla", "priority-members 2 1"]
+      solution: |
+        config system sdwan
+        config service
+        edit 12
+        set name "voice"
+        set mode sla
+        set dst "pbx-servers"
+        config sla
+        edit "voice-sla"
+        set id 1
+        next
+        end
+        set priority-members 2 1
+        next
+        end
+        end
+      notes: "In a template, members and health checks come from FortiManager SD-WAN templates."
+
+scenarios:
+  - id: M12.01.sc1
+    kind: raid
+    tier: 5
+    title: "Design review: twenty minutes with their architect"
+    situation: |
+      You present the HLD to Andes' architect and CIO. The architect challenges: "Why FortiManager if we only have 40
+      sites?", "Why not keep MPLS for the warehouses?", "What happens to the tracking app if AWS us-east has an
+      outage?" The CIO asks: "Can we be live in 4 months?"
+    ask: "Answer the four questions."
+    right_thinking:
+      - "FortiManager: templates, ZTP, consistent policy and audit across 40 sites and two hubs"
+      - "MPLS for warehouses: a valid option; compare cost and SLA; SD-WAN SLA rules plus LTE can meet scanner needs if tested"
+      - "AWS region outage: out of scope of the network design unless the app is multi-region; say so and flag it as a risk"
+      - "4 months: yes for wave 1 (10 branches) with conditions: circuits ordered now, templates in month 2, pilot branch in month 3"
+    what: "Answer with reasons, accept good alternatives, name risks."
+    why: "A review rewards honest trade-offs over defending every choice."
+    how: ["Reason per decision", "Concede valid options", "Name out-of-scope risks", "Conditional yes on the date"]
+    model_answer: |
+      "FortiManager because 40 sites and two hubs by hand drift apart within months; templates and zero-touch
+      give the same config everywhere and an audit trail. Keeping MPLS at warehouses is a fair option: if the
+      pilot shows the scanners miss their latency target on broadband plus LTE, we keep MPLS there and the cost case
+      changes for those sites. An AWS region outage takes the app down regardless of our network; that needs a
+      multi-region app, so I'll put it in the risk register for the app owner. And yes to 4 months for the first 10
+      branches, if circuits are ordered this month — that lead time is the critical path."
+    best_way: "Reason, concede what's fair, register what's out of scope, conditional yes."
+    rubric: ["reasons", "concedes alternatives", "risk register", "conditional commitment"]
+
+interview:
+  - id: M12.01.t01
+    stage: technical
+    question: "Design a WAN for 40 branches and two data centres on a whiteboard. Talk me through it."
+    testing: "Structured design under time"
+    framework: "Requirements → topology → routing → steering → management → security → test"
+    model_answer: "\"First I'd confirm the requirements: survive a DC loss, latency-sensitive apps, cost. Then dual hub with two underlays per branch, IPsec overlays to both hubs, BGP on loopbacks and ADVPN for branch-to-branch. SD-WAN SLA rules for the critical apps, broadband for bulk, LTE as backup. FortiManager templates and zero-touch for 40 sites, FortiAnalyzer for logs. And I'd prove it with a DC-loss drill in the acceptance tests.\""
+    best_way: "Requirements first, then dual hub, routing, steering, management, and a test."
+    target: "2:00"
