@@ -3,6 +3,7 @@ title: "Interfaces and network services: VLANs, aggregates, zones, DHCP and DNS"
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 170
+quality: 2
 est_sessions: 1
 objectives:
   - Choose between physical, VLAN, aggregate, redundant, loopback and zone interfaces
@@ -107,10 +108,10 @@ quiz:
     pretest: true
     stem: "Two VLAN interfaces in the same zone can't talk. Default settings. Fix?"
     options:
-      - {id: a, text: "set intrazone allow on the zone (or an intra-zone policy)", correct: true}
-      - {id: b, text: "Add a static route", why_wrong: "Both are connected."}
-      - {id: c, text: "Enable NAT", why_wrong: "Not the issue."}
-      - {id: d, text: "Change the VLAN IDs", why_wrong: "Unrelated."}
+      - {id: a, text: "set intrazone allow on the zone, or an intra-zone policy", correct: true}
+      - {id: b, text: "A static route between the two VLAN subnets via the zone", trap: misconception, why_wrong: "Both subnets are connected; routing exists."}
+      - {id: c, text: "NAT enabled on a policy from the zone back to the zone", trap: near-miss, why_wrong: "A zone-to-zone policy works; NAT isn't what's missing."}
+      - {id: d, text: "Moving one VLAN to its own zone with no policy between", trap: near-miss, why_wrong: "Without a policy, inter-zone traffic is denied as well."}
     explanation: "Intra-zone is denied by default."
   - id: M4.02.q02
     type: order
@@ -123,10 +124,10 @@ quiz:
     tier: 2
     stem: "A scanner gets 10.255.1.37 on a network where scanners should get 10.20.60.x. Most likely?"
     options:
-      - {id: a, text: "It's in the wrong VLAN", correct: true}
-      - {id: b, text: "DHCP scope full", why_wrong: "It would get nothing (APIPA)."}
-      - {id: c, text: "Wrong DNS", why_wrong: "Doesn't change the address."}
-      - {id: d, text: "Policy missing", why_wrong: "Policies don't assign IPs."}
+      - {id: a, text: "Its port sits in the wrong VLAN", correct: true}
+      - {id: b, text: "The scanner VLAN's scope is full", trap: near-miss, why_wrong: "A full scope gives no address (APIPA), not another subnet's."}
+      - {id: c, text: "Its DNS server setting is wrong", trap: misconception, why_wrong: "DNS settings don't change the address."}
+      - {id: d, text: "A firewall policy is missing", trap: misconception, why_wrong: "Policies don't assign IP addresses."}
     explanation: "Wrong subnet = wrong broadcast domain."
   - id: M4.02.q04
     type: text

@@ -3,6 +3,7 @@ title: "Authentication on FortiGate: users, LDAP, RADIUS and FSSO"
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 140
+quality: 2
 est_sessions: 1
 objectives:
   - Pick the right user type (local, remote, FSSO, PKI, SAML) for a requirement
@@ -222,9 +223,9 @@ quiz:
     stem: "Users log in to the FortiGate portal as 'jperez'. The LDAP server has cnid 'cn'. What happens?"
     options:
       - {id: a, text: "The search for cn=jperez finds nothing, so login fails", correct: true}
-      - {id: b, text: "It works, because cn and sAMAccountName are the same in AD", why_wrong: "cn is usually the full name (Juan Perez)."}
-      - {id: c, text: "It works only with LDAPS", why_wrong: "Encryption doesn't change which attribute is searched."}
-      - {id: d, text: "The FortiGate falls back to local users", why_wrong: "There's no such fallback."}
+      - {id: b, text: "It works, as cn and sAMAccountName are the same thing in AD", trap: misconception, why_wrong: "cn is usually the full name (Juan Perez)."}
+      - {id: c, text: "It works if the server uses LDAPS on port 636 instead", trap: misconception, why_wrong: "Encryption doesn't change which attribute is searched."}
+      - {id: d, text: "It works for users whose cn was set to the login name", trap: near-miss, why_wrong: "True for those few, but most AD users have their full name in cn."}
     explanation: "cnid is the attribute matched against the typed username. Windows usernames live in sAMAccountName."
     source: "FortiOS 8.0.2 Admin Guide p. 3931"
   - id: M4.06.q02
@@ -233,10 +234,10 @@ quiz:
     pretest: true
     stem: "Policy 3 allows Finance-FW to the ERP; policy 4 allows HQ-LAN to the Internet without groups. A Staff user who never logged in browses the Internet. Default settings. Result?"
     options:
-      - {id: a, text: "Policy 4 matches; no login page", correct: true}
-      - {id: b, text: "The user gets the login page first", why_wrong: "That's auth-on-demand always."}
-      - {id: c, text: "Implicit deny", why_wrong: "The traffic matches policy 4."}
-      - {id: d, text: "Policy 3 matches and logs the user as guest", why_wrong: "Identity policies don't match unauthenticated IPs."}
+      - {id: a, text: "Policy 4 matches; no login page appears", correct: true}
+      - {id: b, text: "The user gets the login page from policy 3 first", trap: near-miss, why_wrong: "That happens with auth-on-demand always, not the default."}
+      - {id: c, text: "The implicit deny drops it as the user is unknown", trap: misconception, why_wrong: "The traffic matches policy 4."}
+      - {id: d, text: "Policy 3 matches and logs the user as a guest", trap: misconception, why_wrong: "Identity policies don't match unauthenticated IPs."}
     explanation: "With auth-on-demand implicitly, unauthenticated traffic falls through identity policies to the next match."
     source: "FortiOS 8.0.2 Admin Guide p. 3920"
   - id: M4.06.q03
@@ -245,9 +246,10 @@ quiz:
     stem: "Which are true about LDAP bind types? Select all that apply."
     options:
       - {id: a, text: "Simple doesn't search the subtree", correct: true}
-      - {id: b, text: "Regular uses a bind account to search, then binds as the user", correct: true}
-      - {id: c, text: "Anonymous is refused by many directories", correct: true}
-      - {id: d, text: "Simple is the recommended choice for AD", why_wrong: "It only works when all users sit in one container."}
+      - {id: b, text: "Regular searches with a bind account", correct: true}
+      - {id: c, text: "Anonymous is refused by many servers", correct: true}
+      - {id: d, text: "Simple is the advised choice for AD", trap: near-miss, why_wrong: "Works when all users sit in one container; regular is the AD choice."}
+      - {id: e, text: "Regular sends the password in clear", trap: misconception, why_wrong: "Bind type doesn't decide encryption; LDAPS or STARTTLS does."}
     explanation: "Regular is the AD choice; simple builds the DN directly; anonymous is often refused."
     source: "FortiOS 8.0.2 Admin Guide p. 3931"
   - id: M4.06.q04
@@ -255,10 +257,10 @@ quiz:
     tier: 2
     stem: "diagnose test authserver radius NPS pap lgomez ... → 'failed(no response)'. NPS is running. Most likely cause?"
     options:
-      - {id: a, text: "NPS has no RADIUS client entry for the IP the FortiGate sources from", correct: true}
-      - {id: b, text: "Wrong password", why_wrong: "That produces a reject, not silence."}
-      - {id: c, text: "Wrong shared secret", why_wrong: "Usually a reject: the password decrypts to garbage."}
-      - {id: d, text: "Missing Fortinet-Group-Name", why_wrong: "That affects group matching after an Accept."}
+      - {id: a, text: "NPS has no RADIUS client entry for the FortiGate's source IP", correct: true}
+      - {id: b, text: "The user's password is wrong, so NPS stays silent on purpose", trap: misconception, why_wrong: "A wrong password produces a reject, not silence."}
+      - {id: c, text: "The shared secret is wrong, so the reply can't be authenticated", trap: near-miss, why_wrong: "A secret mismatch usually gives a reject; silence points to an unknown client."}
+      - {id: d, text: "Fortinet-Group-Name is missing from the NPS network policy", trap: near-miss, why_wrong: "That affects group matching after an Accept."}
     explanation: "Unknown clients are dropped silently. Check the egress interface or source-ip against the client list."
   - id: M4.06.q05
     type: order
@@ -272,20 +274,22 @@ quiz:
     stem: "Which RADIUS attribute does FortiOS read to put a user in a group?"
     options:
       - {id: a, text: "Fortinet-Group-Name", correct: true}
-      - {id: b, text: "Fortinet-Access-Profile", why_wrong: "That's for admin profiles."}
-      - {id: c, text: "Class", why_wrong: "Not the group VSA FortiOS documents."}
-      - {id: d, text: "Filter-Id", why_wrong: "Not used for FortiOS groups."}
+      - {id: b, text: "Fortinet-Access-Profile", trap: near-miss, why_wrong: "That one sets admin profiles."}
+      - {id: c, text: "Class (attribute 25)", trap: near-miss, why_wrong: "Some vendors use Class; FortiOS documents its own VSA."}
+      - {id: d, text: "Filter-Id", trap: misconception, why_wrong: "Not used for FortiOS user groups."}
     explanation: "Vendor 12356, attribute 1."
     source: "FortiOS 8.0.2 Admin Guide p. 3956"
   - id: M4.06.q07
     type: multi
     tier: 3
-    stem: "Finance can log in (password accepted) but the ERP still times out. Plausible causes? Select all that apply."
+    format: "first-step"
+    stem: "Finance can log in (password accepted) but the ERP still times out. What do you check first? Select all that apply."
     options:
-      - {id: a, text: "The group match DN doesn't match the user's memberOf", correct: true}
-      - {id: b, text: "The ERP traffic matches another policy above the identity policy", correct: true}
-      - {id: c, text: "Nested group without search-type recursive", correct: true}
-      - {id: d, text: "The bind account password expired", why_wrong: "Then the login itself would fail."}
+      - {id: a, text: "The group match DN vs the user's memberOf", correct: true}
+      - {id: b, text: "Whether a policy above catches the ERP flow", correct: true}
+      - {id: c, text: "Nested groups without recursive search", correct: true}
+      - {id: d, text: "Whether the bind account password expired", trap: near-miss, why_wrong: "Then the login itself would fail."}
+      - {id: e, text: "Whether the ERP server's (own) firewall is on", trap: misconception, why_wrong: "Possible, but identity policy matching comes first after a successful login."}
     explanation: "Authentication passed; look at authorization and policy matching."
   - id: M4.06.q08
     type: text
@@ -298,10 +302,10 @@ quiz:
     tier: 2
     stem: "With FSSO, who tells the FortiGate which user is at 10.20.10.60?"
     options:
-      - {id: a, text: "The collector agent, from DC logon events or DC polling", correct: true}
-      - {id: b, text: "The user, through the captive portal", why_wrong: "FSSO is transparent."}
-      - {id: c, text: "The DHCP server", why_wrong: "DHCP doesn't know the user."}
-      - {id: d, text: "The LDAP server object on the FortiGate", why_wrong: "LDAP is optional for FSSO group lookups, not the source of logons."}
+      - {id: a, text: "The collector agent, from DC logon events or polling", correct: true}
+      - {id: b, text: "The user, by signing in through the captive portal page", trap: misconception, why_wrong: "FSSO is transparent; no portal login."}
+      - {id: c, text: "The DHCP server, from the lease it gave the laptop", trap: misconception, why_wrong: "DHCP doesn't know who logged in."}
+      - {id: d, text: "The FortiGate's LDAP server object, by group lookup", trap: near-miss, why_wrong: "LDAP can help with groups, but logons come from the collector."}
     explanation: "The CA builds IP-to-user mappings and pushes them."
     source: "FortiOS 8.0.2 Admin Guide pp. 4094–4095"
   - id: M4.06.q10

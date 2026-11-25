@@ -3,6 +3,7 @@ title: "IPsec VPN on FortiGate: build, verify and troubleshoot"
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 70
+quality: 2
 est_sessions: 1
 objectives:
   - Explain phase 1 and phase 2 in plain words and say which settings must match on both sides
@@ -172,10 +173,10 @@ quiz:
     pretest: true
     stem: Which phase negotiates the selectors (local and remote subnets)?
     options:
-      - { id: a, text: "Phase 2", correct: true }
-      - { id: b, text: "Phase 1", why_wrong: "Phase 1 builds the IKE SA between gateways." }
-      - { id: c, text: "Both equally", why_wrong: "Selectors belong to phase 2 (quick mode)." }
-      - { id: d, text: "Neither; routing does", why_wrong: "Routing decides what enters the tunnel, but selectors are negotiated in phase 2." }
+      - {id: a, text: "Phase 2, quick mode or CHILD_SA", correct: true}
+      - {id: b, text: "Phase 1, along with the IKE SA", trap: near-miss, why_wrong: "Phase 1 builds the IKE SA; selectors belong to phase 2."}
+      - {id: c, text: "Routing, via the tunnel interface", trap: near-miss, why_wrong: "Routing decides what enters the tunnel; selectors are negotiated in phase 2."}
+      - {id: d, text: "The firewall policy for the tunnel", trap: misconception, why_wrong: "Policies allow traffic; they aren't negotiated with the peer."}
     explanation: Selectors are phase 2.
     source: FortiOS 8.0.2 Admin Guide p. 3169
   - id: M4.09.q02
@@ -184,20 +185,21 @@ quiz:
     pretest: true
     stem: A route-based site-to-site tunnel is up, but no traffic passes. Which could be missing? Select all that apply.
     options:
-      - { id: a, text: "A static route to the remote subnet via the tunnel interface", correct: true }
-      - { id: b, text: "A firewall policy LAN → tunnel", correct: true }
-      - { id: c, text: "A firewall policy tunnel → LAN (on the peer, too)", correct: true }
-      - { id: d, text: "A higher HA priority", why_wrong: "HA has nothing to do with it." }
+      - {id: a, text: "A route to the remote subnet via the tunnel", correct: true}
+      - {id: b, text: "A firewall policy from LAN to the tunnel", correct: true}
+      - {id: c, text: "A policy from the tunnel to LAN, on both ends", correct: true}
+      - {id: d, text: "A phase 2 with PFS enabled on both ends", trap: near-miss, why_wrong: "PFS must match to negotiate, but the tunnel is already up."}
+      - {id: e, text: "A higher HA priority on the tunnel unit", trap: misconception, why_wrong: "HA has nothing to do with traffic through an up tunnel."}
     explanation: IPsec builds the pipe; routes and policies make traffic use it.
   - id: M4.09.q03
     type: single
     tier: 2
     stem: Why does the VPN Wizard add a blackhole route with distance 254?
     options:
-      - { id: a, text: "So traffic to the remote subnet is dropped instead of leaving in clear text when the tunnel is down", correct: true }
-      - { id: b, text: "To speed up IKE negotiation", why_wrong: "Routes don't affect IKE speed." }
-      - { id: c, text: "To load balance two tunnels", why_wrong: "That's SD-WAN or ECMP." }
-      - { id: d, text: "To block IKE from the internet", why_wrong: "Use local-in policies for that." }
+      - {id: a, text: "So remote-subnet traffic is dropped, not leaked in clear, while the tunnel is down", correct: true}
+      - {id: b, text: "So the tunnel route wins, since 254 is lower than the distance of the default static route", trap: misconception, why_wrong: "254 is the highest usable distance; it's the fallback, not the winner."}
+      - {id: c, text: "So IKE traffic from the internet to the tunnel's local gateway gets dropped early on", trap: near-miss, why_wrong: "Blocking IKE is a local-in policy job, not a route."}
+      - {id: d, text: "So two tunnels to the same subnet share load through ECMP at the same distance", trap: near-miss, why_wrong: "That's SD-WAN or ECMP; the blackhole is a leak guard."}
     explanation: A safety net against leaks.
     source: FortiOS 8.0.2 Admin Guide p. 3251
   - id: M4.09.q04
@@ -205,10 +207,10 @@ quiz:
     tier: 2
     stem: Which DH groups does Fortinet recommend as best practice?
     options:
-      - { id: a, text: "15–21 and 28–32", correct: true }
-      - { id: b, text: "1, 2 and 5", why_wrong: "Old and weak." }
-      - { id: c, text: "Only 14", why_wrong: "14 is allowed but the guide recommends 15–21 and 28–32." }
-      - { id: d, text: "Any; DH groups don't matter", why_wrong: "At least one must match and strength matters." }
+      - {id: a, text: "Groups 15–21 and 28–32", correct: true}
+      - {id: b, text: "Groups 1, 2 and 5 for speed", trap: misconception, why_wrong: "These are old and weak groups."}
+      - {id: c, text: "Group 14 for compatibility", trap: near-miss, why_wrong: "Allowed, but the guide recommends 15–21 and 28–32."}
+      - {id: d, text: "Groups 14 and 5 as a fallback", trap: near-miss, why_wrong: "Group 5 is weak; a fallback to it undermines the stronger group."}
     explanation: Strong groups.
     source: FortiOS 8.0.2 Admin Guide p. 3170
   - id: M4.09.q05
@@ -223,10 +225,10 @@ quiz:
     tier: 2
     stem: Which command shows the negotiated phase 1 proposal and whether the IKE SA is established?
     options:
-      - { id: a, text: "diagnose vpn ike gateway list", correct: true }
-      - { id: b, text: "diagnose vpn tunnel list", why_wrong: "That's phase 2 (selectors, counters)." }
-      - { id: c, text: "get router info routing-table all", why_wrong: "Routing, not IKE." }
-      - { id: d, text: "diagnose sys session list", why_wrong: "Sessions, not IKE SAs." }
+      - {id: a, text: "diagnose vpn ike gateway list", correct: true}
+      - {id: b, text: "diagnose vpn tunnel list name x", trap: near-miss, why_wrong: "That's phase 2: selectors and counters."}
+      - {id: c, text: "get vpn ipsec tunnel summary", trap: near-miss, why_wrong: "Summarises tunnels and selectors up or down, not the phase 1 proposal."}
+      - {id: d, text: "diagnose sys session list ike", trap: misconception, why_wrong: "The session table doesn't hold IKE SAs."}
     explanation: gateway list = phase 1.
     source: FortiOS 8.0.2 Admin Guide pp. 3757–3758
   - id: M4.09.q07
@@ -240,10 +242,10 @@ quiz:
       stat: rxp=0 txp=4821 rxb=0 txb=385680
     stem: Users at HQ can't reach the branch. What does this output suggest?
     options:
-      - { id: a, text: "Phase 2 is up and HQ sends into the tunnel, but nothing returns: check the branch's route and policy back", correct: true }
-      - { id: b, text: "Phase 1 is down", why_wrong: "status=up and an SA exists." }
-      - { id: c, text: "The selectors don't include the branch subnet", why_wrong: "dst covers 10.20.0.0/24." }
-      - { id: d, text: "NAT-T is failing", why_wrong: "No sign of that; traffic is leaving." }
+      - {id: a, text: "Phase 2 is up and HQ sends traffic, but nothing returns: check the branch's route and policy", correct: true}
+      - {id: b, text: "Phase 1 is down, so the encrypted packets are queued at HQ and don't leave the FortiGate at all", trap: misconception, why_wrong: "status=up, an SA exists and txb grows."}
+      - {id: c, text: "The selectors leave the branch subnet out, so the branch's FortiGate drops all of the packets", trap: near-miss, why_wrong: "dst covers 10.20.0.0/24, which is the branch subnet."}
+      - {id: d, text: "NAT-T is failing, so ESP leaves HQ but the ISP drops it before it reaches the branch peer", trap: near-miss, why_wrong: "The port shows :0, so no NAT-T is in use; check the far side's return path first."}
     explanation: txp grows, rxp is zero.
     source: FortiOS 8.0.2 Admin Guide pp. 3758–3759
   - id: M4.09.q08
@@ -258,61 +260,62 @@ quiz:
     tier: 2
     stem: Phase 1 comes up with a third-party firewall, but phase 2 keeps failing. Most likely cause?
     options:
-      - { id: a, text: "The selectors don't mirror each other, or the phase 2 proposals/PFS groups don't match", correct: true }
-      - { id: b, text: "Wrong pre-shared key", why_wrong: "A wrong key fails phase 1 authentication." }
-      - { id: c, text: "IKE blocked by the ISP", why_wrong: "Phase 1 wouldn't come up." }
-      - { id: d, text: "Missing blackhole route", why_wrong: "That affects leaks, not negotiation." }
+      - {id: a, text: "Selectors that don't mirror each other, or mismatched phase 2 proposals or PFS", correct: true}
+      - {id: b, text: "A wrong pre-shared key, which phase 2 checks again once the IKE SA has been built", trap: misconception, why_wrong: "A wrong key fails phase 1 authentication."}
+      - {id: c, text: "Mismatched DH groups in phase 1, which surface during phase 2 negotiation", trap: near-miss, why_wrong: "Phase 1 DH mismatches fail phase 1; PFS groups are the phase 2 part."}
+      - {id: d, text: "A missing blackhole route, which makes the FortiGate reject the CHILD_SA", trap: misconception, why_wrong: "Blackhole routes prevent leaks; they don't affect negotiation."}
     explanation: "Phase 2 mismatch: selectors, proposals, PFS."
   - id: M4.09.q10
     type: single
     tier: 2
     stem: Which IKE version do new FortiGate tunnels use by default?
     options:
-      - { id: a, text: "IKEv2", correct: true }
-      - { id: b, text: "IKEv1 main mode", why_wrong: "Still supported, but not the default for new tunnels." }
-      - { id: c, text: "IKEv1 aggressive mode", why_wrong: "Not the default." }
-      - { id: d, text: "Depends on the model", why_wrong: "The guide states new tunnels default to IKEv2." }
+      - {id: a, text: "IKEv2", correct: true}
+      - {id: b, text: "IKEv1 main", trap: near-miss, why_wrong: "Still supported, but not the default for new tunnels."}
+      - {id: c, text: "IKEv1 aggr.", trap: misconception, why_wrong: "Aggressive mode isn't the default."}
+      - {id: d, text: "Per model", trap: misconception, why_wrong: "New tunnels default to IKEv2 on all models."}
     explanation: IKEv2 by default.
     source: FortiOS 8.0.2 Admin Guide p. 3142
   - id: M4.09.q11
     type: single
     tier: 3
+    format: "first-step"
     stem: "Over a new tunnel, ping and SSH work, but SMB file copies and some HTTPS pages freeze. Best fix?"
     options:
-      - { id: a, text: "Clamp TCP MSS on the tunnel policies (and check for blocked ICMP 'fragmentation needed')", correct: true }
-      - { id: b, text: "Change the DH group", why_wrong: "Negotiation is fine; data flows." }
-      - { id: c, text: "Enable aggressive mode", why_wrong: "Unrelated." }
-      - { id: d, text: "Add a second phase 2", why_wrong: "Selectors are fine; this is packet size." }
+      - {id: a, text: "Clamp TCP MSS on the tunnel policies, and check ICMP 'fragmentation needed'", correct: true}
+      - {id: b, text: "Change the DH group on both ends so that the SAs renegotiate with fresh keys", trap: misconception, why_wrong: "Negotiation is fine; data flows."}
+      - {id: c, text: "Lower the tunnel interface MTU on one end and leave the other as it is", trap: near-miss, why_wrong: "Helps one direction; clamping MSS on both directions is the reliable fix."}
+      - {id: d, text: "Add a second phase 2 for the file servers' subnet with its own selectors", trap: near-miss, why_wrong: "Selectors are fine; this is packet size."}
     explanation: ESP overhead plus blocked PMTUD.
   - id: M4.09.q12
     type: single
     tier: 3
     stem: Two sites both use 192.168.1.0/24 and must be connected. What do you tell the customer?
     options:
-      - { id: a, text: "Overlapping subnets need NAT across the tunnel (or re-addressing); selectors can't distinguish them as they are", correct: true }
-      - { id: b, text: "IKEv2 handles overlaps automatically", why_wrong: "No version does." }
-      - { id: c, text: "Use a blackhole route", why_wrong: "It doesn't solve overlap." }
-      - { id: d, text: "Increase the key lifetime", why_wrong: "Unrelated." }
+      - {id: a, text: "Overlapping subnets need NAT across the tunnel, or re-addressing", correct: true}
+      - {id: b, text: "IKEv2 traffic selector narrowing separates the two subnets for you", trap: misconception, why_wrong: "Narrowing can't tell identical subnets apart."}
+      - {id: c, text: "A policy route at each end sends the remote 192.168.1.0/24 to the tunnel", trap: near-miss, why_wrong: "Local hosts still own that subnet; routing alone can't distinguish them."}
+      - {id: d, text: "Two phase 2s with the same selectors, one for each direction of traffic", trap: near-miss, why_wrong: "Phase 2 already covers both directions; overlap remains."}
     explanation: Overlap is a design problem; plan NAT or re-addressing.
   - id: M4.09.q13
     type: single
     tier: 2
     stem: In FortiOS 8.0, what is the browser-based SSL VPN portal called?
     options:
-      - { id: a, text: "Agentless VPN", correct: true }
-      - { id: b, text: "ZTNA", why_wrong: "ZTNA is a different access model." }
-      - { id: c, text: "Dial-up IPsec", why_wrong: "That's full-tunnel remote access." }
-      - { id: d, text: "ADVPN", why_wrong: "ADVPN is dynamic spoke-to-spoke shortcuts." }
+      - {id: a, text: "Agentless VPN", correct: true}
+      - {id: b, text: "ZTNA web portal", trap: near-miss, why_wrong: "ZTNA is a different access model."}
+      - {id: c, text: "Dial-up IPsec", trap: misconception, why_wrong: "That's full-tunnel remote access with a client."}
+      - {id: d, text: "Web mode VPN", trap: near-miss, why_wrong: "Close to the old name, but 8.0 calls it Agentless VPN."}
     explanation: Agentless VPN.
   - id: M4.09.q14
     type: single
     tier: 3
     stem: "In a dial-up tunnel named 'remote', what does an entry named 'remote_0' in diagnose vpn ike gateway list represent?"
     options:
-      - { id: a, text: "A dynamic instance created for one connected client", correct: true }
-      - { id: b, text: "A failed tunnel", why_wrong: "Instances are created on connection." }
-      - { id: c, text: "The phase 2 of the tunnel", why_wrong: "Phase 2 shows in tunnel list as a proxy ID." }
-      - { id: d, text: "A backup tunnel", why_wrong: "Not how dial-up names work." }
+      - {id: a, text: "A dynamic instance created for one connected client", correct: true}
+      - {id: b, text: "A failed negotiation that is kept for troubleshooting later", trap: misconception, why_wrong: "Instances are created on connection, not failure."}
+      - {id: c, text: "The tunnel's phase 2, shown with its own numbering", trap: near-miss, why_wrong: "Phase 2 shows in tunnel list as a proxy ID."}
+      - {id: d, text: "The first of the tunnel's redundant backup peers", trap: near-miss, why_wrong: "Dial-up instance names count clients, not backup peers."}
     explanation: Each client gets its own instance.
     source: FortiOS 8.0.2 Admin Guide pp. 3757–3758
 

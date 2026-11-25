@@ -3,6 +3,7 @@ title: "Routing on FortiGate: static, policy routes, ECMP and the routing databa
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 154
+quality: 2
 est_sessions: 1
 objectives:
   - Read the routing table and the routing database and explain why a route is or isn't active
@@ -140,10 +141,10 @@ quiz:
     pretest: true
     stem: "Routes to 10.0.0.0/8 (static, distance 10) and 10.1.0.0/16 (OSPF). Traffic to 10.1.5.5 uses…"
     options:
-      - {id: a, text: "The OSPF /16", correct: true}
-      - {id: b, text: "The static /8", why_wrong: "Longest prefix wins before distance."}
-      - {id: c, text: "ECMP across both", why_wrong: "Different prefixes."}
-      - {id: d, text: "Whichever was learned first", why_wrong: "No such rule."}
+      - {id: a, text: "The OSPF /16 route", correct: true}
+      - {id: b, text: "The static /8 route", trap: misconception, why_wrong: "Longest prefix wins before distance is compared."}
+      - {id: c, text: "ECMP across both routes", trap: near-miss, why_wrong: "ECMP needs the same prefix."}
+      - {id: d, text: "The static /8, distance 10", trap: near-miss, why_wrong: "Lower distance matters only for the same prefix."}
     explanation: "Longest prefix match comes first."
   - id: M4.05.q02
     type: single
@@ -151,10 +152,10 @@ quiz:
     pretest: true
     stem: "Two default routes, both distance 10: wan1 priority 1, wan2 priority 5. Result?"
     options:
-      - {id: a, text: "Both in the table; wan1 is used", correct: true}
-      - {id: b, text: "ECMP across both", why_wrong: "Priorities differ."}
-      - {id: c, text: "Only wan1 is in the table", why_wrong: "Same-distance statics stay in the table."}
-      - {id: d, text: "wan2 is used", why_wrong: "Lower priority number wins."}
+      - {id: a, text: "Each is installed; priority 1 carries traffic", correct: true}
+      - {id: b, text: "ECMP across both, as distances match", trap: near-miss, why_wrong: "Priorities differ, so it isn't ECMP."}
+      - {id: c, text: "One route alone is in the table", trap: near-miss, why_wrong: "Same-distance statics stay in the table."}
+      - {id: d, text: "wan2 is used, as 5 is the higher priority value", trap: misconception, why_wrong: "The lower priority number wins."}
     explanation: "Same distance keeps both; priority picks."
     source: "FortiOS 8.0.2 Admin Guide pp. 646–648"
   - id: M4.05.q03
@@ -162,20 +163,20 @@ quiz:
     tier: 2
     stem: "Which is checked first for a new session?"
     options:
-      - {id: a, text: "Policy routes / SD-WAN rules", correct: true}
-      - {id: b, text: "The static default route", why_wrong: "The routing table comes after policy routes."}
-      - {id: c, text: "OSPF routes", why_wrong: "Part of the routing table."}
-      - {id: d, text: "The firewall policy", why_wrong: "Routing decides the egress interface before the policy lookup."}
+      - {id: a, text: "Policy routes and SD-WAN rules", correct: true}
+      - {id: b, text: "The static default route entry", trap: near-miss, why_wrong: "The routing table comes after policy routes."}
+      - {id: c, text: "The firewall policy that matches", trap: misconception, why_wrong: "Routing decides the egress interface before the policy lookup."}
+      - {id: d, text: "The routing table's longest match", trap: near-miss, why_wrong: "Used when no policy route or SD-WAN rule matches."}
     explanation: "PBR first, then the routing table."
   - id: M4.05.q04
     type: multi
     tier: 2
     stem: "Good uses of a blackhole route? Select all that apply."
     options:
-      - {id: a, text: "Keep RFC 1918 traffic off the Internet when a VPN is down", correct: true}
-      - {id: b, text: "Anchor a BGP aggregate", correct: true}
-      - {id: c, text: "Load-balance two ISPs", why_wrong: "That's ECMP or SD-WAN."}
-      - {id: d, text: "Replace firewall policies", why_wrong: "Policies still control access."}
+      - {id: a, text: "Keep RFC 1918 traffic off the Internet while a VPN is down", correct: true}
+      - {id: b, text: "Anchor a BGP aggregate that is advertised to peers", correct: true}
+      - {id: c, text: "Load-balance two ISPs at the same distance", trap: misconception, why_wrong: "That is a job for ECMP or SD-WAN."}
+      - {id: d, text: "Block a bad IP instead of a deny policy", trap: near-miss, why_wrong: "Drops traffic but bypasses logging and policy; use a deny policy."}
     explanation: "Blackholes drop; they don't permit or balance."
   - id: M4.05.q05
     type: text
@@ -186,12 +187,13 @@ quiz:
   - id: M4.05.q06
     type: single
     tier: 3
+    format: "answer-reason"
     stem: "The ISP's upstream fails but wan1 stays up. Without a link monitor, what happens?"
     options:
-      - {id: a, text: "Traffic keeps going to wan1 and fails", correct: true}
-      - {id: b, text: "The FortiGate fails over to wan2", why_wrong: "Nothing removed the wan1 route."}
-      - {id: c, text: "ECMP starts", why_wrong: "Routes didn't change."}
-      - {id: d, text: "HA fails over", why_wrong: "The monitored port is up."}
+      - {id: a, text: "Traffic keeps going to wan1 and fails, as nothing removes its route", correct: true}
+      - {id: b, text: "It fails over to wan2, as the gateway stops answering ARP requests", trap: near-miss, why_wrong: "The ISP's router still answers ARP; only upstream is broken."}
+      - {id: c, text: "ECMP starts across both WANs as the wan1 route degrades over some time", trap: misconception, why_wrong: "Routes don't change on their own."}
+      - {id: d, text: "HA fails over to the other unit, as wan1 is a monitored interface", trap: near-miss, why_wrong: "The monitored port is still up, so HA sees nothing wrong."}
     explanation: "Only probing through the link detects it."
 
 labs:

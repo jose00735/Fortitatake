@@ -3,6 +3,7 @@ title: "FortiOS administration: access, admins, firmware, backups and FortiGuard
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 168
+quality: 2
 est_sessions: 1
 objectives:
   - Harden administrative access (allowaccess, trusted hosts, admin profiles, MFA)
@@ -115,9 +116,9 @@ quiz:
     stem: "Which command shows every setting, including defaults, for system interface?"
     options:
       - {id: a, text: "show full-configuration system interface", correct: true}
-      - {id: b, text: "show system interface", why_wrong: "Only non-defaults."}
-      - {id: c, text: "get system status", why_wrong: "Device summary."}
-      - {id: d, text: "diagnose sys interface", why_wrong: "Not the config view."}
+      - {id: b, text: "show system interface | grep -f port1 -A", trap: near-miss, why_wrong: "show lists non-default settings alone, grep or not."}
+      - {id: c, text: "get system interface physical detail", trap: near-miss, why_wrong: "Shows link state and speed, not every config setting."}
+      - {id: d, text: "diagnose sys interface list all ports", trap: misconception, why_wrong: "That isn't a configuration view."}
     explanation: "full-configuration includes defaults."
   - id: M4.01.q02
     type: single
@@ -125,20 +126,21 @@ quiz:
     pretest: true
     stem: "You type `set member DNS` on a service group that had HTTP HTTPS. Result?"
     options:
-      - {id: a, text: "The group now contains only DNS", correct: true}
-      - {id: b, text: "HTTP HTTPS DNS", why_wrong: "That's append."}
-      - {id: c, text: "Error: member exists", why_wrong: "set replaces silently."}
-      - {id: d, text: "Nothing until reboot", why_wrong: "Applied on end/next."}
+      - {id: a, text: "The group now holds DNS alone", correct: true}
+      - {id: b, text: "The group holds HTTP HTTPS DNS", trap: near-miss, why_wrong: "That's what append does; set replaces."}
+      - {id: c, text: "An error: the list isn't empty", trap: misconception, why_wrong: "set replaces the list silently."}
+      - {id: d, text: "No change until the unit reboots", trap: misconception, why_wrong: "Changes apply on next or end."}
     explanation: "set replaces lists."
   - id: M4.01.q03
     type: multi
     tier: 2
     stem: "Good practices for admin access? Select all that apply."
     options:
-      - {id: a, text: "No HTTPS/SSH on Internet-facing interfaces", correct: true}
-      - {id: b, text: "Trusted hosts on every admin account", correct: true}
-      - {id: c, text: "MFA for admins", correct: true}
-      - {id: d, text: "One shared super_admin account for the team", why_wrong: "No accountability."}
+      - {id: a, text: "No HTTPS/SSH admin on Internet-facing ports", correct: true}
+      - {id: b, text: "Trusted hosts on each admin account", correct: true}
+      - {id: c, text: "MFA for administrator logins", correct: true}
+      - {id: d, text: "One shared super_admin for the team", trap: misconception, why_wrong: "Shared accounts remove personal accountability."}
+      - {id: e, text: "Admin on a non-standard HTTPS port", trap: near-miss, why_wrong: "Obscurity doesn't replace restricting where admin access comes from."}
     explanation: "Least exposure, named accounts, MFA."
   - id: M4.01.q04
     type: text
