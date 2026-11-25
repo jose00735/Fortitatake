@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.8.12"
+const agentVersion = "0.9.0"
 
 var started = time.Now()
 
@@ -113,7 +113,9 @@ func main() {
 		}
 		// Changes run one at a time and in order; reads and probes may overlap them only
 		// after every earlier change has finished.
-		if mutating[r.str("op")] {
+		if op := r.str("op"); op == "relay.wait" || op == "relay.answer" {
+			go handle(w, r) // the Internet relay never waits for, or holds up, topology changes
+		} else if mutating[op] {
 			opLock.Lock()
 			go func(r req) { defer opLock.Unlock(); handle(w, r) }(r)
 		} else {
@@ -185,6 +187,12 @@ func dispatch(r req) (map[string]any, error) {
 		return shellSignal(r)
 	case "shell.close":
 		return shellClose(r)
+	case "dns.query":
+		return dnsQuery(r)
+	case "relay.wait":
+		return relayWait(r)
+	case "relay.answer":
+		return relayAnswer(r)
 	case "console.poll":
 		return consolePoll(r)
 	case "console.reply":
@@ -210,6 +218,7 @@ func hello() map[string]any {
 	k, _ := os.ReadFile("/proc/sys/kernel/osrelease")
 	return map[string]any{
 		"ver":       agentVersion,
+		"relay":     relayStats(),
 		"build":     strings.TrimSpace(string(b)),
 		"kernel":    strings.TrimSpace(string(k)),
 		"arch":      runtime.GOARCH,

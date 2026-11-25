@@ -48,7 +48,8 @@ type topoSpec struct {
 		If   string `json:"if"`
 		CIDR string `json:"cidr"`
 	} `json:"addrs"`
-	Routes []struct {
+	Internet *inetCfg `json:"internet"` // the namespace whose exit relays DNS and ICMP to the real Internet
+	Routes   []struct {
 		Dev    string `json:"dev"`
 		Dst    string `json:"dst"`
 		Via    string `json:"via"`
@@ -214,6 +215,7 @@ func listNS() []string {
 }
 
 func topoClear() (map[string]any, error) {
+	inetStop()
 	stopAllShells()
 	stopAllRemote()
 	stopAllSenders()
@@ -420,6 +422,9 @@ func topoApply(r req) (map[string]any, error) {
 		}
 	}
 	mark("sysctl", s)
+	if err := inetStart(t.Internet); err != nil {
+		return nil, fmt.Errorf("internet exit: %v", err)
+	}
 	return map[string]any{"ms": time.Since(start).Milliseconds(), "steps": steps, "devices": len(t.Devices), "links": len(t.Links)}, nil
 }
 

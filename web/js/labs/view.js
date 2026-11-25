@@ -4,7 +4,7 @@ import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
 import { RealNet } from "./real.js";
 import { RealLogs } from "./reallog.js";
-import { realHostCmd, realRouterCmd } from "./realcli.js";
+import { realHostCmd, realRouterCmd, realResolve } from "./realcli.js";
 import { parseRemoteCmd, connectError, connectedLines, passPrompt, closedLine, ServerSession } from "./remote.js";
 import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing, traceRules, FlowTrace, parseConntrack, formatSessions, formatRoutes, routeHelpers } from "./realdiag.js";
 import { intToIp, ipToInt, isIp } from "./net.js";
@@ -430,7 +430,17 @@ function mount(main, run, opts = {}) {
     } catch (e) { print(dev, `[FortiTatake OS: couldn't read the capture: ${e.message}]`); paint(); }
   };
   // ----- SSH and Telnet between lab devices -----
-  const REALCMD = /^(ping|tracert|traceroute|tr|pathping|arp|route|netstat|ss|uname|ip|sh|show)\b/i;
+  const REALCMD = /^(ping|tracert|traceroute|tr|pathping|arp|route|netstat|ss|uname|ip|sh|show|nslookup|dig)\b/i;
+  // simulator commands that use a name: on the real network the name is looked up for real first
+  const PRERESOLVE = /^(curl|wget|tnc|test-netconnection|nc)\b/i;
+  const nameArg = (line) => {
+    for (const a of line.trim().split(/\s+/).slice(1)) {
+      if (a.startsWith("-")) continue;
+      const m = a.match(/^[a-z]+:\/\/([^/:]+)/i);
+      return m ? m[1] : a.split(/[/:]/)[0];
+    }
+    return null;
+  };
   const localUser = (d) => (d.spec && d.spec.user) || (d.os === "windows" ? "User" : "admin");
   // the prompt a remote user gets on a device
   const remotePrompt = (devId, user) => {
@@ -595,13 +605,29 @@ function mount(main, run, opts = {}) {
   const realDevCmd = (dev, line) => {
     const d = run.device(dev);
     if (live.state !== "live" || !d || !["host", "server", "router"].includes(d.kind) || !line.trim() || /^(cls|clear)$/i.test(line.trim())) return false;
+    if (PRERESOLVE.test(line.trim()) && d.kind !== "router") {
+      print(dev, run.prompt(dev) + line);
+      ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
+      paint();
+      (async () => {
+        const name = nameArg(line);
+        if (name && !isIp(name)) await realResolve(realCall, run.lab, d, name).catch(() => null);
+        print(dev, run.exec(dev, line));
+        run.drain();
+        if (dev === ui.dev) paint(); else { ui.unread.add(dev); devTabs(); }
+      })();
+      return true;
+    }
     if (!REALCMD.test(line.trim())) return false;
-    const simOut = run.exec(dev, line); // history and checks; also the answer if the OS can't give one
-    run.drain();
     print(dev, run.prompt(dev) + line);
     ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
     paint();
     (async () => {
+      // a name is looked up for real before the simulator sees it, so both use the real answer
+      const name = d.kind !== "router" && /^(ping|tracert|traceroute|pathping|nslookup|dig)\b/i.test(line.trim()) ? nameArg(line.replace(/\s-[a-z]+\s+\d+/gi, " ")) : null;
+      if (name && !isIp(name)) await realResolve(realCall, run.lab, d, name).catch(() => null);
+      const simOut = run.exec(dev, line); // history and checks; also the answer if the OS can't give one
+      run.drain();
       let out = null;
       try { out = d.kind === "router" ? await realRouterCmd(realCall, run.lab, d, line) : await realHostCmd(realCall, run.lab, d, line); }
       catch (e) { out = null; }

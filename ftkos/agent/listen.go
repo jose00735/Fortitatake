@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -108,6 +109,7 @@ func listenStart(r req) (map[string]any, error) {
 		keep, _ := m["keep"].(bool)
 		mode, _ := m["mode"].(string)     // "ssh" or "telnet": a remote console bridged to FortiTatake
 		banner, _ := m["banner"].(string) // the SSH version string the device announces
+		web, _ := m["web"].(string)       // "http"/"https": a redirect target answering for any address
 		if ip == "" {
 			ip = "0.0.0.0"
 		}
@@ -135,6 +137,8 @@ func listenStart(r req) (map[string]any, error) {
 							go serveRemote(n, ns, c, port, mode, banner)
 						}
 					}()
+				} else if web != "" {
+					go serveWeb(n, l, web)
 				} else {
 					go serveTCP(n, l, port, keep)
 				}
@@ -201,6 +205,54 @@ func serveTCP(n *nsListen, l net.Listener, port int, keep bool) {
 	}
 }
 
+// serveWeb answers connections redirected by nftables (real Internet addresses that the lab
+// stands in for): the address the client asked for comes from the socket's original destination.
+func serveWeb(n *nsListen, l net.Listener, kind string) {
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			src, _, _ := net.SplitHostPort(c.RemoteAddr().String())
+			dst, port := origDst(c)
+			n.add(hit{Proto: "tcp", Port: port, Src: src, Dst: dst})
+			c.SetDeadline(time.Now().Add(5 * time.Second))
+			if kind == "https" {
+				tc := tls.Server(c, labTLS())
+				if tc.Handshake() == nil {
+					httpReply(tc, dst)
+				}
+			} else {
+				httpReply(c, dst)
+			}
+		}(c)
+	}
+}
+
+func origDst(c net.Conn) (string, int) {
+	tc, ok := c.(*net.TCPConn)
+	if !ok {
+		return "", 0
+	}
+	raw, err := tc.SyscallConn()
+	if err != nil {
+		return "", 0
+	}
+	var ip string
+	var port int
+	raw.Control(func(fd uintptr) {
+		// SO_ORIGINAL_DST (80) returns a sockaddr_in; the IPv6 mreq getter has the right size
+		m, err := syscall.GetsockoptIPv6Mreq(int(fd), syscall.SOL_IP, 80)
+		if err == nil {
+			port = int(m.Multiaddr[2])<<8 | int(m.Multiaddr[3])
+			ip = net.IP(m.Multiaddr[4:8]).String()
+		}
+	})
+	return ip, port
+}
+
 func httpReply(c net.Conn, dst string) {
 	buf := make([]byte, 4096)
 	c.Read(buf)
@@ -223,9 +275,12 @@ func serveUDP(n *nsListen, c net.PacketConn, port int, keep bool) {
 		}
 		n.add(h)
 		if port == 53 {
-			if resp := dnsAnswer(n, buf[:k]); resp != nil {
-				c.WriteTo(resp, from)
-			}
+			q := append([]byte{}, buf[:k]...)
+			go func() { // a relayed answer takes a round trip to the real Internet
+				if resp := dnsAnswer(n, q); resp != nil {
+					c.WriteTo(resp, from)
+				}
+			}()
 		}
 	}
 }
@@ -255,6 +310,12 @@ func dnsAnswer(n *nsListen, q []byte) []byte {
 	n.mu.Lock()
 	ip := n.names[name]
 	n.mu.Unlock()
+	// not a lab name: a real public name gets its real answer through FortiTatake
+	if ip == "" && strings.Contains(name, ".") && !labOnlyName(name) {
+		if a, ok := relayAsk("dns", "", q, 0, 4*time.Second); ok && len(a.Data) >= 12 {
+			return a.Data
+		}
+	}
 	out := append([]byte{}, q[:qend]...)
 	out[2] = 0x81 | (q[2] & 0x01) // response, recursion desired echoed
 	out[3] = 0x80                 // recursion available
@@ -274,6 +335,16 @@ func dnsAnswer(n *nsListen, q []byte) []byte {
 	binary.BigEndian.PutUint16(out[6:], 1)
 	out = append(out, 0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4)
 	return append(out, v4...)
+}
+
+// names that never exist on the public Internet
+func labOnlyName(n string) bool {
+	for _, suf := range []string{".local", ".lan", ".internal", ".corp", ".home", ".localdomain", ".invalid", ".test", ".example", ".arpa"} {
+		if strings.HasSuffix(n, suf) {
+			return true
+		}
+	}
+	return false
 }
 
 func listenLog(r req) (map[string]any, error) {

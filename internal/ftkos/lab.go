@@ -23,6 +23,7 @@ var labOps = map[string]time.Duration{
 	"shell.open": 10 * time.Second, "shell.write": 5 * time.Second, "shell.read": 5 * time.Second,
 	"shell.signal": 5 * time.Second, "shell.close": 5 * time.Second, "send": 8 * time.Second,
 	"console.poll": 5 * time.Second, "console.reply": 5 * time.Second,
+	"dns.query":   6 * time.Second,
 	"remote.open": 15 * time.Second, "remote.send": 5 * time.Second, "remote.read": 5 * time.Second, "remote.close": 5 * time.Second,
 }
 
@@ -45,6 +46,7 @@ func (m *Manager) labVM() (*VM, error) {
 		m.lab = vm
 		m.emit("vm", map[string]any{"state": "running", "for": "lab", "accel": vm.Accel, "boot_ms": time.Since(vm.Start).Milliseconds()})
 		go m.labReaper(vm)
+		go m.labRelay(vm) // DNS and ICMP to the real Internet
 	}
 	m.labUsed = time.Now()
 	return m.lab, nil
@@ -88,7 +90,7 @@ func (m *Manager) labInfo() map[string]any {
 	if m.lab == nil {
 		return map[string]any{"running": false}
 	}
-	return map[string]any{"running": true, "accel": m.lab.Accel, "rss": m.lab.RSS(), "up_s": int(time.Since(m.lab.Start).Seconds())}
+	return map[string]any{"running": true, "accel": m.lab.Accel, "rss": m.lab.RSS(), "up_s": int(time.Since(m.lab.Start).Seconds()), "relayed": relayCount.Load()}
 }
 
 // labCall handles POST engine/lab/call: one agent request, passed through.

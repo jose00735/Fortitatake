@@ -1,0 +1,358 @@
+id: M14.02
+title: "FortiSASE policies, SPA hubs and ZTNA: secure access to internet, private apps and SaaS"
+stage: S14
+stage_title: "S14 · FortiSASE (consultant level)"
+order: 16.2
+quality: 2
+est_sessions: 2
+objectives:
+  - Design top-down FortiSASE policies with users, destinations, actions (accept, deny, isolate) and profile groups
+  - Connect PoPs to FortiGate hubs for SPA: routing design, peering, hub selection and the prefixes never to advertise
+  - Build agent-based ZTNA with a FortiGate application gateway and security posture tags
+  - Choose between SPA, ZTNA and CASB for a given app, and explain the trade-offs
+sources:
+  - "FortiSASE 7.4 Administration Guide: Security — policies, proxy policies, profiles (pp. 328–426)"
+  - "FortiSASE 7.4 Administration Guide: SPA (pp. 112–162), ZTNA (pp. 427–448), security posture tags (pp. 600–609)"
+
+units:
+  - id: M14.02.u1
+    title: "Policies that behave like FortiOS, with a SASE twist"
+    tier: 2
+    est_min: 13
+    body: |
+      Every session through FortiSASE must match a policy. Policies are evaluated **top down**; the first match wins.
+
+      - **Match criteria**: source scope (agent users, edge sites), users and groups, destination (hosts, FQDNs —
+        wildcards resolved and cached from DNS answers — or an "infrastructure" such as an SPA hub), service,
+        schedule.
+      - **Actions**: **Accept** (with a security profile group), **Deny**, or **Isolate** — send the session to a
+        remote browser so the content is rendered away from the endpoint.
+      - **Defaults**: an editable **Allow-All** and the non-editable **Implicit Deny** at the bottom. If you build
+        specific policies, put them above Allow-All (or replace it).
+      - **IDs and sequence numbers**: each policy keeps a persistent ID; the sequence number is its place in the
+        order. Logs refer to IDs.
+      - **SSL agents** pick up policy changes only after they reconnect; plan changes accordingly.
+      - In a policy, choosing an infrastructure destination excludes hosts and services (and vice versa).
+
+      **Profile groups** bundle AV, web filter, DNS filter, application control, IPS, file filter, DLP and SSL
+      inspection so policies stay readable.
+
+      **Deep inspection** needs the FortiSASE CA trusted on endpoints. Agents can have it deployed; agentless and
+      site users need it installed manually.
+
+      :::recall
+      Q: What does the Isolate action do?
+      A: Sends the session to a remote browser so risky content is rendered away from the endpoint.
+      :::
+
+      :::why
+      Q: Why does a new block policy below Allow-All never match?
+      A: Evaluation is top down; Allow-All matches first.
+      :::
+  - id: M14.02.u2
+    title: "SPA: PoPs as spokes of your FortiGate hubs"
+    tier: 4
+    est_min: 18
+    body: |
+      For private apps, each PoP behaves as a **spoke** of the customer's FortiGate hub(s): IPsec overlays plus BGP
+      carry routes and traffic, in the usual hub-and-spoke (ADVPN-capable) design. Hubs can be SD-WAN hubs or an
+      NGFW converted into a standalone SPA hub (Fabric Overlay Orchestrator helps on FortiOS 7.2.4+, and from 7.4.5
+      it produces an "easy configuration key" to paste into FortiSASE). Up to **12 hubs** are supported.
+
+      **Prerequisites.** An SPA service-connection subscription per FortiGate hub, registered in the **same
+      FortiCloud account** as FortiSASE.
+
+      **Network settings first** (Network > BGP), then service connections:
+
+      - **Routing design**: **BGP per overlay** (default) or **BGP on loopback** (adds extra overlays and ADVPN route
+        tags). One design for all hubs; you can't mix.
+      - **BGP router-ID subnet**: one loopback address per PoP; **/28 minimum**, larger with more than 16 PoPs or
+        PoPs provisioned beyond 4,096 agents.
+      - **ASN**: hubs in FortiSASE's AS (iBGP) or in different ASes (eBGP for those, iBGP for same-AS ones).
+      - **Hub selection**: **hub health and priority** (health-check IP behind each hub, highest-priority healthy
+        hub wins) or **BGP MED** (learned from the hubs; user priorities ignored).
+
+      **Routing hygiene.** Advertise only the private prefixes meant for SPA. Never advertise **0.0.0.0/0**,
+      **0.0.0.0/1** or **128.0.0.0/1** to the PoPs: they would pull the PoP's own internet-bound traffic into the
+      tunnel and break the service.
+
+      **Capacity.** By default each PoP carries up to 300 Mbps of aggregate SPA traffic; more is a support request.
+
+      **Remote users' source addresses.** With remote agent and edge user identification, agents get per-PoP
+      address ranges and traffic to SPA hubs is not source-NATed, so the hub's logs show the real agent address
+      (and the hub's policies must allow those ranges).
+
+      :::recall
+      Q: Which three prefixes must never be advertised from an SPA hub to the PoPs?
+      A: 0.0.0.0/0, 0.0.0.0/1 and 128.0.0.0/1.
+      :::
+
+      :::why
+      Q: Why do user-defined hub priorities stop mattering with the BGP MED selection method?
+      A: The PoPs follow the MED values the hubs advertise (driven by the hubs' SD-WAN SLAs), not the priorities set in FortiSASE.
+      :::
+  - id: M14.02.u3
+    title: "Agent-based ZTNA and posture tags"
+    tier: 4
+    est_min: 16
+    body: |
+      **ZTNA** gives per-application access instead of network access. In FortiSASE's agent-based ZTNA, a
+      **FortiGate acts as the ZTNA application gateway**: a reverse proxy that checks the client certificate and the
+      endpoint's posture tags before connecting the user to the app.
+
+      **Workflow:**
+
+      1. Configure the FortiGate as the ZTNA gateway (access proxy).
+      2. In FortiSASE, define the gateway (address, port) and the **private applications** (IP, FQDN or wildcard
+         FQDN, ports).
+      3. **Authorize the FortiGate** under ZTNA connectors: FortiSASE's endpoint management shares client
+         certificates and tags with it. Only authorized FortiGates receive them.
+      4. Reference gateways and apps in endpoint profiles (ZTNA tab).
+
+      **UDP apps** work over QUIC from FortiClient to the gateway: FortiClient 7.4.5+, FortiOS 7.6.0+ on the gateway
+      with HTTP/3 support enabled on the ZTNA virtual server, and "support UDP traffic" on the app.
+
+      **Security posture tags** are dynamic labels from **tagging rules** evaluated by FortiClient on Windows, macOS,
+      Linux, iOS and Android: OS version, domain membership, running processes, firewall and antivirus state and more.
+      Each rule type defaults to AND or OR logic; custom logic combines rule IDs. Tags appear on endpoints, in
+      FortiSASE and on the FortiGate (as security posture tags usable in ZTNA policies).
+
+      **Design point:** a tag that requires several conditions is stricter than it looks. "Firewall on AND AV
+      running" fails for every laptop where one service stopped after an update — test the logic on a pilot.
+
+      :::recall
+      Q: What must happen in FortiSASE before a FortiGate ZTNA gateway can enforce tags?
+      A: The FortiGate must be authorized under ZTNA connectors to receive certificates and tags.
+      :::
+
+      :::why
+      Q: Why does ZTNA reduce lateral movement compared with a full-tunnel VPN?
+      A: The user reaches only specific apps through a proxy that checks identity and posture per session, not a whole network.
+      :::
+  - id: M14.02.u4
+    title: "SPA, ZTNA or CASB: picking the path per app"
+    tier: 3
+    est_min: 12
+    body: |
+      | App | Best path | Why |
+      |---|---|---|
+      | Legacy client-server app on many ports in the DC | **SPA** | Network-level access through the hub; ZTNA would need many app definitions |
+      | Web or TCP app for contractors and sensitive data | **ZTNA** | Per-app access with posture; no network exposure |
+      | Microsoft 365, Salesforce | **SIA + CASB** (inline and API) | It's on the internet; control is about data and tenant use |
+      | App reachable only from fixed source IPs | **SIA with dedicated egress IP** | Partner allow-lists need predictable sources |
+      | Unmanaged device needing one internal web app | **Agentless ZTNA / browser-based access** | No agent, browser only |
+
+      Real customers need a mix. The PS deliverable is an **application access matrix**: each app, its users, its
+      path, posture required, and the owner who signs it off.
+
+      :::recall
+      Q: Which path suits a legacy multi-port app in the DC for all employees?
+      A: SPA through the FortiGate hub.
+      :::
+
+      :::why
+      Q: Why is an application access matrix a better deliverable than a list of policies?
+      A: The business can read and sign it; policies are its implementation and can be checked against it.
+      :::
+
+cards:
+  - {id: M14.02.c01, unit: M14.02.u1, tier: 1, front: "FortiSASE policy evaluation", back: "Top down, first match wins; Implicit Deny at the bottom."}
+  - {id: M14.02.c02, unit: M14.02.u1, tier: 2, front: "Three policy actions", back: "Accept (with profiles), Deny, Isolate (remote browser)."}
+  - {id: M14.02.c03, unit: M14.02.u1, tier: 2, front: "Default policies", back: "Allow-All (editable, deletable) and Implicit Deny (fixed)."}
+  - {id: M14.02.c04, unit: M14.02.u1, tier: 3, front: "SSL agents and policy changes", back: "Changes take effect after the agents reconnect."}
+  - {id: M14.02.c05, unit: M14.02.u1, tier: 3, front: "Wildcard FQDN in a destination", back: "Resolved and cached from matching DNS answers."}
+  - {id: M14.02.c06, unit: M14.02.u2, tier: 3, front: "SPA topology", back: "PoPs are spokes of FortiGate hubs over IPsec overlays with BGP."}
+  - {id: M14.02.c07, unit: M14.02.u2, tier: 3, front: "Max SPA hubs", back: "12."}
+  - {id: M14.02.c08, unit: M14.02.u2, tier: 3, front: "SPA prerequisites", back: "Service-connection subscription per hub; hub in the same FortiCloud account."}
+  - {id: M14.02.c09, unit: M14.02.u2, tier: 4, front: "BGP per overlay vs on loopback", back: "Per overlay is default; loopback adds extra overlays and ADVPN route tags. One design for all hubs."}
+  - {id: M14.02.c10, unit: M14.02.u2, tier: 4, front: "BGP router-ID subnet size", back: "/28 minimum; larger beyond 16 PoPs or 4,096 agents per PoP."}
+  - {id: M14.02.c11, unit: M14.02.u2, tier: 4, front: "Hub selection methods", back: "Hub health and priority (health-check IP) or BGP MED (priorities ignored)."}
+  - {id: M14.02.c12, unit: M14.02.u2, tier: 4, front: "Never advertise to PoPs", back: "0.0.0.0/0, 0.0.0.0/1, 128.0.0.0/1."}
+  - {id: M14.02.c13, unit: M14.02.u2, tier: 3, front: "Default SPA throughput per PoP", back: "300 Mbps aggregate; more via support."}
+  - {id: M14.02.c14, unit: M14.02.u3, tier: 3, front: "FortiSASE agent-based ZTNA gateway", back: "A FortiGate acting as access proxy, checking cert and posture tags."}
+  - {id: M14.02.c15, unit: M14.02.u3, tier: 4, front: "ZTNA for UDP apps needs", back: "FortiClient 7.4.5+, FortiOS 7.6.0+, HTTP/3 on the ZTNA virtual server, UDP enabled on the app."}
+  - {id: M14.02.c16, unit: M14.02.u3, tier: 3, front: "Posture tag rule examples", back: "OS version, domain, running process, firewall on, AV running."}
+  - {id: M14.02.c17, unit: M14.02.u3, tier: 4, front: "Tag logic", back: "Per rule type AND or OR by default; custom logic with rule IDs."}
+  - {id: M14.02.c18, unit: M14.02.u4, tier: 3, front: "Application access matrix", back: "App, users, path (SPA/ZTNA/SIA+CASB), posture, owner sign-off."}
+
+quiz:
+  - id: M14.02.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "You add 'Block-Gambling' for all agent users, but users still reach gambling sites. Policy list: Allow-All (seq 1), Block-Gambling (seq 2), Implicit Deny. Why?"
+    options:
+      - {id: a, text: "Allow-All matches first because evaluation is top down, so the block is never reached", correct: true}
+      - {id: b, text: "Gambling is a web-filter category, so a deny policy can't match it without a profile", trap: near-miss, why_wrong: "Category blocking via a profile is valid, but the order problem means no later policy matches anyway."}
+      - {id: c, text: "SSL agents haven't reconnected yet, so they're still using the previous policy list", trap: near-miss, why_wrong: "Possible for SSL agents briefly, but the order issue persists after any reconnect."}
+      - {id: d, text: "Implicit Deny takes precedence over custom deny policies when they overlap for a user", trap: misconception, why_wrong: "Implicit Deny only catches what nothing above it matched."}
+    explanation: "First match wins. Move Block-Gambling above Allow-All (or use a web-filter profile on the allow policy)."
+  - id: M14.02.q02
+    type: single
+    tier: 4
+    stem: "After connecting the DC hub for SPA, remote users lose internet access and the PoP health degrades. The hub advertises 10.0.0.0/8, 172.16.0.0/12 and 0.0.0.0/1 + 128.0.0.0/1. What's the cause?"
+    options:
+      - {id: a, text: "The two /1 prefixes pull the PoP's internet-bound traffic into the SPA tunnel", correct: true}
+      - {id: b, text: "The 10.0.0.0/8 prefix overlaps the IPAM pool and breaks agent address assignment", trap: near-miss, why_wrong: "Overlap is a real risk, but 100.65.0.0/16 (default pool) isn't inside 10/8; the /1s explain the internet loss."}
+      - {id: c, text: "The hub selection method must be BGP MED when a hub advertises more than two prefixes", trap: misconception, why_wrong: "No such rule; the selection method is independent of the number of prefixes."}
+      - {id: d, text: "The hub's ASN differs from FortiSASE's ASN, so eBGP routes take over the default route", trap: near-miss, why_wrong: "Different ASNs are supported (eBGP); what matters is which prefixes are advertised."}
+    explanation: "0.0.0.0/1 + 128.0.0.0/1 together cover the whole internet and beat the PoP's default route. Advertise only the private prefixes meant for SPA."
+  - id: M14.02.q03
+    type: single
+    tier: 4
+    stem: "Two DC hubs, both healthy. The customer wants traffic to prefer DC1 and fail over to DC2, using priorities set in FortiSASE. Which selection method?"
+    options:
+      - {id: a, text: "Hub health and priority, with a health-check IP behind each hub", correct: true}
+      - {id: b, text: "BGP MED, with the priorities typed into each service connection", trap: near-miss, why_wrong: "With BGP MED, user-defined priorities are ignored; the hubs' MED decides."}
+      - {id: c, text: "BGP on loopback, because it is the design that supports failover", trap: misconception, why_wrong: "Failover works with either routing design; selection is a separate setting."}
+      - {id: d, text: "Endpoint-to-endpoint traffic, so the PoPs learn the hub priority", trap: irrelevant, why_wrong: "That toggle allows agent-to-agent traffic through the hub; it has nothing to do with hub preference."}
+    explanation: "Hub health and priority: the PoP picks the highest-priority hub whose health check is up."
+  - id: M14.02.q04
+    type: single
+    tier: 3
+    stem: "The finance app should be reachable only from domain-joined laptops with the firewall on and AV running. Which FortiSASE feature enforces this per app?"
+    options:
+      - {id: a, text: "Agent-based ZTNA through a FortiGate gateway, with a posture tag in the ZTNA policy", correct: true}
+      - {id: b, text: "An SPA policy to the hub that allows the finance subnet for the Finance user group", trap: near-miss, why_wrong: "Controls who reaches the network, not the device posture per app."}
+      - {id: c, text: "A web-filter profile on the SIA policy that blocks the app for non-domain users", trap: misconception, why_wrong: "The app is private; SIA web filtering doesn't evaluate device posture."}
+      - {id: d, text: "An endpoint profile with split tunnel that sends only domain-joined laptops in", trap: near-miss, why_wrong: "Split tunnel steers traffic; it doesn't check posture or authorize per app."}
+    explanation: "ZTNA checks identity (client certificate) and posture tags per session at the FortiGate gateway."
+  - id: M14.02.q05
+    type: output
+    tier: 4
+    format: first-step
+    output: |
+      Tagging rule "Finance-Ready" (Windows)
+        Rule 1  Windows Firewall  enabled
+        Rule 2  Antivirus         running
+        Rule 3  AD domain         corp.andes.local
+        Logic   1 and 2 and 3
+      Endpoints tagged Finance-Ready: 412 of 480 (yesterday 474 of 480)
+      Helpdesk: "finance app denied" tickets since 08:00: 61
+    stem: "What do you check first?"
+    options:
+      - {id: a, text: "Which of the three rules the 62 newly failing laptops break, starting with the AV state", correct: true}
+      - {id: b, text: "Whether the FortiGate ZTNA gateway lost its authorization in the FortiSASE connectors", trap: near-miss, why_wrong: "Then all 480 would fail, and the tag count in FortiSASE wouldn't have dropped."}
+      - {id: c, text: "Whether the logic should be changed to '1 or 2 or 3' so that the laptops pass again", trap: misconception, why_wrong: "Weakens the control to hide the cause; first find out why posture changed."}
+      - {id: d, text: "Whether the laptops lost their client certificates after last night's FortiClient update", trap: near-miss, why_wrong: "Possible, but the tag count itself dropped, which points at a failing rule, not certificates."}
+    explanation: "The tag count fell overnight, so posture changed on ~62 laptops: find which rule fails (an AV service stopped by an update is common), fix the endpoints, keep the control."
+  - id: M14.02.q06
+    type: multi
+    tier: 3
+    stem: "Which are prerequisites for connecting a FortiGate hub for SPA? Select all that apply."
+    options:
+      - {id: a, text: "An SPA service-connection subscription for that FortiGate", correct: true}
+      - {id: b, text: "The FortiGate registered in the same FortiCloud account as FortiSASE", correct: true}
+      - {id: c, text: "Network > BGP settings configured before the service connection", correct: true}
+      - {id: d, text: "The hub placed in a different ASN so that eBGP can be used", trap: near-miss, why_wrong: "Same-ASN (iBGP) hubs are supported too."}
+      - {id: e, text: "FortiManager managing the hub so FortiSASE can push its config", trap: misconception, why_wrong: "FortiSASE doesn't require FortiManager for SPA."}
+    explanation: "Subscription, same FortiCloud account, and the common BGP settings before any service connection."
+  - id: M14.02.q07
+    type: single
+    tier: 3
+    stem: "Partners allow access to their portal only from listed source IPs. How do you give FortiSASE users access?"
+    options:
+      - {id: a, text: "Use the instance's dedicated egress IPs and give those to the partner for their list", correct: true}
+      - {id: b, text: "Route that portal through the SPA hub so the users exit from the data centre address", trap: near-miss, why_wrong: "Works as a workaround but hairpins internet traffic through the DC; dedicated egress IPs exist for this."}
+      - {id: c, text: "Use a split-tunnel rule so the users reach the portal from their home connections", trap: near-miss, why_wrong: "Home IPs are unpredictable and the traffic loses inspection."}
+      - {id: d, text: "Ask the partner to allow the published FortiSASE address ranges of every PoP worldwide", trap: misconception, why_wrong: "Shared ranges would allow other tenants too; that defeats the partner's control."}
+    explanation: "Dedicated egress IPs per PoP make the source predictable and unique to the customer."
+  - id: M14.02.q08
+    type: single
+    tier: 4
+    stem: "A 40-port legacy ERP client in the DC must reach 900 employees from day one; contractors need one internal web app with posture checks. Which split is best?"
+    options:
+      - {id: a, text: "SPA through the DC hub for the ERP, and ZTNA with posture tags for the contractors' app", correct: true}
+      - {id: b, text: "ZTNA for both, defining each ERP port as its own private application in FortiSASE", trap: near-miss, why_wrong: "Possible but heavy for a 40-port legacy client; SPA fits network-style access for employees."}
+      - {id: c, text: "SPA for both, with a policy that limits contractors to the web app's address and port", trap: near-miss, why_wrong: "Controls the path but not device posture for contractors."}
+      - {id: d, text: "SIA with dedicated egress IPs for both, publishing the ERP and the web app on the internet", trap: misconception, why_wrong: "Exposes private apps to the internet; the opposite of the goal."}
+    explanation: "Match the path to the app: network access for the legacy ERP, per-app posture-checked access for contractors."
+  - id: M14.02.q09
+    type: text
+    tier: 3
+    stem: "What is the maximum number of FortiGate hubs FortiSASE SPA supports?"
+    accept: ["12", "twelve"]
+    explanation: "Up to 12 hubs."
+
+labs:
+  - id: M14.02.lab1
+    title: SPA network settings for two DC hubs
+    goal: "Fill the FortiSASE SPA network configuration for a dual-DC customer."
+    worked:
+      config: |
+        # Network > BGP
+        #   Routing design:        BGP per overlay (default; same for all hubs)
+        #   BGP router ID subnet:  10.251.1.0/27   (one loopback per PoP; /28 minimum, /27 for headroom)
+        #   SPA hubs belong to:    FortiSASE autonomous system (iBGP), ASN 65400
+        #   Hub selection:         Hub health and priority
+        #   Health check IP:       10.11.11.11 (a server behind each hub)
+        #   Endpoint-to-endpoint:  Disabled
+        # Operations > Secure private access > Create (one per hub)
+        #   DC1: remote gateway 200.10.1.1, PSK, BGP peer 10.251.1.254, overlay ID 1, priority higher
+        #   DC2: remote gateway 200.20.1.1, PSK, BGP peer 10.251.1.253, overlay ID 2, priority lower
+        # Hub side: advertise 10.10.0.0/16 and 10.20.0.0/16 only; never 0/0, 0/1, 128/1
+    faded:
+      template: |
+        # Router ID subnet at least /{{28}}
+        # Never advertise 0.0.0.0/0, 0.0.0.0/1 or {{128.0.0.0/1}}
+        # Prefer DC1 with hub {{health}} and priority
+    solo:
+      prompt: "Write the four SPA network decisions, one per line: design, router id, asn, selection."
+      required: ["overlay", "router", "asn", "selection"]
+      solution: |
+        routing design: BGP per overlay
+        router ID subnet /28 or larger
+        ASN: same AS (iBGP) or different (eBGP)
+        hub selection: health and priority or MED
+      notes: "Then the prefixes the hubs advertise."
+
+scenarios:
+  - id: M14.02.sc1
+    kind: situation
+    tier: 4
+    title: "The application access matrix nobody wanted to write"
+    situation: |
+      A bank wants FortiSASE live in 10 weeks: 3,000 employees, 400 contractors, 70 internal apps, M365. The project
+      sponsor says "just let everyone reach the data centre like the VPN does today."
+    ask: "How do you steer the design, and what do you deliver first?"
+    right_thinking:
+      - "Recognise the risk: full network access recreates the VPN's lateral movement problem"
+      - "Propose the access matrix: apps × users × path × posture × owner"
+      - "Quick win: SPA for employees on legacy apps day one, ZTNA for contractors and sensitive apps, CASB for M365"
+      - "Phase: matrix in week 2, pilot in week 4, waves after"
+    what: "An application access matrix driving a mixed SPA/ZTNA/CASB design."
+    why: "It's the only way to move from network trust to app trust without breaking the business."
+    how: ["Risk explained", "Matrix", "Mixed paths", "Phased rollout"]
+    model_answer: |
+      "I'd agree that day one must work like today for employees, so legacy DC apps go over SPA through the DC hub.
+      But contractors and the sensitive apps shouldn't get the whole network, so those go through ZTNA with posture
+      checks, and M365 gets SIA plus CASB. To decide that app by app, the first deliverable is an application access
+      matrix in week two: each app, who uses it, the path, the posture needed and the owner who signs it."
+    best_way: "Same access for employees on day one, app-level access where the risk is, decided in a signed matrix."
+    rubric: ["names the risk", "matrix", "mixed paths", "phased"]
+
+interview:
+  - id: M14.02.t01
+    stage: technical
+    question: "How does FortiSASE reach private applications in a customer's data centre?"
+    testing: "SPA architecture"
+    framework: "PoP as spoke → overlays + BGP → selection → hygiene"
+    model_answer: |
+      "The PoPs act as spokes of the customer's FortiGate hubs — SD-WAN hubs or an NGFW converted to an SPA hub —
+      over IPsec overlays with BGP. You set the routing design, router-ID subnet and ASN once, then a service connection
+      per hub, up to 12. Hub selection is either health and priority with a health-check IP, or BGP MED from the hubs.
+      The one rule I'd stress: the hubs advertise only the private prefixes, never a default route or the two /1s,
+      or the PoP's own internet traffic falls into the tunnel."
+    best_way: "PoPs as spokes over IPsec and BGP, a clear hub preference, and only private prefixes advertised."
+    target: "0:50"
+  - id: M14.02.t02
+    stage: technical
+    question: "When would you use ZTNA instead of SPA?"
+    testing: "Access-path judgement"
+    framework: "App, user, risk"
+    model_answer: |
+      "When access should be per application and depend on the device's posture — contractors, sensitive apps,
+      anything where network-level access would be too broad. SPA is better for legacy, multi-port apps that employees
+      need on day one. Most customers end up with both, decided app by app in an access matrix."
+    best_way: "ZTNA where posture and least access matter; SPA for broad legacy access."
+    target: "0:35"

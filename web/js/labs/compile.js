@@ -4,6 +4,7 @@
 // FortiGate (policies, VIPs, NAT, allowaccess) and the servers each device runs.
 // The simulator still explains what happened (policy ids, trace lines); the kernel decides whether
 // packets get through.
+import { NOT_INTERNET_CIDRS } from "./sim.js";
 import { FortiGate } from "./fgt.js";
 import { ipToInt, intToIp, parsePrefix, prefixStr, network, isPrivate } from "./net.js";
 
@@ -146,6 +147,16 @@ export function compile(lab) {
     }
     const names = {};
     for (const [n, ip] of lab.names) names[n] = intToIp(ip);
+    // the real Internet's door (one per lab): DNS questions and pings for real addresses go out
+    // through FortiTatake's relay; web requests for them get the lab's stand-in server
+    if (!topo.internet) {
+      const labIps = c.hosts.map((h) => intToIp(h.ip));
+      topo.internet = { ns: c.id, hosts: c.hosts.filter((h) => h.services.has("icmp")).map((h) => intToIp(h.ip)) };
+      topo.routes.push({ dev: c.id, dst: "0.0.0.0/0", type: "blackhole" });
+      topo.devices.find((d) => d.name === c.id).sysctl["net.ipv4.icmp_echo_ignore_all"] = "1"; // the agent answers pings
+      binds.push({ proto: "tcp", port: 18080, web: "http" }, { proto: "tcp", port: 18443, web: "https" });
+      nft[c.id] = `table ip ftk {\n chain ftk_pre { type nat hook prerouting priority -100; policy accept;\n${labIps.length ? `  ip daddr { ${labIps.join(", ")} } return\n` : ""}  ip daddr { ${NOT_INTERNET_CIDRS.join(", ")} } return\n  tcp dport 80 redirect to :18080\n  tcp dport 443 redirect to :18443\n }\n}`;
+    }
     listen.push({ ns: c.id, binds, names });
   }
 

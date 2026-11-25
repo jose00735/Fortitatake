@@ -1,0 +1,363 @@
+id: M14.01
+title: "FortiSASE architecture and onboarding: PoPs, steering methods, identity and the move to IPsec agents"
+stage: S14
+stage_title: "S14 · FortiSASE (consultant level)"
+order: 16.1
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Explain SIA, SPA and SSA and which steering method (agent, thin edge, private proxy, agentless proxy) delivers each
+  - Plan user onboarding with SSO, LDAP or RADIUS, invitation codes and endpoint profiles
+  - Run the SSL-to-IPsec agent transition without breaking SSO, groups or policies
+  - Design around the platform's reserved address space, ports and dedicated egress IPs
+sources:
+  - "FortiSASE 7.4 Administration Guide: Introduction (pp. 7–22), IPsec remote agent support and SSL to IPsec transition mode (pp. 50–59)"
+  - "FortiSASE 7.4 Administration Guide: Edge devices — FortiExtender, FortiAP, Branch On-ramp (pp. 163–256), Network: IP management, proxy configuration (pp. 287–327)"
+  - "FortiSASE 7.4 Administration Guide: Client onboarding (pp. 885–946), FAQs (pp. 962–978)"
+
+units:
+  - id: M14.01.u1
+    title: "What FortiSASE is, in one diagram's worth of words"
+    tier: 2
+    est_min: 13
+    body: |
+      FortiSASE is FortiOS security delivered from Fortinet-operated **security points of presence (PoPs)**. Users
+      and sites send traffic to the nearest PoP; the PoP applies policy and the familiar profiles (antivirus,
+      application control, DLP, DNS filter, IPS, file filter, web filter, SSL inspection) and forwards it.
+
+      **Three use cases:**
+
+      - **SIA — Secure Internet Access**: web and internet traffic inspected at the PoP.
+      - **SPA — Secure Private Access**: private apps in the data centre or branches, reached through the PoP over
+        IPsec and BGP to the customer's FortiGate hubs (or through ZTNA).
+      - **SSA — Secure SaaS Access**: SaaS control with inline and API-based CASB.
+
+      **Four steering methods**, and all four can serve SIA, SPA and SSA:
+
+      | Method | What sends traffic | Typical fit |
+      |---|---|---|
+      | **Agent** (FortiClient) | Always-up tunnel from the endpoint | Managed laptops anywhere |
+      | **IPsec with routing** (thin edge, Branch On-ramp) | FortiExtender, FortiAP, FortiGate or a third-party IPsec device | Small sites, branches with a LAN |
+      | **IPsec with explicit proxy** (private proxy) | Site traffic to a proxy reached over IPsec | Sites that already use explicit proxy |
+      | **Agentless** (proxy) | Browser or OS proxy settings, often via a PAC file | Unmanaged or BYOD devices, browsers only |
+
+      **What is different from a FortiGate project:** you don't size hardware or HA; you size **users,
+      subscription tier and PoPs**. The skills that carry over are policy design, profiles, SSL inspection,
+      identity, IPsec, BGP and troubleshooting.
+
+      :::recall
+      Q: What do SIA, SPA and SSA stand for?
+      A: Secure Internet Access, Secure Private Access, Secure SaaS Access.
+      :::
+
+      :::why
+      Q: Why can't agentless proxy protect everything an agent protects?
+      A: Only traffic that uses the proxy settings (mostly browsers) goes to the PoP; other applications and protocols bypass it.
+      :::
+  - id: M14.01.u2
+    title: "Users, identity and endpoint profiles"
+    tier: 3
+    est_min: 14
+    body: |
+      **User sources:** local users (bulk import), LDAP, RADIUS, SAML SSO (for example Microsoft Entra ID), FSSO, and
+      SCIM provisioning where enabled. Groups from these sources drive policies.
+
+      **Agent onboarding flow:**
+
+      1. Configure identity and user groups.
+      2. Create security profile groups and policies.
+      3. Invite users (the invitation carries a code) or pre-provision devices with the installer from the portal.
+      4. FortiClient connects to the FortiSASE endpoint management service with the code, receives its
+         **endpoint profile** (tunnel type, split tunnel, ZTNA, posture) and builds the tunnel.
+      5. Policies apply; logs appear in the portal.
+
+      FortiSASE includes its own endpoint management (an EMS instance) and needs it to orchestrate the agents.
+      A customer with an on-premises EMS or FortiClient Cloud **moves** endpoints to it; the old EMS configuration
+      is not carried over, so the profiles are rebuilt (the endpoints can be moved with EMS's switch-to-cloud
+      action and the invitation code, in waves).
+
+      **Reauthentication.** For agent users, a global authentication timeout forces users to log in again after a
+      set time whether they are active or idle; the default is 24 hours, adjustable from 2 minutes to 48 hours.
+
+      **Split tunnel.** On Windows, FortiClient supports application-based split tunnel or full tunnel; other
+      platforms use full tunnel. Split DNS sends internal names to internal resolvers.
+
+      :::recall
+      Q: What does an endpoint profile decide for FortiClient?
+      A: Tunnel type (SSL/IPsec), split tunnel and DNS, ZTNA settings, posture settings — the client's behaviour.
+      :::
+
+      :::why
+      Q: Why must a customer migrating from on-prem EMS plan to rebuild profiles?
+      A: FortiSASE uses its own EMS instance and the shift does not preserve the old EMS configuration.
+      :::
+  - id: M14.01.u3
+    title: "The SSL-to-IPsec agent transition"
+    tier: 4
+    est_min: 16
+    body: |
+      New FortiSASE instances use **IPsec** for remote agents (IKEv2 with mode-config, FortiClient 7.4). Instances
+      that used SSL tunnels are being moved one way to IPsec (Fortinet plans the forced migration in 2027), and
+      **SSL to IPsec transition mode** runs both side by side so you can test first. This is a real PS project:
+
+      **What transition mode changes:**
+
+      - A range for IPsec clients is carved out of the existing agent address pool (256 by default; the "max
+        concurrent IPsec clients" setting allows 256 to 3,840, and changes take 10–15 minutes to reach all PoPs).
+        Because it's inside the old pool, firewall rules and allow-lists usually still match.
+      - A **Default IPsec endpoint profile** appears, disabled. You enable it, assign it to users or groups, and
+        order it above the SSL Default profile for the users you're moving.
+      - **SSO is duplicated.** IPsec uses its own Agent SSO settings: FortiSASE copies the SSL ones and appends
+        port **11443** to the service-provider URLs. The IdP must be updated with those new SP values, or IPsec
+        logins fail.
+      - **Groups and policies.** Remote-server group matches distinguish "Agent SSO" (IPsec) from "Agent SSO
+        (Legacy)" (SSL). Groups that only reference the legacy one won't match IPsec users, so policies built on them
+        won't apply.
+      - **LDAP users on IPsec** need EAP for LDAP authentication enabled.
+
+      **A wave plan:** pilot group on the IPsec profile → validate SSO, policies, split tunnel, logs → expand by
+      groups → retire SSL profiles; for full migration of the instance, a FortiCare ticket.
+
+      :::recall
+      Q: What port does FortiSASE append to the SP configuration for IPsec agent SSO?
+      A: 11443 — the IdP must be given the new SP values.
+      :::
+
+      :::why
+      Q: Why can IPsec users authenticate but still hit the wrong policies after the transition?
+      A: Their groups must match through the IPsec "Agent SSO" source; groups and policies built on "Agent SSO (Legacy)" don't match them.
+      :::
+  - id: M14.01.u4
+    title: "Edges, proxy users and the platform's reserved space"
+    tier: 3
+    est_min: 15
+    body: |
+      **Thin edge.** A FortiExtender as a LAN extension turns a micro-branch into a SASE site: the LAN behind it
+      gets addresses from FortiSASE's IP management (IPAM) and its traffic goes over a backhaul to the PoP. It must
+      be registered in the same FortiCloud account and needs a thin-edge licence. FortiAPs can do the same for
+      wireless sites.
+
+      **Branch On-ramp.** A branch IPsec device (FortiGate or third party) tunnels to an on-ramp PoP. With FortiGate
+      branches, iBGP (BGP per overlay) carries the branch subnets; third-party devices use static routes. Several
+      tunnels on one PoP need unique peer IDs (third-party) or unique network IDs (FortiGate).
+
+      **Agentless users.** A PAC file (hosted by FortiSASE or custom) tells browsers what to proxy. Exclude the
+      identity provider and sites that break behind a proxy. With deep inspection, agentless and site-based users
+      need the FortiSASE CA installed manually (no agent to push it).
+
+      **Reserved space and ports** (newer instances):
+
+      - Addresses: the agent and edge IPAM pools (100.65.0.0/16 by default), the edge control-plane subnet
+        (10.252.0.0/16 by default) and 10.253.0.0/16 are not available to the customer's networks.
+      - Ports at the PoP include TCP 443 (portal, SSL), UDP 500/4500 (IKE, NAT-T), 5246 (CAPWAP), TCP 7831 (SAML),
+        8008/8010/8015/8020 (web filter) and 9443 (proxy). The four web-filter ports cannot be used for SPA apps
+        without a support ticket.
+
+      **Dedicated public IPs.** Standard, Advanced and Comprehensive subscriptions include dedicated egress IPs per
+      PoP; geolocation changes and IP anchoring are requested through support (anchoring needs an add-on and at least
+      500 users). When dedicated IPs are added or change, update SaaS conditional-access lists, on-prem outbound
+      filters and SPA-hub policies.
+
+      :::recall
+      Q: Which subnet does FortiSASE use by default for agent and edge IPAM?
+      A: 100.65.0.0/16.
+      :::
+
+      :::why
+      Q: Why can enabling dedicated egress IPs lock users out of a SaaS app?
+      A: If the SaaS allows logins only from listed source IPs (conditional access), the new PoP addresses must be added first.
+      :::
+
+cards:
+  - {id: M14.01.c01, unit: M14.01.u1, tier: 1, front: "SIA / SPA / SSA", back: "Secure Internet Access, Secure Private Access, Secure SaaS Access."}
+  - {id: M14.01.c02, unit: M14.01.u1, tier: 2, front: "Four FortiSASE steering methods", back: "FortiClient agent; IPsec with routing (thin edge, on-ramp); IPsec with explicit proxy; agentless proxy."}
+  - {id: M14.01.c03, unit: M14.01.u1, tier: 2, front: "Security profiles at the PoP", back: "AV, application control, DLP, DNS filter, IPS, file filter, web filter, SSL inspection."}
+  - {id: M14.01.c04, unit: M14.01.u1, tier: 2, front: "What you size in a SASE project", back: "Users, subscription tier and PoPs — not hardware or HA."}
+  - {id: M14.01.c05, unit: M14.01.u2, tier: 2, front: "FortiSASE user sources", back: "Local, LDAP, RADIUS, SAML SSO (e.g. Entra ID), FSSO, SCIM where enabled."}
+  - {id: M14.01.c06, unit: M14.01.u2, tier: 3, front: "EMS shift to FortiSASE", back: "FortiSASE has its own EMS; old EMS config isn't preserved; move endpoints with the invitation code, in waves."}
+  - {id: M14.01.c07, unit: M14.01.u2, tier: 3, front: "Agent reauthentication timeout", back: "Default 24 h; range 2 minutes to 48 hours; applies active or idle."}
+  - {id: M14.01.c08, unit: M14.01.u2, tier: 3, front: "Split tunnel support", back: "Windows: application-based split or full tunnel. Other platforms: full tunnel."}
+  - {id: M14.01.c09, unit: M14.01.u3, tier: 3, front: "IPsec agent tunnel basics", back: "IKEv2 with mode-config, FortiClient 7.4."}
+  - {id: M14.01.c10, unit: M14.01.u3, tier: 4, front: "Max concurrent IPsec clients (transition mode)", back: "256 by default, 256–3,840; 10–15 min to apply to all PoPs."}
+  - {id: M14.01.c11, unit: M14.01.u3, tier: 4, front: "IPsec agent SSO change", back: "SP URLs get port 11443 appended; update the IdP."}
+  - {id: M14.01.c12, unit: M14.01.u3, tier: 4, front: "Agent SSO vs Agent SSO (Legacy)", back: "IPsec vs SSL remote server in group matches; policies must use groups that match IPsec users."}
+  - {id: M14.01.c13, unit: M14.01.u3, tier: 3, front: "LDAP users on IPsec agents need", back: "EAP for LDAP authentication enabled."}
+  - {id: M14.01.c14, unit: M14.01.u4, tier: 3, front: "FortiExtender LAN extension", back: "Micro-branch: LAN addressed by FortiSASE IPAM, backhaul to the PoP; same FortiCloud account, thin-edge licence."}
+  - {id: M14.01.c15, unit: M14.01.u4, tier: 3, front: "Branch On-ramp routing", back: "FortiGate branches: iBGP (BGP per overlay). Third-party: static routes."}
+  - {id: M14.01.c16, unit: M14.01.u4, tier: 3, front: "Default IPAM pool", back: "100.65.0.0/16."}
+  - {id: M14.01.c17, unit: M14.01.u4, tier: 3, front: "Default edge control-plane subnet", back: "10.252.0.0/16 (and 10.253.0.0/16 is also reserved)."}
+  - {id: M14.01.c18, unit: M14.01.u4, tier: 3, front: "FortiSASE proxy port", back: "9443."}
+  - {id: M14.01.c19, unit: M14.01.u4, tier: 4, front: "Ports reserved for web filter (not usable for SPA)", back: "8008, 8010, 8015, 8020."}
+  - {id: M14.01.c20, unit: M14.01.u4, tier: 4, front: "Dedicated IPs change → update", back: "SaaS conditional access, on-prem outbound filters, SPA-hub policies."}
+
+quiz:
+  - id: M14.01.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Contractors use their own unmanaged laptops and only need web apps. Which FortiSASE steering method fits?"
+    options:
+      - {id: a, text: "Agentless proxy with a PAC file, authenticating users at the proxy", correct: true}
+      - {id: b, text: "FortiClient agent with an endpoint profile pushed from the FortiSASE portal", trap: near-miss, why_wrong: "Best protection, but contractors' unmanaged devices usually can't take your agent."}
+      - {id: c, text: "A FortiExtender LAN extension shipped to each contractor's home", trap: near-miss, why_wrong: "A site solution for a LAN, not for individual unmanaged laptops."}
+      - {id: d, text: "Branch On-ramp IPsec from each contractor's home router to a PoP", trap: misconception, why_wrong: "Home routers aren't managed branch devices; this is for sites."}
+    explanation: "Agentless proxy suits unmanaged devices and browser-based apps; accept that non-browser traffic isn't covered."
+  - id: M14.01.q02
+    type: single
+    tier: 4
+    stem: "After enabling SSL-to-IPsec transition mode and moving a pilot group to the IPsec profile, the pilot users get an SSO error at login. SSL users are fine. What is the most likely cause?"
+    options:
+      - {id: a, text: "The IdP lacks the new service-provider values with port 11443 for IPsec SSO", correct: true}
+      - {id: b, text: "The Default IPsec endpoint profile is still disabled for the pilot group's users", trap: near-miss, why_wrong: "Then the clients wouldn't try IPsec at all; they'd stay on SSL."}
+      - {id: c, text: "The pilot group's policies still reference groups matched by Agent SSO (Legacy)", trap: near-miss, why_wrong: "That breaks policy matching after login, not the SSO login itself."}
+      - {id: d, text: "The max concurrent IPsec clients value is set below the pilot group's size", trap: near-miss, why_wrong: "Would refuse tunnels beyond the limit, not produce an SSO error for everyone."}
+    explanation: "IPsec agent SSO uses a copy of the SSO settings with :11443 appended to the SP URLs; the IdP must be updated with them."
+  - id: M14.01.q03
+    type: single
+    tier: 4
+    stem: "Pilot users now log in over IPsec but land on the implicit deny for apps they reached yesterday over SSL. What do you check?"
+    options:
+      - {id: a, text: "Whether the groups in those rules are matched through the IPsec SSO source", correct: true}
+      - {id: b, text: "Whether the IPsec client range sits outside the old SSL pool used by the policies", trap: near-miss, why_wrong: "The IPsec range is carved inside the old pool, so address-based rules usually still match."}
+      - {id: c, text: "Whether the endpoint profile has split tunnel enabled for the internal application", trap: near-miss, why_wrong: "Split tunnel decides what enters the tunnel, not which policy matches traffic inside it."}
+      - {id: d, text: "Whether the policies were pushed to the PoPs, since IPsec agents need a policy sync", trap: misconception, why_wrong: "There's no separate push for IPsec; the policy didn't match the users' groups."}
+    explanation: "Groups must match through the IPsec Agent SSO source; groups built on the legacy (SSL) source don't match IPsec users, so the policies fall through to the implicit deny."
+  - id: M14.01.q04
+    type: single
+    tier: 3
+    stem: "A customer's branch LANs use 100.65.10.0/24 because 'it's CGNAT space nobody uses'. What's the issue for FortiSASE?"
+    options:
+      - {id: a, text: "It overlaps the default IPAM pool for agents and edges, 100.65.0.0/16", correct: true}
+      - {id: b, text: "It overlaps the default edge control-plane subnet, 10.252.0.0/16", trap: near-miss, why_wrong: "That subnet is 10.252.0.0/16, not in 100.64.0.0/10."}
+      - {id: c, text: "It is public address space, so the PoPs would route it to the internet", trap: misconception, why_wrong: "100.64.0.0/10 is shared address space (RFC 6598), not public."}
+      - {id: d, text: "It is too small, since the IPAM pool needs a /16 per PoP", trap: near-miss, why_wrong: "The size is not the problem; the overlap with the reserved pool is."}
+    explanation: "100.65.0.0/16 is FortiSASE's default IPAM pool for agents and edge devices, so customer networks must avoid it (or choose another pool range)."
+  - id: M14.01.q05
+    type: multi
+    tier: 3
+    stem: "Dedicated egress IPs are being added to the PoPs next weekend. What must be updated to avoid outages? Select all that apply."
+    options:
+      - {id: a, text: "SaaS conditional-access and IP allow-lists that name the old PoP addresses", correct: true}
+      - {id: b, text: "On-premises outbound filters that allow traffic to the PoP addresses", correct: true}
+      - {id: c, text: "Policies on the SPA hub that restrict the IPsec mode-config address space", correct: true}
+      - {id: d, text: "The PAC file, so browsers send traffic to the new egress addresses", trap: near-miss, why_wrong: "The PAC file points clients at the proxy entry, not at egress addresses."}
+      - {id: e, text: "Endpoint profiles, so agents learn which egress address to use", trap: misconception, why_wrong: "Egress is chosen at the PoP; agents don't select it."}
+    explanation: "Anything that trusts the PoP's addresses (SaaS conditional access, on-prem filters, SPA-hub policies) must learn the new ones first."
+  - id: M14.01.q06
+    type: single
+    tier: 3
+    stem: "Which statement about split tunnel for FortiSASE agents is correct?"
+    options:
+      - {id: a, text: "Windows agents support application-based split or full tunnel; other platforms use full tunnel", correct: true}
+      - {id: b, text: "All platforms support application-based split tunnel once IPsec agents are enabled on the instance", trap: near-miss, why_wrong: "Application-based split tunnel is a Windows capability; other platforms use full tunnel."}
+      - {id: c, text: "Split tunnel is configured per policy, so each policy decides what bypasses the PoP", trap: misconception, why_wrong: "It's part of the endpoint profile, decided before traffic reaches the PoP's policies."}
+      - {id: d, text: "macOS agents support split by destination IP, and Windows agents split by FQDN", trap: near-miss, why_wrong: "Invented split by platform; the documented difference is application-based on Windows vs full tunnel elsewhere."}
+    explanation: "On Windows, FortiClient supports application-based split tunnel or full tunnel with FortiSASE; other platforms use full tunnel."
+  - id: M14.01.q07
+    type: order
+    tier: 3
+    stem: "Order the SSL-to-IPsec migration for a 2,000-user instance."
+    items: ["Enable transition mode and size max concurrent IPsec clients", "Give the IdP the new SP values (port 11443) and fix group matches", "Enable the Default IPsec profile for a pilot group, ordered above Default", "Validate login, policies, split tunnel and logs with the pilot", "Expand by groups, then retire the SSL profiles"]
+    explanation: "Capacity and identity first, then a pilot, then waves."
+  - id: M14.01.q08
+    type: single
+    tier: 4
+    format: first-step
+    stem: "A customer with 800 users on an on-prem FortiClient EMS buys FortiSASE and wants all laptops moved 'this weekend'. What is the best first step?"
+    options:
+      - {id: a, text: "Rebuild the needed profiles in FortiSASE's EMS and pilot a move with a small group", correct: true}
+      - {id: b, text: "Export the EMS configuration and import it into FortiSASE before moving any of the laptops", trap: near-miss, why_wrong: "The EMS configuration isn't preserved in the shift; profiles must be rebuilt."}
+      - {id: c, text: "Move all 800 endpoints at once with the switch-to-cloud action and the code", trap: near-miss, why_wrong: "Technically possible, but untested profiles on 800 laptops is a weekend outage."}
+      - {id: d, text: "Uninstall FortiClient everywhere and push the FortiSASE installer by GPO", trap: misconception, why_wrong: "Unnecessary churn; EMS can move endpoints to the cloud with the invitation code."}
+    explanation: "FortiSASE uses its own EMS instance and old configuration isn't carried over: rebuild, pilot, then move in waves."
+  - id: M14.01.q09
+    type: text
+    tier: 3
+    stem: "Which port does the FortiSASE explicit proxy use (for example, after dedicated IPs are enabled)?"
+    accept: ["9443", "tcp 9443", "tcp/9443"]
+    explanation: "9443."
+
+labs:
+  - id: M14.01.lab1
+    title: SSL-to-IPsec runbook
+    goal: "Write the runbook for moving a pilot group to IPsec agents."
+    worked:
+      config: |
+        # Pre-checks: FortiClient 7.4 on pilot laptops; transition mode on; max concurrent IPsec clients sized
+        # Identity:   Access & authentication > SSO > IPsec tab: copy SP values (with :11443) into the IdP app
+        # Groups:     create/adjust groups matched by 'Agent SSO' (IPsec), not only 'Agent SSO (Legacy)'
+        # Policies:   reference the IPsec-matched groups (or both during the transition)
+        # LDAP users: enable EAP for LDAP authentication
+        # Profile:    enable 'Default IPsec', assign the pilot group, order above 'Default'
+        # Validate:   login, policy hits in logs, split tunnel/DNS, internal app via SPA, reconnect after sleep
+        # Rollback:   unassign the pilot group from the IPsec profile; clients fall back to SSL
+    faded:
+      template: |
+        # IdP needs the SP values with port {{11443}}
+        # Groups for IPsec match through {{Agent SSO}}
+        # Enable the {{Default IPsec}} profile and order it above Default
+    solo:
+      prompt: "Write the five transition checks, one per line: client, idp, groups, profile, validate."
+      required: ["forticlient", "idp", "group", "profile", "validat"]
+      solution: |
+        FortiClient 7.4 on pilot laptops
+        IdP updated with :11443 SP values
+        groups matched via Agent SSO
+        Default IPsec profile enabled and ordered
+        validate login, policies, logs
+      notes: "Rollback is unassigning the profile."
+
+scenarios:
+  - id: M14.01.sc1
+    kind: situation
+    tier: 4
+    title: "VPN replacement for 1,200 remote users"
+    situation: |
+      A logistics company runs FortiGate SSL VPN for 1,200 remote users, Entra ID for identity, and a DC behind a
+      FortiGate. Auditors want internet traffic of remote users inspected too. They bought FortiSASE.
+    ask: "Outline the delivery plan."
+    right_thinking:
+      - "Discovery: apps (internet, SaaS, private), user groups, devices (managed or not), identity, current split tunnel"
+      - "Identity first: Entra ID SSO for agents (IPsec), groups mapped to policies"
+      - "SIA policies and profiles, SSL inspection with CA distribution"
+      - "SPA for private apps: DC FortiGate as hub (BGP per overlay), or ZTNA for specific apps"
+      - "Pilot, waves by group, success criteria, decommission SSL VPN"
+      - "Logs to their FortiAnalyzer through SPA for the SOC"
+    what: "Identity-first SASE rollout: SIA, then SPA, in waves, with SOC logging."
+    why: "Identity and private access are where SASE rollouts break; doing them first de-risks the waves."
+    how: ["Discovery", "SSO and groups", "SIA policies", "SPA hub", "Pilot and waves", "Logging"]
+    model_answer: |
+      "First discovery: which apps are internet, SaaS or private, and whether every laptop is managed. Then identity:
+      Entra ID SSO for IPsec agents, with the groups that will drive policy. We build SIA policies and profiles,
+      including SSL inspection with the CA pushed to the laptops. For private apps the DC FortiGate becomes an SPA hub
+      over IPsec and BGP. Then a 50-user pilot, waves by department with clear success criteria, and only then we turn
+      off SSL VPN. Logs go to their FortiAnalyzer over SPA so the SOC sees remote users."
+    best_way: "Identity first, then internet, then private apps, in waves — and the SOC sees it all."
+    rubric: ["discovery", "identity first", "SIA and SPA", "waves with criteria", "SOC logging"]
+
+interview:
+  - id: M14.01.t01
+    stage: technical
+    question: "Explain FortiSASE to a customer who knows FortiGate."
+    testing: "Clear positioning"
+    framework: "Same engine, different place, new sizing"
+    model_answer: |
+      "It's the FortiOS security you know — the same policies and profiles — running in Fortinet's PoPs instead of on
+      your box. Users and sites steer traffic there with FortiClient, a thin edge like FortiExtender, IPsec from a
+      branch, or a browser proxy. It covers internet access, private apps through your FortiGate hubs or ZTNA, and
+      SaaS with CASB. You stop sizing hardware and start sizing users and PoPs."
+    best_way: "Same FortiOS security, delivered from the PoP, sized by users."
+    target: "0:40"
+  - id: M14.01.t02
+    stage: technical
+    question: "You know Netskope well. How does that help with FortiSASE?"
+    testing: "Transferable SSE experience, honestly mapped"
+    framework: "Concept map + honest differences"
+    model_answer: |
+      "The concepts carry over: steering traffic from the client, policy by user and app, SSL inspection, DLP and
+      private app access. At Netskope I rolled the client out through Intune and fixed steering and policy bypasses in
+      real deployments. In FortiSASE the steering lives in endpoint profiles, the policy model is FortiOS, and private
+      access goes through FortiGate SPA hubs or ZTNA — so I'd lean on my FortiOS years there. I'd be clear that my
+      hands-on FortiSASE time is lab and study, not production."
+    best_way: "Same SSE concepts I ran at Netskope, mapped to FortiOS policy and SPA hubs — honest about lab-only time."
+    target: "0:50"

@@ -78,6 +78,11 @@ class Cloud {
 }
 
 // ---------- the lab network ----------
+// addresses that exist on the real Internet (not private, shared, documentation, benchmarking or reserved space)
+const NOT_INTERNET = [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 3]];
+export function realInternet(ip) { return !NOT_INTERNET.some(([n, l]) => (ip >>> (32 - l)) === (ipToInt(n) >>> (32 - l))); }
+export const NOT_INTERNET_CIDRS = NOT_INTERNET.map(([n, l]) => `${n}/${l}`);
+
 export class Lab {
   constructor(def, schemas) {
     this.def = def;
@@ -777,6 +782,14 @@ export class Lab {
     return ip;
   }
 
+  // An address a real DNS server gave for a name (FortiTatake OS): the lab keeps it, so later
+  // lookups in the simulator agree with the real network. No device is created for it.
+  learnName(name, ip) {
+    const n = String(name || "").toLowerCase().replace(/\.$/, "");
+    if (!n || this.names.has(n)) return;
+    this.names.set(n, typeof ip === "number" ? ip : ipToInt(ip));
+  }
+
   // ---------- end-to-end probes (used by hosts, FortiGate ping, and the grader) ----------
   // Send a request from device `fromId` and simulate the reply. Returns a rich result.
   probe(fromId, req) {
@@ -802,7 +815,13 @@ export class Lab {
     let answers = false;
     if (fwd.localAnswer) answers = true;
     else if (target instanceof Host) answers = target.listens(got.proto, got.dport);
-    else if (target instanceof Cloud) { const h = target.hosts.find((x) => x.ip === got.dst); answers = !!h && (got.proto === ICMP ? h.services.has("icmp") : h.services.has(`${PNAME[got.proto]}/${got.dport}`)); }
+    else if (target instanceof Cloud) {
+      const h = target.hosts.find((x) => x.ip === got.dst);
+      // a real Internet address the lab doesn't own: DNS and ping go out through FortiTatake's relay,
+      // web requests get the lab's stand-in server (the same rules FortiTatake OS applies)
+      answers = h ? (got.proto === ICMP ? h.services.has("icmp") : h.services.has(`${PNAME[got.proto]}/${got.dport}`))
+        : realInternet(got.dst) && (got.proto === ICMP || (got.proto === TCP && (got.dport === 80 || got.dport === 443)) || (got.proto === UDP && got.dport === 53));
+    }
     else if (target instanceof Router) answers = got.proto === ICMP || (got.proto === TCP && (got.dport === 22 || got.dport === 23)); // vty lines: SSH and Telnet
     out.reached = target.id;
     out.seenSrc = got.src;

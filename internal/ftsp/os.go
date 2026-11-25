@@ -80,7 +80,7 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	c.n += int64(n)
 	if c.emit != nil && time.Since(c.last) > 250*time.Millisecond {
 		c.last = time.Now()
-		c.emit("sync", map[string]any{"dir": "out", "file": c.file, "done": c.n, "total": c.total})
+		c.emit("sync", map[string]any{"dir": "out", "phase": "transfer", "file": c.file, "done": c.n, "total": c.total})
 	}
 	return n, err
 }
@@ -105,7 +105,12 @@ func (h *Hub) osFile(w http.ResponseWriter, r *http.Request, _ *Device) {
 	}
 	http.ServeFile(cw, r, p)
 	if h.OnOS != nil {
-		h.OnOS("sync", map[string]any{"dir": "out", "file": f, "done": cw.n, "total": cw.total})
+		// the last event of every file says how it ended, so the PC's animation stops
+		phase := "sent"
+		if cw.n < cw.total {
+			phase = "paused"
+		}
+		h.OnOS("sync", map[string]any{"dir": "out", "phase": phase, "file": f, "done": cw.n, "total": cw.total})
 	}
 }
 

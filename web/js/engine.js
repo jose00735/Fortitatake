@@ -130,10 +130,12 @@ function details(st) {
 function powerLink(st, android) {
   const s = st.sync;
   if (!s) return "";
-  const live = Date.now() - s.at < 4000 && s.phase !== "charged" && s.phase !== "failed";
+  // animate only while bytes are moving: a finished, paused or silent transfer stops the flow
+  const live = Date.now() - s.at < 4000 && !["charged", "failed", "sent", "paused"].includes(s.phase);
   const pct = s.total ? Math.min(100, Math.round((100 * s.done) / s.total)) : 0;
   const pcLevel = 100 - pct, phoneLevel = s.phase === "charged" ? 100 : pct;
-  const title = s.phase === "failed" ? "Transfer stopped" : s.phase === "charged" ? "Charged" : s.phase === "verify" ? "Verifying the seal" : android ? "Receiving power from the PC" : "Sending power to the phone";
+  const title = s.phase === "failed" ? "Transfer stopped" : s.phase === "charged" ? "Charged" : s.phase === "verify" ? "Verifying the seal"
+    : s.phase === "sent" ? "Sent to the phone" : s.phase === "paused" || !live ? "Transfer paused (it resumes on the next sync)" : android ? "Receiving power from the PC" : "Sending power to the phone";
   const dev = (name, level, ic) => `<div class="pl-dev"><div class="pl-cell"><i style="height:${level}%"></i></div><span>${ic} ${name}</span></div>`;
   return `<div class="card pl ${live ? "pl-live" : ""} ${s.phase === "charged" ? "pl-done" : ""}">
     <div class="row"><h3 style="margin:0">${esc(title)}</h3><span class="muted small">${s.total ? bytes(s.done) + " of " + bytes(s.total) : ""}</span></div>
@@ -264,6 +266,7 @@ export async function engineView(main) {
       let jobEnded = false;
       for (const e of r.events || []) { apply(st, e); if (e.ev === "job" && e.data && e.data.state !== "start") jobEnded = true; }
       if ((r.events || []).length) renderLive();
+      else if (st.sync) $("[data-link]", main).innerHTML = powerLink(st, status.platform === "android"); // stop a stale animation
       if (jobEnded || Date.now() - lastStatus > 5000) { lastStatus = Date.now(); await refreshStatus(); }
     } catch { /* engine busy */ }
     polling = false;

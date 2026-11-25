@@ -81,13 +81,13 @@ func bench(r req) (map[string]any, error) {
 	ping, _ := probe(req{"ns": "bench0", "proto": "icmp", "dst": last, "count": float64(3)})
 	pingMS := time.Since(t).Milliseconds()
 	return map[string]any{
-		"devices":     n,
-		"topo":        topo,
-		"tcp_ms":      tcp,
-		"ping":        ping,
-		"ping_wall":   pingMS,
-		"mem_before":  memBefore,
-		"mem_during":  meminfo(),
-		"uptime_ms":   uptimeMS(),
+		"devices":    n,
+		"topo":       topo,
+		"tcp_ms":     tcp,
+		"ping":       ping,
+		"ping_wall":  pingMS,
+		"mem_before": memBefore,
+		"mem_during": meminfo(),
+		"uptime_ms":  uptimeMS(),
 	}, nil
 }

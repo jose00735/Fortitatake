@@ -1,4 +1,4 @@
-import { intToIp } from "./net.js";
+import { ipToInt, intToIp } from "./net.js";
 // Host and ISP-router troubleshooting commands answered from the real network when the lab is live:
 // the Linux tool runs in the device's namespace on FortiTatake OS and its output is printed the way
 // Windows CMD, a Linux box or a Cisco IOS router would print it. Returns null for commands the
@@ -17,12 +17,67 @@ function parsePing(text) {
   return { rep, unreach: /unreachable/i.test(text) };
 }
 
+// A real DNS lookup from the device's namespace to its configured DNS server (or the one given):
+// the query crosses the lab like any packet, so it shows in sniffers, sessions and logs. What it
+// learns is remembered by the lab, so the simulator and the real network agree on the address.
+const dnsCache = new Map(); // one command, one lookup: the simulator pass and the real pass share it
+export async function realResolve(call, lab, h, name, server) {
+  if (isIp(name)) return { ip: name };
+  const key = `${h.id}|${name.toLowerCase()}|${server || ""}`;
+  const hit = dnsCache.get(key);
+  if (hit && Date.now() - hit.at < 5000) return hit.r;
+  const r = await realResolveNow(call, lab, h, name, server);
+  dnsCache.set(key, { at: Date.now(), r });
+  return r;
+}
+async function realResolveNow(call, lab, h, name, server) {
+  const servers = server && isIp(server) ? [ipToInt(server)] : h.dnsServers ? h.dnsServers() : [];
+  if (!servers.length) return { err: "none" };
+  for (const s of servers) {
+    let r;
+    try { r = await call({ op: "dns.query", ns: h.id, server: intToIp(s), name }, 6000); }
+    catch (e) {
+      if (!/unknown op/i.test(e.message)) continue;
+      const x = lab.resolve(h.id, name); // an OS build from before v0.9.0
+      return x.err ? { err: /timed out/.test(x.err) ? "timeout" : "nxdomain", server: intToIp(s) } : { ip: intToIp(x.ip), all: [intToIp(x.ip)], server: intToIp(x.server) };
+    }
+    if (r.error) continue;
+    if (r.rcode === 3 || !(r.addrs || []).length) return { err: "nxdomain", server: intToIp(s), ms: r.ms };
+    if (lab.learnName) lab.learnName(name, r.addrs[0]);
+    return { ip: r.addrs[0], all: r.addrs, server: intToIp(s), ms: r.ms, ttl: r.ttl };
+  }
+  return { err: "timeout", server: intToIp(servers[0]) };
+}
+
 export async function realHostCmd(call, lab, h, line) {
   const t = line.trim().split(/\s+/);
   const c = (t[0] || "").toLowerCase();
   const win = h.os === "windows";
   const ns = h.id;
-  const target = async (name) => { if (isIp(name)) return name; const r = lab.resolve(h.id, name); return r.err ? null : intToIp(r.ip); };
+  const target = async (name) => { if (isIp(name)) return name; const r = await realResolve(call, lab, h, name); return r.err ? null : r.ip; };
+
+  if (c === "nslookup" || c === "dig") {
+    const args = t.slice(1).filter((a) => !a.startsWith("-") && !a.startsWith("+"));
+    const name = args[0];
+    if (!name) return null;
+    const r = await realResolve(call, lab, h, name, args[1]);
+    const srv = r.server || "";
+    if (c === "dig") {
+      if (r.err === "timeout" || r.err === "none") return ";; communications error: timed out\n;; no servers could be reached";
+      const ans = (r.all || []).map((a) => `${name}.\t\t${r.ttl || 60}\tIN\tA\t${a}`).join("\n");
+      return `; <<>> DiG 9.18.28-0ubuntu0.24.04.1-Ubuntu <<>> ${name}\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: ${r.err ? "NXDOMAIN" : "NOERROR"}\n\n;; QUESTION SECTION:\n;${name}.\t\t\tIN\tA\n${ans ? "\n;; ANSWER SECTION:\n" + ans + "\n" : ""}\n;; Query time: ${Math.max(1, Math.round(r.ms || 1))} msec\n;; SERVER: ${srv}#53(${srv}) (UDP)`;
+    }
+    if (win) {
+      if (r.err === "timeout" || r.err === "none") return `DNS request timed out.\n    timeout was 2 seconds.\nServer:  UnKnown\nAddress:  ${srv}\n\nDNS request timed out.\n    timeout was 2 seconds.\n*** Request to UnKnown timed-out`;
+      const head = `Server:  UnKnown\nAddress:  ${srv}\n`;
+      if (r.err) return `${head}\n*** UnKnown can't find ${name}: Non-existent domain`;
+      return `${head}\nNon-authoritative answer:\nName:    ${name}\n${r.all.length > 1 ? "Addresses:  " + r.all.join("\n          ") : "Address:  " + r.ip}`;
+    }
+    if (r.err === "timeout" || r.err === "none") return ";; connection timed out; no servers could be reached";
+    const head = `Server:\t\t${srv}\nAddress:\t${srv}#53\n`;
+    if (r.err) return `${head}\n** server can't find ${name}: NXDOMAIN`;
+    return `${head}\nNon-authoritative answer:\n${r.all.map((a) => `Name:\t${name}\nAddress: ${a}`).join("\n")}`;
+  }
 
   if (c === "ping") {
     let count = 4, size = win ? 32 : 56, host = null;
