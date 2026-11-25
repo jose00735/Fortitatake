@@ -1,0 +1,218 @@
+id: M3.05
+title: "Defense concepts and the threat landscape: kill chains, ATT&CK, zero trust and how attacks really unfold"
+stage: S3
+stage_title: "S3 · Security, crypto, identity and the threat landscape"
+order: 143
+quality: 2
+est_sessions: 1
+objectives:
+  - Use the kill chain and MITRE ATT&CK to place a control or a detection on an attack path
+  - Explain defense in depth, least privilege, segmentation and zero trust without buzzwords
+  - Describe how ransomware and initial-access campaigns unfold today, and where FortiGate, EDR and SIEM each break the chain
+  - Turn a threat into a prioritised control list for a customer
+sources:
+  - "MITRE ATT&CK Enterprise matrix (tactics and techniques, v15+)"
+  - "NIST SP 800-207 Zero Trust Architecture; CISA #StopRansomware advisories (public)"
+
+units:
+  - id: M3.05.u1
+    title: "Models for talking about attacks"
+    tier: 2
+    est_min: 12
+    body: |
+      The **kill chain** (recon → weaponise → deliver → exploit → install → command and control → actions on
+      objectives) is good for explaining to managers that you can break an attack at several points.
+
+      **MITRE ATT&CK** is the working vocabulary: **tactics** are the attacker's goals (Initial Access, Execution,
+      Persistence, Privilege Escalation, Defense Evasion, Credential Access, Discovery, Lateral Movement, Collection,
+      Command and Control, Exfiltration, Impact), **techniques** are how (T1558.003 Kerberoasting, T1003.001 LSASS
+      memory). Detections and controls are mapped to techniques; coverage gaps show up as empty cells.
+
+      The **pyramid of pain**: blocking hashes and IPs costs the attacker little; detecting tools and **behaviours
+      (TTPs)** costs them a lot. Good detection aims high on the pyramid.
+
+      :::recall
+      Q: Why are behaviour-based detections worth more than IOC blocks?
+      A: Attackers change hashes and IPs cheaply; changing their technique is expensive.
+      :::
+  - id: M3.05.u2
+    title: "Defense principles in plain words"
+    tier: 3
+    est_min: 12
+    body: |
+      - **Defense in depth**: several independent controls, so one failure isn't a breach (email filter + EDR +
+        segmentation + backups).
+      - **Least privilege**: accounts and systems get only what they need; tiered admin accounts stop one phished
+        helpdesk user from becoming domain admin.
+      - **Segmentation**: limit what a compromised host can reach; FortiGate internal segmentation, FortiSwitch/NAC
+        for the access layer.
+      - **Zero trust** (NIST 800-207): no implicit trust from network location; every access is decided per request
+        from identity, device posture and context, through a policy enforcement point (ZTNA proxy, FortiGate).
+      - **Assume breach**: design detection and response as if the attacker is already inside.
+
+      :::why
+      Q: What's the difference between segmentation and zero trust?
+      A: Segmentation limits reach by network zone; zero trust decides each access by identity and posture, wherever the user is.
+      :::
+  - id: M3.05.u3
+    title: "How a modern intrusion unfolds"
+    tier: 4
+    est_min: 14
+    body: |
+      A typical human-operated ransomware case, with where each product can break it:
+
+      | Step | Typical technique | Who can stop or see it |
+      |---|---|---|
+      | Initial access | Phishing, exposed VPN without MFA, unpatched edge device | Email security, MFA, patching, FortiGate IPS |
+      | Foothold | Loader, remote management tool | EDR, application control, DNS filter |
+      | Credential access | LSASS dump, Kerberoasting | EDR, SIEM rules on 4769 / Sysmon 10 |
+      | Lateral movement | PsExec, RDP, WMI with stolen admin | Segmentation, SIEM on 4624 type 3 + 7045 |
+      | Exfiltration | Cloud storage upload, rclone | DLP, application control, egress filtering |
+      | Impact | Encrypt, delete backups | EDR rollback, immutable / offline backups |
+
+      Edge devices (VPN gateways, firewalls) are a top initial-access target: keep them patched, restrict their
+      management interfaces, and log admin access.
+
+      :::recall
+      Q: Which control most often turns a ransomware attack into a recoverable incident?
+      A: Immutable or offline backups that the attacker can't delete.
+      :::
+
+cards:
+  - {id: M3.05.c01, unit: M3.05.u1, tier: 1, front: "ATT&CK tactic vs technique", back: "Tactic = goal (Credential Access); technique = how (Kerberoasting)."}
+  - {id: M3.05.c02, unit: M3.05.u1, tier: 2, front: "Pyramid of pain", back: "Hashes/IPs cheap for attackers to change; TTPs expensive. Detect high."}
+  - {id: M3.05.c03, unit: M3.05.u2, tier: 2, front: "Zero trust", back: "No implicit trust from location; per-request decision on identity, posture, context."}
+  - {id: M3.05.c04, unit: M3.05.u2, tier: 3, front: "Tiered admin accounts", back: "Least privilege that stops one phished account becoming domain admin."}
+  - {id: M3.05.c05, unit: M3.05.u3, tier: 3, front: "Edge devices as initial access", back: "Patch, restrict management access, log admin sessions."}
+  - {id: M3.05.c06, unit: M3.05.u3, tier: 4, front: "Ransomware recovery control", back: "Immutable or offline backups."}
+
+quiz:
+  - id: M3.05.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A SOC lead wants detections that stay useful after the attacker swaps tools. What should they target?"
+    options:
+      - {id: a, text: "Behaviours such as LSASS reads by unusual processes, mapped to ATT&CK techniques", correct: true}
+      - {id: b, text: "File hashes from the last incident's malware, fed into the EDR and the FortiGate", trap: misconception, why_wrong: "A recompile changes the hash; it's the bottom of the pyramid."}
+      - {id: c, text: "Command-and-control IP addresses from threat feeds, refreshed hourly on the FortiGate", trap: near-miss, why_wrong: "Useful but cheap for attackers to rotate; low on the pyramid of pain."}
+      - {id: d, text: "Tool names like mimikatz.exe in process creation events across the workstations", trap: near-miss, why_wrong: "Higher than hashes, but renaming the binary defeats it."}
+    explanation: "Behaviours (TTPs) are expensive for attackers to change; detect the technique, not the artifact."
+  - id: M3.05.q02
+    type: single
+    tier: 3
+    stem: "Remote staff reach internal apps over SSL VPN with full network access. What makes this design zero trust?"
+    options:
+      - {id: a, text: "Per-app access decided by identity and device posture through a ZTNA proxy", correct: true}
+      - {id: b, text: "Adding MFA to the SSL VPN login while keeping the full network access rule", trap: near-miss, why_wrong: "Better authentication, but trust is still implicit once connected."}
+      - {id: c, text: "Splitting the internal network into VLANs for servers, users and the printers", trap: near-miss, why_wrong: "Segmentation helps, but access still depends on network location."}
+      - {id: d, text: "Moving the VPN gateway into the cloud so that it's closer to remote staff", trap: irrelevant, why_wrong: "Location of the gateway doesn't change the trust model."}
+    explanation: "Zero trust removes implicit network trust: each app access is decided on identity and posture."
+  - id: M3.05.q03
+    type: order
+    tier: 3
+    stem: "Put these steps of a human-operated ransomware case in their usual order."
+    items:
+      - "Phishing email delivers a loader"
+      - "Attacker dumps credentials from LSASS"
+      - "PsExec moves to the file servers"
+      - "Data is uploaded to cloud storage"
+      - "Backups are deleted and files encrypted"
+    explanation: "Access → credentials → lateral movement → exfiltration → impact. Double extortion takes the data before encrypting."
+  - id: M3.05.q04
+    type: single
+    tier: 4
+    format: first-step
+    stem: "A manufacturer with a flat network, no EDR and nightly backups to a mapped drive asks for your top priority against ransomware. What do you recommend first?"
+    options:
+      - {id: a, text: "Make backups immutable or offline, out of reach of an attacker holding domain admin rights", correct: true}
+      - {id: b, text: "Deploy EDR to the endpoints and servers, then tune it over the next few months of operation", trap: near-miss, why_wrong: "Important, but if it fails, deletable backups mean no recovery."}
+      - {id: c, text: "Segment the flat network into zones with FortiGate internal segmentation firewall policies", trap: near-miss, why_wrong: "Valuable and slower to roll out; recovery comes first."}
+      - {id: d, text: "Subscribe to threat intelligence feeds and block the latest ransomware IOCs at the edge", trap: misconception, why_wrong: "IOCs rotate quickly and do nothing for recovery."}
+    explanation: "Backups on a mapped drive get encrypted with everything else. Recoverability first, then prevention and detection."
+  - id: M3.05.q05
+    type: multi
+    tier: 3
+    stem: "Which controls reduce the risk of an edge VPN gateway becoming the initial access point? Select all that apply."
+    options:
+      - {id: a, text: "Patching quickly after vendor security advisories", correct: true}
+      - {id: b, text: "Restricting management access to trusted hosts", correct: true}
+      - {id: c, text: "Requiring MFA for remote access logins", correct: true}
+      - {id: d, text: "Raising the IPsec phase 1 DH group to 21 or so", trap: near-miss, why_wrong: "Stronger crypto doesn't stop exploited vulnerabilities or stolen passwords."}
+      - {id: e, text: "Moving SSL VPN to a non-standard TCP port number", trap: misconception, why_wrong: "Scanners find it anyway; obscurity isn't a control."}
+    explanation: "Patch, restrict management, MFA. Crypto strength and port changes don't address how edges get breached."
+
+labs:
+  - id: M3.05.lab1
+    title: Restrict admin access on an edge FortiGate
+    goal: "Know the CLI to limit management to trusted hosts."
+    worked:
+      config: |
+        config system admin
+        edit "admin"
+        set trusthost1 10.10.10.0 255.255.255.0
+        next
+        end
+        config system interface
+        edit "port1"
+        set allowaccess ping
+        next
+        end
+    faded:
+      template: |
+        config system admin
+        edit "{{netops}}"
+        set trusthost1 {{10.20.99.0}} 255.255.255.0
+        next
+        end
+    solo:
+      prompt: "Limit admin 'jose' to 10.30.5.0/24 and leave only ping on WAN port wan1."
+      required: ["jose", "trusthost1", "10.30.5.0", "wan1", "allowaccess ping"]
+      solution: |
+        config system admin
+        edit "jose"
+        set trusthost1 10.30.5.0 255.255.255.0
+        next
+        end
+        config system interface
+        edit "wan1"
+        set allowaccess ping
+        next
+        end
+      notes: "Also log admin logins and alert on failures."
+
+scenarios:
+  - id: M3.05.sc1
+    kind: situation
+    tier: 4
+    title: "The board asks: are we ready for ransomware?"
+    situation: "A retail chain's CFO asks you, in a 10-minute slot with the board, whether they're ready for ransomware. You've seen: MFA on VPN, no EDR on servers, flat store networks, backups on the same domain."
+    ask: "What do you say?"
+    right_thinking:
+      - "Answer in business terms: could we recover, how long, what's exposed"
+      - "Name the two biggest gaps (backups on the domain, flat networks) and one strength (MFA)"
+      - "Give a 90-day plan with costs ranked"
+    what: "Honest answer, two gaps, a plan."
+    why: "Boards decide budget; they need risk and options, not product names."
+    how: ["Recovery first", "Contain spread", "Detect on servers"]
+    model_answer: "\"Partly. You've closed the most common door with MFA on the VPN. The two gaps that would turn an incident into weeks of downtime are backups that an attacker on the domain can delete, and flat store networks that let one infected PC reach everything. In 90 days I'd make backups immutable first, then segment the stores, then put EDR on the servers. I can bring rough costs for each next week.\""
+    best_way: "Partly ready, two gaps, a ranked 90-day plan."
+    rubric: ["business language", "honest", "ranked plan"]
+
+interview:
+  - id: M3.05.t01
+    stage: technical
+    question: "How would you explain zero trust to a customer who already has a firewall?"
+    testing: "Concept clarity without buzzwords"
+    framework: "Old model → new decision → Fortinet pieces"
+    model_answer: "\"Your firewall trusts whoever is inside the network. Zero trust stops trusting location: every time someone opens an app, we check who they are, whether their device is healthy, and only then open that one app — not the whole network. With Fortinet that's FortiClient sending posture to EMS, and the FortiGate or FortiSASE acting as the ZTNA proxy.\""
+    best_way: "Stop trusting location; decide each app access on identity and device."
+    target: "0:40"
+  - id: M3.05.t02
+    stage: technical
+    question: "You have a red-team background. How does that help you as a defender in a PS role?"
+    testing: "Honest framing of offensive experience"
+    framework: "What I learned → how I use it → limits"
+    model_answer: "\"From labs and certification work I know what attackers look for: weak service accounts, flat networks, edge devices without patches. So when I design a deployment I ask how I'd attack it, and I write detections for the steps I'd take, like Kerberoasting or LSASS reads. I'm careful to say this is lab and certification experience, not years in a SOC, and I test my detections against replays before I trust them.\""
+    best_way: "Attacker's eye for design and detection, framed honestly."
+    target: "0:45"

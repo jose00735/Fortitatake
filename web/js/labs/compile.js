@@ -114,6 +114,12 @@ export function compile(lab) {
     for (const b of binds) if (b.proto === "tcp" && (b.port === 22 || b.port === 23) && !b.keep) Object.assign(b, { mode: b.port === 22 ? "ssh" : "telnet" }, b.port === 22 ? { banner: SSH_BANNER[h.os] || SSH_BANNER.linux } : {});
     listen.push({ ns: h.id, binds });
     if (!h.services.has("icmp")) nft[h.id] = "table ip ftk {\n chain ftk_in { type filter hook input priority 0; policy accept;\n  icmp type echo-request drop\n }\n}";
+    // FortiEDR isolation: the host talks to its EDR manager and nothing else, enforced by its own kernel
+    const iso = lab.edrIsolated && lab.edrIsolated(h);
+    if (iso && iso.ip && iso.ip()) {
+      const m = intToIp(iso.ip());
+      nft[h.id] = `table ip ftk {\n chain ftk_in { type filter hook input priority 0; policy drop;\n  iif "lo" accept\n  ip saddr ${m} accept\n }\n chain ftk_out { type filter hook output priority 0; policy drop;\n  oif "lo" accept\n  ip daddr ${m} accept\n }\n}`;
+    }
   }
 
   // ----- the Internet -----

@@ -1,0 +1,141 @@
+id: K6.02
+track: secops
+modules: [M13.02, M13.04, M9.03]
+tier: 6
+order: 2
+kind: project
+title: "Capstone · Detection sprint: four techniques, four rules, zero noise"
+customer: Andes Logistics
+par: 75
+skills: [detection engineering, Kerberos and AD attack telemetry, lateral movement evidence, tuning against a baseline]
+brief: |
+  **Capstone · purple-team follow-up.** Last month's pentest at Andes reached Domain Admin and FortiSIEM stayed
+  silent. The pentesters left their replay files; Andes left a normal week of logs. For each technique you write one
+  FortiSIEM rule on **FSIEM-01**: it must fire on the replay and stay quiet on the normal week. The checks replay
+  both streams through your rule.
+
+  Rule syntax (type `help` on FSIEM-01):
+  `rule new "<name>" where key=value ... group a,b count|distinct <attr> >= N window <seconds> [sev N]`.
+  Values take `*` globs, `a|b` alternatives, `~text` (contains) and a leading `!` (not). Use `analytics` to look at the
+  fields: `user`, `srcIpAddr`, `svcName`, `ticketEncType`, `logonType`, `logonProcess`, `properties`, `shareName`,
+  `preAuthType`, `failureCode`, `targetImage`, `grantedAccess`, `procName`, `parentProcName`.
+topology:
+  use: andes-secops
+  story:
+    - {at: "07:30:00", repeat: {n: 12, every: 40}, host: DC-01, win: {id: 4771, user: [aperez, bmora, cdiaz, dlopez, egil, fruiz, gsoto, hvega, ijara, kreyes, lnunez, mrojas], src: 10.20.10.66, code: "0x18", preauth: "2"}}
+    - {at: "07:41:00", host: DC-01, win: {id: 4768, user: svc_scan, src: 10.20.10.66, preauth: "0"}}
+    - {at: "08:00:00", repeat: {n: 3, every: 300}, host: DC-01, win: {id: 4771, user: jperez, src: 10.20.10.60, code: "0x18", preauth: "2"}}
+parts:
+  - id: a
+    title: "Spraying over Kerberos"
+    brief: |
+      The pentesters sprayed over Kerberos, not NTLM: the DC logs **4771** (pre-authentication failed) with failure
+      code **0x18** (bad password). The normal week has users who mistype their password a few times.
+    tasks:
+      - "Write `Kerberos password spray`: 4771 with failure code 0x18, grouped by source address, 8 or more distinct users in 30 minutes."
+    checks:
+      - text: "Kerberos password spray: fires on the replay, quiet on the normal week"
+        siem:
+          dev: FSIEM-01
+          test_rule: "Kerberos password spray"
+          attack:
+            - {at: "07:30:00", repeat: {n: 12, every: 40}, host: DC01, win: {id: 4771, user: [aperez, bmora, cdiaz, dlopez, egil, fruiz, gsoto, hvega, ijara, kreyes, lnunez, mrojas], src: 10.20.10.66, code: "0x18", preauth: "2"}}
+          baseline:
+            - {at: "08:00:00", repeat: {n: 30, every: 120}, host: DC01, win: {id: 4771, user: [jperez, jperez, jperez, mrojas, mrojas, aperez], src: [10.20.10.60, 10.20.10.60, 10.20.10.60, 10.20.10.50, 10.20.10.50, 10.20.10.71], code: "0x18", preauth: "2"}}
+            - {at: "13:00:00", repeat: {n: 40, every: 30}, host: DC01, win: {id: 4771, user: [svc_print, svc_scan, kreyes, lnunez, egil], src: 10.20.40.30, code: "0x12", preauth: "2"}}
+    hints:
+      - "Group by `srcIpAddr` and count `distinct user`: spraying is breadth, mistyping is depth."
+      - "The 0x12 failures in the baseline are disabled/expired accounts touched by a script, not bad passwords: filter `failureCode=0x18`."
+    solution:
+      FSIEM-01: |
+        rule new "Kerberos password spray" where eventType=Win-Security-4771 failureCode=0x18 group srcIpAddr distinct user >= 8 window 1800 sev 8
+    explain: |
+      Per-user rules miss sprays by design. Counting distinct users per source catches the breadth, and the failure
+      code keeps unrelated failures (disabled accounts, clock skew) out.
+  - id: b
+    title: "AS-REP roasting"
+    brief: |
+      One account, **svc_scan**, doesn't require Kerberos pre-authentication. The pentesters asked for its TGT and
+      cracked it offline. Normal TGT requests use pre-authentication type 2; the roast shows **type 0**.
+    tasks:
+      - "Write `AS-REP roast`: 4768 with pre-authentication type 0."
+      - "Tell Andes the preventive fix in one line (answer below)."
+    checks:
+      - text: "AS-REP roast: fires on the replay, quiet on the normal week"
+        siem:
+          dev: FSIEM-01
+          test_rule: "AS-REP roast"
+          attack:
+            - {at: "07:41:00", host: DC01, win: {id: 4768, user: svc_scan, src: 10.20.10.66, preauth: "0"}}
+          baseline:
+            - {at: "07:00:00", repeat: {n: 80, every: 60}, host: DC01, win: {id: 4768, user: [mrojas, jperez, aperez, bmora, svc_scan, svc_print], src: [10.20.10.50, 10.20.10.60, 10.20.10.71, 10.20.10.72, 10.20.40.30, 10.20.40.31], preauth: "2"}}
+      - text: "What prevents AS-REP roasting of svc_scan?"
+        answer: {accept: ["~(require|enable).*pre-?auth|pre-?auth.*(require|enable)|do not require.*(off|disable|uncheck)|long.*password"], sample: "Turn pre-authentication back on for svc_scan (untick 'Do not require Kerberos preauthentication') and give it a long random password", hint: "What setting made the account roastable?", why: "Without pre-authentication anyone can request a TGT encrypted with the account's key. Requiring it closes the hole; a long random password makes any captured hash useless."}
+    hints:
+      - "`where eventType=Win-Security-4768 preAuthType=0 ... count >= 1 window 60`."
+      - "svc_scan also appears in the baseline with type 2: filter on the type, not the account."
+    solution:
+      FSIEM-01: |
+        rule new "AS-REP roast" where eventType=Win-Security-4768 preAuthType=0 group user,srcIpAddr count >= 1 window 60 sev 8
+    explain: |
+      Filtering on the account name would miss the next roastable account and fire on svc_scan's normal logons.
+      Pre-authentication type 0 is the technique's fingerprint.
+  - id: c
+    title: "PsExec-style lateral movement"
+    brief: |
+      With a cracked admin password the pentesters moved to FS01 the classic way: a network logon, access to ADMIN$,
+      then a new service. Andes' IT runs a deployment tool that also touches ADMIN$ every morning, but never installs
+      services.
+    tasks:
+      - "Write `Remote service install via ADMIN$`: on the file server, 7045 service installs whose service name is PSEXESVC or a random-looking name the pentest used (see the replay); keep it to 7045 so the deployment tool's ADMIN$ access doesn't fire."
+    checks:
+      - text: "Remote service install: fires on the replay, quiet on the normal week"
+        siem:
+          dev: FSIEM-01
+          test_rule: "Remote service install via ADMIN$"
+          attack:
+            - {at: "10:02:11", host: FS01, win: {id: 4624, user: adm_jgomez, src: 10.20.10.66, logon_type: 3}}
+            - {at: "10:02:12", host: FS01, win: {id: 5145, user: adm_jgomez, src: 10.20.10.66, share: "\\\\*\\ADMIN$"}}
+            - {at: "10:02:13", host: FS01, win: {id: 7045, user: adm_jgomez, service: PSEXESVC}}
+            - {at: "10:09:40", host: FS01, win: {id: 7045, user: adm_jgomez, service: xQzLmP}}
+          baseline:
+            - {at: "06:00:00", repeat: {n: 30, every: 60}, host: FS01, win: {id: 5145, user: svc_deploy, src: 10.20.40.40, share: "\\\\*\\ADMIN$"}}
+            - {at: "09:00:00", repeat: {n: 2, every: 3600}, host: FS01, win: {id: 7045, user: SYSTEM, service: ["Windows Update Medic Service", "FortiClient Service Scheduler"]}}
+    hints:
+      - "`where eventType=Win-Security-7045 svcName=PSEXESVC|xQzLmP`, grouped by host (`reptDevName`)."
+      - "The baseline has legitimate services installed by SYSTEM: filter on the user too (`user=!SYSTEM`) for a sturdier rule."
+    solution:
+      FSIEM-01: |
+        rule new "Remote service install via ADMIN$" where eventType=Win-Security-7045 user=!SYSTEM group reptDevName,user count >= 1 window 600 sev 8
+    explain: |
+      The deployment tool touches ADMIN$ but never installs services; legitimate installs come from SYSTEM during
+      patching. A service installed by a named admin account over the network is rare and worth a human look. Matching
+      only PSEXESVC would miss renamed tools like the one at 10:09.
+  - id: d
+    title: "LSASS memory read"
+    brief: |
+      The last technique: dumping LSASS on a workstation. Sysmon event **10** (process access) shows the target image
+      and the access mask. Andes' antivirus and the EDR read LSASS legitimately all day.
+    tasks:
+      - "Write `LSASS access by unusual process`: Sysmon 10 with target lsass.exe, excluding the two security products' processes you'll find in the baseline."
+    checks:
+      - text: "LSASS access: fires on the replay, quiet on the normal week"
+        siem:
+          dev: FSIEM-01
+          test_rule: "LSASS access by unusual process"
+          attack:
+            - {at: "11:15:02", host: HQ-PC-MROJAS, win: {id: 10, log: sysmon, process: "C:\\Users\\Public\\pd.exe", target: "C:\\Windows\\System32\\lsass.exe", access: "0x1010"}}
+            - {at: "11:20:40", host: HQ-PC-MROJAS, win: {id: 10, log: sysmon, process: "C:\\Windows\\System32\\rundll32.exe", target: "C:\\Windows\\System32\\lsass.exe", access: "0x1410"}}
+          baseline:
+            - {at: "07:00:00", repeat: {n: 50, every: 300}, host: HQ-PC-MROJAS, win: {id: 10, log: sysmon, process: ["C:\\Program Files\\Fortinet\\FortiEDR\\FortiEDRCollectorService.exe", "C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18\\MsMpEng.exe"], target: "C:\\Windows\\System32\\lsass.exe", access: "0x1000"}}
+            - {at: "07:00:00", repeat: {n: 20, every: 600}, host: HQ-PC-MROJAS, win: {id: 10, log: sysmon, process: "C:\\Windows\\explorer.exe", target: "C:\\Windows\\System32\\svchost.exe", access: "0x1010"}}
+    hints:
+      - "`where eventType=Win-Sysmon-10 targetImage=*lsass.exe procName=!*FortiEDRCollectorService.exe|*MsMpEng.exe`"
+      - "Excluding by full image path is safer than excluding anything under Program Files: attackers can drop tools there too."
+    solution:
+      FSIEM-01: |
+        rule new "LSASS access by unusual process" where eventType=Win-Sysmon-10 targetImage=*lsass.exe procName=!*FortiEDRCollectorService.exe|*MsMpEng.exe group reptDevName,procName count >= 1 window 60 sev 9
+    explain: |
+      Credential dumping needs one read of LSASS, so thresholds don't help; precision comes from excluding the known
+      readers by exact image. The rundll32 line is the comsvcs.dll MiniDump trick: a signed Windows binary, which is
+      why excluding 'signed' or 'System32' would have hidden it.

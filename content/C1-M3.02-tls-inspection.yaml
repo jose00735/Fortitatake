@@ -1,0 +1,217 @@
+id: M3.02
+title: "TLS and inspection theory: the handshake, what a middlebox can see, and why apps break"
+stage: S3
+stage_title: "S3 · Security, crypto, identity and the threat landscape"
+order: 140.5
+quality: 2
+est_sessions: 1
+objectives:
+  - Walk through a TLS 1.2 and 1.3 handshake and say what is visible on the wire in each
+  - Explain certificate inspection vs full (deep) inspection and what each can and can't see
+  - Predict which applications break under inspection (pinning, mutual TLS, QUIC) and plan exemptions
+  - Scope an inspection rollout as a project, including privacy categories and performance
+sources:
+  - "RFC 8446 (TLS 1.3), RFC 9000 (QUIC), RFC 9849 draft / Encrypted Client Hello"
+  - "FortiOS 8.0.2 Administration Guide: SSL/SSH inspection profiles (certificate vs deep inspection, exemptions)"
+
+units:
+  - id: M3.02.u1
+    title: "The handshake and what leaks"
+    tier: 2
+    est_min: 12
+    body: |
+      TLS 1.2: ClientHello (with **SNI**, the server name) → ServerHello + **certificate in clear text** → key exchange →
+      encrypted data. A passive device sees the SNI and the full certificate.
+
+      TLS 1.3: ClientHello (SNI still clear) → ServerHello → everything after, **including the certificate, is
+      encrypted**. One fewer round-trip, PFS always on, old ciphers gone.
+
+      So a firewall that doesn't decrypt identifies sites from the **SNI** (both versions) and the **certificate**
+      (TLS 1.2 only). **Encrypted Client Hello (ECH)** hides the real SNI too, leaving only the front server's name.
+
+      :::recall
+      Q: What does a passive device see in a TLS 1.3 handshake that identifies the site?
+      A: The SNI in the ClientHello (unless ECH is used); the certificate is encrypted.
+      :::
+  - id: M3.02.u2
+    title: "Certificate inspection vs deep inspection"
+    tier: 3
+    est_min: 14
+    body: |
+      | | Certificate inspection | Deep (full) inspection |
+      |---|---|---|
+      | How | Reads SNI / certificate, no decryption | FortiGate terminates TLS, re-signs with its CA, opens a second session to the server |
+      | Sees | Domain name → web filter category, app guess | URLs, content, files → AV, IPS, DLP, full app control |
+      | Client impact | None | Clients must trust the CA; pinned or mutual-TLS apps break |
+      | Cost | Low | CPU-heavy; size the box for decrypted throughput |
+
+      Things that break under deep inspection and the usual fix:
+      - **Certificate pinning** (banking apps, some update services, Microsoft 365 endpoints): exempt by address or
+        category.
+      - **Mutual TLS** (client certificates): the FortiGate can't present the client's certificate → exempt.
+      - **QUIC / HTTP/3** on UDP 443: no TLS-over-TCP to intercept → block QUIC so browsers fall back to TCP, or use
+        a release that inspects QUIC.
+      - **Privacy categories** (health, finance) are usually exempted by policy or law.
+
+      :::why
+      Q: Why is blocking UDP 443 a common step when deploying deep inspection?
+      A: Browsers fall back from QUIC to TLS over TCP, which the FortiGate can inspect.
+      :::
+  - id: M3.02.u3
+    title: "Inspection as a project"
+    tier: 4
+    est_min: 10
+    body: |
+      Inspection projects fail on people and process, not CLI. A sensible plan:
+      1. **Agree scope** with legal / HR: which users, which categories exempt, how users are told.
+      2. **Distribute the CA** (GPO, MDM, EMS) and check BYOD / guest networks separately.
+      3. **Pilot** a group with certificate inspection first, then deep inspection, collecting breakages.
+      4. **Build the exemption list** from evidence (logs, tickets), not guesses.
+      5. **Size** with the vendor's SSL inspection throughput figure, not firewall throughput.
+      6. **Hand over** a process for new exemption requests.
+
+      :::recall
+      Q: Which throughput figure sizes a deep-inspection design?
+      A: The SSL inspection throughput, not the firewall or IPS figure.
+      :::
+
+cards:
+  - {id: M3.02.c01, unit: M3.02.u1, tier: 1, front: "SNI", back: "Server name in the ClientHello, visible without decryption (unless ECH)."}
+  - {id: M3.02.c02, unit: M3.02.u1, tier: 2, front: "TLS 1.3 certificate visibility", back: "Encrypted; only the SNI identifies the site passively."}
+  - {id: M3.02.c03, unit: M3.02.u2, tier: 2, front: "Certificate inspection", back: "No decryption; category from SNI/cert, no content scanning."}
+  - {id: M3.02.c04, unit: M3.02.u2, tier: 3, front: "Deep inspection breaks...", back: "Pinned apps, mutual TLS, QUIC (unless blocked or supported)."}
+  - {id: M3.02.c05, unit: M3.02.u2, tier: 3, front: "Why block QUIC", back: "Forces the browser back to TLS over TCP, which can be inspected."}
+  - {id: M3.02.c06, unit: M3.02.u3, tier: 4, front: "Inspection rollout order", back: "Scope with legal → distribute CA → pilot → evidence-based exemptions → size → handover."}
+
+quiz:
+  - id: M3.02.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Without decryption, how does a FortiGate assign a web filter category to a TLS 1.3 session?"
+    options:
+      - {id: a, text: "From the server name in the ClientHello, the part sent before encryption starts", correct: true}
+      - {id: b, text: "From the server certificate, which it reads as the handshake passes through it", trap: near-miss, why_wrong: "True for TLS 1.2; in TLS 1.3 the certificate is encrypted."}
+      - {id: c, text: "From the URL path of the request, which is sent in clear inside the TLS records", trap: misconception, why_wrong: "The path is inside the encrypted HTTP request; it needs decryption."}
+      - {id: d, text: "From a reverse DNS lookup of the destination address once the session opens", trap: irrelevant, why_wrong: "Reverse DNS of a CDN address rarely names the site; SNI is what's used."}
+    explanation: "TLS 1.3 encrypts the certificate; the SNI is the remaining clear-text identifier."
+  - id: M3.02.q02
+    type: single
+    tier: 3
+    stem: "After deep inspection goes live, the bank's mobile app fails on Wi-Fi while browsers work fine. Most likely cause?"
+    options:
+      - {id: a, text: "The app pins its server certificate and rejects the FortiGate's re-signed copy", correct: true}
+      - {id: b, text: "The FortiGate's CA wasn't pushed to phones, so the app sees an untrusted issuer", trap: near-miss, why_wrong: "Then the phone's browser would fail too; the app alone failing points to pinning."}
+      - {id: c, text: "The app uses QUIC over UDP 443, which the inspection profile silently drops", trap: near-miss, why_wrong: "QUIC drops cause fallback to TCP, not a hard failure, for most apps."}
+      - {id: d, text: "The banking category is blocked in the web filter profile on that policy", trap: misconception, why_wrong: "Browsers reach the bank fine, so the category isn't blocked."}
+    explanation: "Pinned apps accept only their own certificate; exempt the bank by category or address."
+  - id: M3.02.q03
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      # diagnose sys session filter dport 443
+      # diagnose sys session list | grep -E "proto=|policy"
+      session info: proto=17 proto_state=00 duration=41 expire=138
+      policy_id=4 ...
+      session info: proto=17 proto_state=00 duration=12 expire=167
+      policy_id=4 ...
+    stem: "Deep inspection is on for policy 4, yet web filter logs show almost no Chrome traffic. What is the first step?"
+    options:
+      - {id: a, text: "Block UDP 443 for that traffic so Chrome falls back from QUIC to TLS over TCP", correct: true}
+      - {id: b, text: "Reinstall the inspection CA on the clients because Chrome uses its own store", trap: near-miss, why_wrong: "A trust problem shows certificate errors; the sessions here are UDP, which bypass TLS inspection."}
+      - {id: c, text: "Switch policy 4 to certificate inspection so the sessions match the profile", trap: misconception, why_wrong: "That inspects less, not more; the issue is the protocol."}
+      - {id: d, text: "Find the policy above 4 that Chrome's sessions match without the inspection profile", trap: near-miss, why_wrong: "A sensible check, but the output already shows policy_id=4; the sessions are UDP, which TLS inspection skips."}
+    explanation: "proto=17 to 443 is QUIC. Blocking it (or using QUIC inspection where supported) brings the traffic into TLS-over-TCP."
+  - id: M3.02.q04
+    type: single
+    tier: 4
+    stem: "A hospital wants deep inspection for all staff next month. What do you settle first?"
+    options:
+      - {id: a, text: "Scope and exemptions with legal and HR, including how staff get informed", correct: true}
+      - {id: b, text: "The FortiGate model, using the SSL inspection throughput at peak hours of use", trap: near-miss, why_wrong: "Sizing matters, but scope decides what traffic is decrypted at all."}
+      - {id: c, text: "The CA distribution method for managed laptops and the medical devices", trap: near-miss, why_wrong: "Needed early, but which devices are in scope comes from the agreed policy."}
+      - {id: d, text: "A list of pinned applications to exempt, taken from vendor documentation", trap: misconception, why_wrong: "Exemptions should come from pilot evidence, after scope is agreed."}
+    explanation: "Decrypting staff traffic is a legal and privacy decision first; technical steps follow scope."
+  - id: M3.02.q05
+    type: multi
+    tier: 3
+    stem: "Which traffic usually needs an exemption from deep inspection? Select all that apply."
+    options:
+      - {id: a, text: "Apps that pin their server certificate", correct: true}
+      - {id: b, text: "Services that require a client certificate", correct: true}
+      - {id: c, text: "Health and finance categories, for privacy", correct: true}
+      - {id: d, text: "Sites using TLS 1.3 rather than TLS 1.2", trap: near-miss, why_wrong: "TLS 1.3 is inspected normally; it hides the certificate only from passive devices."}
+      - {id: e, text: "Sites whose certificates use ECDSA keys", trap: misconception, why_wrong: "The key type doesn't matter; the FortiGate re-signs either way."}
+    explanation: "Pinning, mutual TLS and privacy categories are the classic exemptions."
+
+labs:
+  - id: M3.02.lab1
+    title: Exempt a category from deep inspection
+    goal: "Know the CLI to exempt categories and addresses in an SSL/SSH profile."
+    worked:
+      config: |
+        config firewall ssl-ssh-profile
+        edit "deep-inspection-andes"
+        config ssl-exempt
+        edit 1
+        set fortiguard-category 31
+        next
+        end
+        next
+        end
+    faded:
+      template: |
+        config firewall ssl-ssh-profile
+        edit "deep-inspection-lab"
+        config ssl-exempt
+        edit 1
+        set type {{address}}
+        set address "{{bank-apps}}"
+        next
+        end
+        next
+        end
+    solo:
+      prompt: "In profile 'di-clinic', add exemption 1 for address group 'pinned-apps'."
+      required: ["di-clinic", "ssl-exempt", "pinned-apps"]
+      solution: |
+        config firewall ssl-ssh-profile
+        edit "di-clinic"
+        config ssl-exempt
+        edit 1
+        set type address
+        set address "pinned-apps"
+        next
+        end
+        next
+        end
+      notes: "Check category numbers in the GUI of your release; they can change."
+
+scenarios:
+  - id: M3.02.sc1
+    kind: situation
+    tier: 4
+    title: "The CIO wants everything decrypted by Friday"
+    situation: "A logistics CIO read about malware in encrypted traffic and wants deep inspection for everyone by Friday. No CA is deployed, no pilot group exists and the FortiGate is at 60% CPU."
+    ask: "How do you respond?"
+    right_thinking:
+      - "Agree with the goal, reset the timeline with reasons"
+      - "Propose certificate inspection now for quick value, deep inspection in phases"
+      - "Name the three blockers: CA distribution, exemptions from a pilot, capacity"
+    what: "Yes to the goal, phased plan for the how."
+    why: "A rushed rollout breaks apps and the business loses trust in security."
+    how: ["Cert inspection now", "CA + pilot next", "Size for SSL throughput"]
+    model_answer: "\"The goal is right, and I can give you visibility this week with certificate inspection. Full decryption by Friday would break apps for people, because the CA isn't on the laptops yet, we don't know which apps pin, and the box is at 60% CPU before decrypting anything. So: certificate inspection now, CA push and a pilot group next week, then waves with an exemption list built from what we see.\""
+    best_way: "Agree with the goal, give a quick win, phase the risky part."
+    rubric: ["agrees with goal", "quick win", "names blockers", "phases"]
+
+interview:
+  - id: M3.02.t01
+    stage: technical
+    question: "What can a firewall see in HTTPS traffic without decrypting it?"
+    testing: "Precise TLS understanding"
+    framework: "Version difference → identifiers → limits"
+    model_answer: "\"The SNI in the ClientHello in both versions, and in TLS 1.2 also the server certificate. That's enough for a category and a decent application guess. In TLS 1.3 the certificate is encrypted, and with Encrypted Client Hello even the SNI goes. Content, URLs and files need full inspection.\""
+    best_way: "SNI always, certificate only in 1.2, content needs decryption."
+    target: "0:30"

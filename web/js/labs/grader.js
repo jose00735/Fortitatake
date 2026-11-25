@@ -118,6 +118,15 @@ function bgpCheck(lab, c) {
 
 function siemCheck(lab, c) {
   const siem = getDev(lab, c.dev);
+  if (c.receiving) return lab.siemReceiving(siem, c.receiving) ? { pass: true, detail: `${c.receiving} is sending syslog to ${c.dev} right now.` } : { pass: false, detail: `${c.receiving}'s syslog isn't reaching ${c.dev}: check the syslog server address, port, source and the route.` };
+  if (c.test_rule) {
+    const hit = lab.siemTestRule(siem, c.test_rule, c.attack || []);
+    if (hit === null) return { pass: false, detail: `${c.dev} has no custom rule named "${c.test_rule}". Write it with rule new.` };
+    const fp = lab.siemTestRule(siem, c.test_rule, c.baseline || []);
+    if (!hit) return { pass: false, detail: `"${c.test_rule}" stays quiet on the attack replay: check its filters, grouping and threshold against the attack's events.` };
+    if (fp) return { pass: false, detail: `"${c.test_rule}" fires on the attack, but also ${fp} time(s) on the normal week: it would page someone for nothing. Narrow it.` };
+    return { pass: true, detail: `"${c.test_rule}" fires on the attack replay and stays quiet on a week of normal activity.` };
+  }
   if (c.cmdb) { const ok = lab.siemEvents(siem).some((e) => e.reptDevName === c.cmdb); return ok ? { pass: true, detail: `${c.cmdb} is sending events to ${c.dev}.` } : { pass: false, detail: `${c.dev} has received nothing from ${c.cmdb}.` }; }
   if (c.events) { const n = lab.siemEvents(siem).filter((e) => Object.entries(c.events).every(([k, v]) => String(e[k] ?? "") === String(v))).length; return n ? { pass: true, detail: `${n} matching event(s) in ${c.dev}.` } : { pass: false, detail: `No events in ${c.dev} match ${Object.entries(c.events).map(([k, v]) => `${k}=${v}`).join(" ")}.` }; }
   const inc = lab.siemIncidents(siem).filter((i) => i.rule === c.incident && Object.entries(c.attrs || {}).every(([k, v]) => String(i.attrs[k]) === String(v)));

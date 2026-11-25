@@ -1,0 +1,245 @@
+id: K6.01
+track: secops
+modules: [M13.02, M13.03, M13.04, M9.03, M10.04]
+tier: 6
+order: 1
+kind: project
+title: "Capstone · Andes Logistics: the long night"
+customer: Andes Logistics
+par: 90
+skills: [triage under pressure, writing detections for AD attacks, containment trade-offs, fixing a broken log pipeline, customer communication]
+brief: |
+  **Capstone · Friday 23:40.** You're the Fortinet PS consultant on call for Andes Logistics' SOC go-live. FSIEM-01
+  (10.20.40.50) receives DC-01's Windows log and FGT-BOG's syslog; FortiEDR (FEDR-01) covers HQ-PC, FIN-PC and DC-01.
+  The contractor laptop LT-CONTRATISTA (10.20.10.66) is unmanaged: no EDR.
+
+  Two things are happening tonight and you'll have to tell them apart. Nobody will tell you which one matters more.
+  The FortiSIEM and FortiEDR consoles take GUI actions as commands (`help`).
+topology:
+  use: andes-secops
+  devices:
+    FGT-BOG:
+      config: |
+        config log syslogd setting
+        set status enable
+        set server 10.20.40.50
+        end
+        config firewall policy
+        edit 3
+        set name "HQ-to-EDR"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr FEDR-01
+        set action accept
+        set schedule always
+        set service FortiEDR-8081
+        next
+        end
+  story:
+    - {at: "22:48:10", host: FIN-PC, edr: {process: "Factura_Nov_2026.pdf.exe", path: "C:\\Users\\jperez\\Downloads\\Factura_Nov_2026.pdf.exe", parent: outlook.exe, cmd: "Factura_Nov_2026.pdf.exe /q", hash: 9f2c11ab07e4d9c1, rule: "Suspicious Application", policy: Execution Prevention, classification: Suspicious}}
+    - {at: "22:49:02", host: FIN-PC, edr: {process: rundll32.exe, path: "C:\\Windows\\System32\\rundll32.exe", parent: "Factura_Nov_2026.pdf.exe", cmd: "rundll32.exe C:\\Users\\Public\\upd.dll,Start", hash: 51ce77a0b3d2e8f4, rule: "Connection to a malicious destination", policy: Exfiltration Prevention, classification: Malicious, dst: "185.220.101.47:443"}}
+    - {at: "22:49:05", fgt: FGT-BOG, log: {type: traffic, subtype: forward, action: accept, srcip: 10.20.10.60, dstip: 185.220.101.47, dstport: 443, service: HTTPS, policyid: 1, sentbyte: 612, rcvdbyte: 418}}
+    - {at: "23:12:00", repeat: {n: 14, every: 9}, host: DC-01, win: {id: 4625, user: [aperez, bmora, cdiaz, dlopez, egil, fruiz, gsoto, hvega, ijara, svc_print, svc_scan, svc_sqlrpt, kreyes, lnunez], src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+    - {at: "23:14:21", host: DC-01, win: {id: 4624, user: svc_sqlrpt, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+    - {at: "23:21:00", repeat: {n: 18, every: 1}, host: DC-01, win: {id: 4769, user: svc_sqlrpt, src: 10.20.10.66, enc: "0x17", service: ["MSSQLSvc/ERP01:1433", "HTTP/intranet", "MSSQLSvc/DB02:1433", "exchangeAB/EX01", "WSMAN/APP03", "CIFS/FS01", "HTTP/portal", "svc_backup", "MSSQLSvc/RPT01:1433", "TERMSRV/JUMP01", "HTTP/sharepoint", "ldap/DC02", "FIMService/IDM01", "HTTP/crm", "MSSQLSvc/BI01:1433", "HOST/PRINT01", "HTTP/wiki", "SAPService/ERP01"]}}
+    - {at: "23:58:10", host: DC-01, win: {id: 4624, user: svc_backup, src: 10.20.10.66, ws: LT-CONTRATISTA, logon_type: 3}}
+    - {at: "23:58:14", host: DC-01, win: {id: 4662, user: svc_backup, src: 10.20.10.66, props: "{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2} {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}"}}
+    - {at: "00:02:30", repeat: {n: 6, every: 600}, host: DC-01, win: {id: 4662, user: "DC02$", src: 10.20.40.11, props: "{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2} {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}"}}
+parts:
+  - id: a
+    title: "23:40 — triage"
+    tasks:
+      - "List FSIEM-01's incidents. Take ownership of the logon-failures incident for 10.20.10.66."
+      - "With analytics, find out whether any of the attempted accounts logged on successfully afterwards."
+      - "Check FEDR-01's events too: is there anything on the FortiEDR side tonight?"
+    checks:
+      - text: "The failures incident for the contractor laptop is assigned"
+        siem: {dev: FSIEM-01, incident: Excessive Windows Logon Failures, attrs: {srcIpAddr: 10.20.10.66}, owner: true}
+      - text: "Which account did the spraying get?"
+        answer: {accept: ["~svc_sqlrpt"], sample: "svc_sqlrpt", hint: "Look for a 4624 from 10.20.10.66 after the burst of 4625.", why: "Fourteen different accounts failed once each, then svc_sqlrpt logged on at 23:14:21: spraying, and a service account with a guessable password."}
+      - text: "Why didn't 'Successful Logon After Multiple Failures' fire?"
+        answer: {accept: ["~distinct|different (user|account)|one (attempt|try) (per|each)|spray|same user"], sample: "That rule needs many failures for the same user; spraying tries each account once, so no user reaches the threshold", hint: "Read the rule's description: what does it group by?", why: "The built-in rule correlates failures and a success for the same user and source. A spray spreads one attempt per account, so it never crosses the per-user threshold. That's a detection gap you'll close in part b."}
+      - text: "What else is happening tonight, and on which machine?"
+        answer: {accept: ["~fin-pc|jperez|185\\.220|rundll|factura"], sample: "FIN-PC (CFO jperez) ran a fake invoice that started rundll32 talking to 185.220.101.47 — a separate phishing infection", hint: "`events` on FEDR-01, and `analytics destIpAddr=185.220.101.47` on FSIEM-01.", why: "Two incidents: an AD attack from the contractor laptop and a phishing infection on the CFO's PC beaconing to a known malicious address. They aren't linked by any evidence so far; treat them as separate until proven otherwise."}
+    hints:
+      - "`incidents`, `incident <id> assign <name>`, then `analytics srcIpAddr=10.20.10.66`."
+      - "On FEDR-01: `events`, then `forensics <id>` for the process tree."
+    solution:
+      FSIEM-01: |
+        incidents
+        incident 7165 assign jose
+        analytics srcIpAddr=10.20.10.66
+      FEDR-01: |
+        events
+    explain: |
+      Triage is about separating signals. The spray and the CFO's infection share a night, not a cause. Naming the
+      gap in the built-in rule (it groups by user) is as useful to the customer as the incident itself.
+  - id: b
+    title: "The rules that weren't there"
+    brief: |
+      **00:05.** The analytics show more from svc_sqlrpt after 23:14, but FortiSIEM raised nothing for it. Before you go
+      further, write the two detections the night needs, so the SOC sees it next time. The rules' names must match
+      exactly; each is replayed against tonight's attack and a normal week.
+    tasks:
+      - "Write a rule named `Kerberoasting - RC4 TGS burst`: 4769 with RC4 (0x17), grouped by account and source, 10 or more distinct service names in 5 minutes."
+      - "Write a rule named `DCSync from non-DC account`: 4662 whose properties contain the replication rights GUID 1131f6aa, by an account that isn't a computer account (doesn't end in $)."
+      - "Run `incidents` again: what does the DCSync incident tell you about the attacker's reach?"
+    checks:
+      - text: "Kerberoasting rule fires on the attack and stays quiet on a normal week"
+        siem:
+          dev: FSIEM-01
+          test_rule: "Kerberoasting - RC4 TGS burst"
+          attack:
+            - {at: "23:21:00", repeat: {n: 18, every: 1}, host: DC01, win: {id: 4769, user: svc_sqlrpt, src: 10.20.10.66, enc: "0x17", service: ["MSSQLSvc/ERP01:1433", "HTTP/intranet", "MSSQLSvc/DB02:1433", "exchangeAB/EX01", "WSMAN/APP03", "CIFS/FS01", "HTTP/portal", "svc_backup", "MSSQLSvc/RPT01:1433", "TERMSRV/JUMP01", "HTTP/sharepoint", "ldap/DC02", "FIMService/IDM01", "HTTP/crm", "MSSQLSvc/BI01:1433", "HOST/PRINT01", "HTTP/wiki", "SAPService/ERP01"]}}
+          baseline:
+            - {at: "08:00:00", repeat: {n: 60, every: 30}, host: DC01, win: {id: 4769, user: [mrojas, jperez, aperez, bmora, cdiaz], src: [10.20.10.50, 10.20.10.60, 10.20.10.71, 10.20.10.72, 10.20.10.73], enc: "0x12", service: ["CIFS/FS01", "HTTP/intranet", "MSSQLSvc/ERP01:1433", "HTTP/portal", "exchangeAB/EX01", "HOST/PRINT01", "HTTP/wiki", "HTTP/crm", "TERMSRV/JUMP01", "HTTP/sharepoint", "WSMAN/APP03", "ldap/DC02"]}}
+            - {at: "09:00:00", repeat: {n: 24, every: 20}, host: DC01, win: {id: 4769, user: svc_legacy, src: 10.20.40.30, enc: "0x17", service: ["MSSQLSvc/ERP01:1433", "HTTP/intranet"]}}
+      - text: "DCSync rule fires on the attack and ignores DC-to-DC replication"
+        siem:
+          dev: FSIEM-01
+          test_rule: "DCSync from non-DC account"
+          attack:
+            - {at: "23:58:14", host: DC01, win: {id: 4662, user: svc_backup, src: 10.20.10.66, props: "{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2} {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}"}}
+          baseline:
+            - {at: "00:00:00", repeat: {n: 40, every: 900}, host: DC01, win: {id: 4662, user: ["DC02$", "DC03$"], src: [10.20.40.11, 10.20.40.12], props: "{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2} {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}"}}
+            - {at: "10:00:00", repeat: {n: 10, every: 60}, host: DC01, win: {id: 4662, user: [mrojas, helpdesk1], src: 10.20.10.50, props: "{bf967a86-0de6-11d0-a285-00aa003049e2}"}}
+      - text: "What does DCSync by svc_backup mean for Andes?"
+        answer: {accept: ["~(all|every).*(hash|password|credential)|krbtgt|golden|domain (is )?compromised|domain compromise"], sample: "svc_backup could replicate every account's secrets, including krbtgt: assume the whole domain's credentials are compromised", hint: "What does a replication request return?", why: "DCSync asks a DC for password data the way another DC would. With Get-Changes-All the attacker can pull every hash, including krbtgt, which means forged tickets. This is now a domain compromise, not one stolen account."}
+    hints:
+      - "`rule new \"Kerberoasting - RC4 TGS burst\" where eventType=Win-Security-4769 ticketEncType=0x17 group user,srcIpAddr distinct svcName >= 10 window 300 sev 9`"
+      - "Properties hold the GUIDs: `properties=~1131f6aa`, and the account filter `user=!*$` excludes computer accounts such as DC02$."
+    solution:
+      FSIEM-01: |
+        rule new "Kerberoasting - RC4 TGS burst" where eventType=Win-Security-4769 ticketEncType=0x17 group user,srcIpAddr distinct svcName >= 10 window 300 sev 9
+        rule new "DCSync from non-DC account" where eventType=Win-Security-4662 properties=~1131f6aa user=!*$ group user,srcIpAddr count >= 1 window 60 sev 10
+        incidents
+    explain: |
+      Both rules count what the technique must do. Kerberoasting needs many service tickets, so distinct service names
+      per requester separates it from the legacy app that asks for two services with RC4 all day. DCSync needs the
+      replication rights, and only DCs should use them: excluding computer accounts removes normal replication without
+      hiding a user or service account that was granted the rights.
+  - id: c
+    title: "Contain — and the CISO calls"
+    brief: |
+      **00:20.** You propose isolating FIN-PC and the contractor laptop. The CISO calls: *"The CFO is presenting to the
+      board from FIN-PC at 07:00 and the deck is on that laptop. Do not cut her off. Stop the bad stuff, keep the
+      laptop working."* The contractor laptop has no EDR.
+    tasks:
+      - "Contain LT-CONTRATISTA (10.20.10.66) on FGT-BOG: it must not reach DC-01 any more. HQ-PC must keep reaching it."
+      - "Do NOT isolate FIN-PC. Instead stop its traffic to 185.220.101.47 on FGT-BOG, and make sure it still reaches DC-01."
+      - "Tell the customer which two accounts must be reset first."
+    checks:
+      - text: "LT-CONTRATISTA can't reach DC-01"
+        probe: {from: CONTRACTOR-LT, to: 10.20.40.10, proto: icmp, expect: fail}
+      - text: "HQ-PC still reaches DC-01"
+        probe: {from: HQ-PC, to: 10.20.40.10, proto: icmp}
+      - text: "FIN-PC can't reach the C2 address any more"
+        probe: {from: FIN-PC, to: 185.220.101.47, proto: tcp, port: 443, expect: fail}
+      - text: "FIN-PC still reaches DC-01 (the CFO keeps working)"
+        probe: {from: FIN-PC, to: 10.20.40.10, proto: icmp}
+      - text: "FIN-PC is not isolated"
+        edr: {dev: FEDR-01, isolated: false, host: FIN-PC}
+      - text: "Which two accounts get reset first?"
+        answer: {accept: ["~svc_sqlrpt.*svc_backup|svc_backup.*svc_sqlrpt"], sample: "svc_sqlrpt and svc_backup", hint: "One was sprayed, one was used for DCSync.", why: "svc_sqlrpt was guessed and used for Kerberoasting; svc_backup (likely cracked from its ticket) ran DCSync. Then privileged accounts and krbtgt twice, as planned in M13.03."}
+    hints:
+      - "Two addresses (10.20.10.66/32 and 185.220.101.47/32), two deny policies on FGT-BOG, and `move` them above policies 1 and 2."
+      - "Isolation would cut the CFO off; a deny policy for one destination keeps everything else working."
+    solution:
+      FGT-BOG: |
+        config firewall address
+        edit QUARANTINE-LT
+        set subnet 10.20.10.66 255.255.255.255
+        next
+        edit C2-185.220.101.47
+        set subnet 185.220.101.47 255.255.255.255
+        next
+        end
+        config firewall policy
+        edit 10
+        set name "Quarantine-contractor"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr QUARANTINE-LT
+        set dstaddr all
+        set action deny
+        set schedule always
+        set service ALL
+        set logtraffic all
+        next
+        edit 11
+        set name "Block-C2"
+        set srcintf port2
+        set dstintf port1
+        set srcaddr HQ-LAN
+        set dstaddr C2-185.220.101.47
+        set action deny
+        set schedule always
+        set service ALL
+        set logtraffic all
+        next
+        move 10 before 1
+        move 11 before 1
+        end
+    explain: |
+      The requirement changed mid-incident, as it does in real life: the business decided the CFO's laptop stays up.
+      Network-level containment at the FortiGate stops the known C2 path without cutting her off, and an unmanaged
+      laptop can only be contained on the network anyway. On FortiTatake OS these checks are decided by the kernel:
+      the deny policies become nftables rules and the probes are real packets.
+  - id: d
+    title: "00:40 — the SIEM went quiet"
+    events:
+      - cli:
+          dev: FGT-BOG
+          lines: |
+            config log syslogd setting
+            set server 10.20.40.150
+            end
+    brief: |
+      **00:40.** A night operator "cleaned up" FGT-BOG's logging settings at 00:31. Since then FSIEM-01 shows no new
+      FortiGate events — in the middle of an incident. The operator swears nothing changed.
+    tasks:
+      - "Find why FGT-BOG's syslog stopped reaching FSIEM-01 and fix it."
+      - "Confirm with a sniffer that syslog packets go to 10.20.40.50 again."
+    checks:
+      - text: "FGT-BOG's syslog reaches FSIEM-01 again"
+        siem: {dev: FSIEM-01, receiving: FGT-BOG-HQ}
+      - text: "What was wrong?"
+        answer: {accept: ["~10\\.20\\.40\\.150|server (address|ip)|wrong (server|ip|address)"], sample: "The syslog server was changed to 10.20.40.150 instead of FSIEM-01's 10.20.40.50", hint: "`show log syslogd setting` on FGT-BOG.", why: "One mistyped address silently blinds the SOC. That's why log-source health alerts (a source going quiet) belong in every SOC design."}
+    hints:
+      - "`show log syslogd setting` and `diagnose sniffer packet any 'udp port 514' 4 5`."
+      - "FSIEM-01 is 10.20.40.50."
+    solution:
+      FGT-BOG: |
+        config log syslogd setting
+        set server 10.20.40.50
+        end
+    explain: |
+      Mid-incident faults happen. The fix is one line; the lesson is a detection for a source going quiet, so the next
+      time it's a P2 alert instead of a lucky glance at a dashboard.
+  - id: e
+    title: "02:00 — the customer update"
+    brief: |
+      **02:00.** The CISO wants a written update before she sleeps: what happened, what you did, what's still open,
+      what she must decide.
+    tasks:
+      - "Answer the four questions as you'd write them to the CISO."
+    checks:
+      - text: "How did the attacker get in?"
+        answer: {accept: ["~spray|guess|weak password|svc_sqlrpt"], sample: "Password spraying from the unmanaged contractor laptop guessed svc_sqlrpt's password", hint: "Part a.", why: "Initial access was a guessable service-account password tried from a device the SOC couldn't see on the endpoint."}
+        rubric: ["names the technique", "names the device", "plain language"]
+      - text: "What is contained, and what isn't yet?"
+        answer: {accept: ["~(laptop|contractor|10\\.20\\.10\\.66).*(c2|185\\.220|fin-pc)|(c2|185\\.220|fin-pc).*(laptop|contractor|10\\.20\\.10\\.66)"], sample: "The contractor laptop is blocked and FIN-PC can't reach the C2; the stolen credentials and possible forged tickets are not contained until the resets are done", hint: "Network vs credentials.", why: "Network containment is done; credential containment (resets, krbtgt twice) is the open item, because DCSync exposed every hash."}
+        rubric: ["network containment stated", "credential exposure stated", "honest about open items"]
+      - text: "What must she decide tonight?"
+        answer: {accept: ["~krbtgt|reset|domain-wide|all (users|passwords)|maintenance"], sample: "Approve the krbtgt double reset and the privileged/service account resets, which will log some services out", hint: "What has business impact and needs her authority?", why: "A domain-wide credential reset disrupts services; it's her call, with your plan and timing."}
+        rubric: ["asks for a decision", "states impact", "offers timing"]
+    hints:
+      - "Executives need impact, actions, open items and decisions — not event IDs."
+      - "Separate the two threads: AD compromise and the CFO's phishing infection."
+    solution:
+      FSIEM-01: |
+        incidents
+    explain: |
+      The update closes the loop: what's contained, what isn't, and the decision only the customer can make. The
+      technical work is wasted if the executive can't act on it at 02:00.

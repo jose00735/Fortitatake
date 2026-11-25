@@ -13,12 +13,43 @@ import { fmtLog } from "./utm.js";
 
 const day = (lab) => new Date(lab.clock - 5 * 3600000).toISOString().slice(0, 10);
 const pad = (s, n) => (String(s).length >= n ? String(s) + " " : String(s) + " ".repeat(n - String(s).length));
-const WIN = { 4624: "An account was successfully logged on", 4625: "An account failed to log on", 4688: "A new process has been created", 4720: "A user account was created", 4728: "A member was added to a security-enabled global group", 4740: "A user account was locked out", 7045: "A service was installed in the system", 1102: "The audit log was cleared" };
+const WIN = { 4624: "An account was successfully logged on", 4625: "An account failed to log on", 4648: "A logon was attempted using explicit credentials", 4662: "An operation was performed on an object", 4688: "A new process has been created", 4698: "A scheduled task was created", 4720: "A user account was created", 4728: "A member was added to a security-enabled global group", 4740: "A user account was locked out", 4768: "A Kerberos authentication ticket (TGT) was requested", 4769: "A Kerberos service ticket was requested", 4771: "Kerberos pre-authentication failed", 4776: "The computer attempted to validate the credentials for an account", 4886: "Certificate Services received a certificate request", 4887: "Certificate Services approved a certificate request and issued a certificate", 5145: "A network share object was checked to see whether client can be granted desired access", 7045: "A service was installed in the system", 1102: "The audit log was cleared" };
+const SYSMON = { 1: "Process Create", 3: "Network connection detected", 10: "Process accessed", 22: "DNSEvent (DNS query)" };
+// story field -> FortiSIEM attribute, for the fields detections use
+const WINF = { user: "user", src: "srcIpAddr", ws: "hostName", logon_type: "logonType", logon_process: "logonProcess", process: "procName", parent: "parentProcName", cmd: "command", service: "svcName", enc: "ticketEncType", props: "properties", target: "targetImage", access: "grantedAccess", share: "shareName", task: "taskName", san: "certSubject", preauth: "preAuthType", code: "failureCode", dst: "destIpAddr", dport: "destIpPort", query: "dnsQuery" };
+export function winToSiem(hostname, ip, w) {
+  const sys = w.log === "sysmon";
+  const e = { eventType: sys ? `Win-Sysmon-${w.id}` : `Win-Security-${w.id}`, time: w.time, date: w.date, reptDevName: hostname, reptDevIp: ip, msg: (sys ? SYSMON[w.id] : WIN[w.id]) || "", seq: w.seq };
+  for (const [k, a] of Object.entries(WINF)) if (w[k] !== undefined) e[a] = w[k];
+  const kv = Object.entries(WINF).filter(([k]) => w[k] !== undefined).map(([k, a]) => `${a}=${String(w[k]).includes(" ") ? '"' + w[k] + '"' : w[k]}`).join(" ");
+  e.raw = `<13>${w.date}T${w.time} ${hostname} ${sys ? "Microsoft-Windows-Sysmon" : "Microsoft-Windows-Security-Auditing"} EventID=${w.id} ${e.msg} ${kv}`;
+  return e;
+}
+
+// A story list with `repeat` items expanded: {at, repeat: {n, every}, host, win: {user: [a, b, c], ...}}
+// makes n events `every` seconds apart, cycling through any list-valued field.
+export function expandStory(items) {
+  const out = [];
+  const sec = (t) => { const [h, m, x] = String(t).split(":").map(Number); return h * 3600 + m * 60 + (x || 0); };
+  const hms = (n) => [Math.floor(n / 3600) % 24, Math.floor(n / 60) % 60, n % 60].map((v) => String(v).padStart(2, "0")).join(":");
+  for (const it of items || []) {
+    if (!it.repeat) { out.push(it); continue; }
+    const n = it.repeat.n || 1, every = it.repeat.every || 1, t0 = sec(it.at || "09:00:00");
+    for (let i = 0; i < n; i++) {
+      const pick = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, Array.isArray(v) ? v[i % v.length] : v]));
+      const x = { ...it, at: hms(t0 + i * every) };
+      delete x.repeat;
+      for (const k of ["win", "edr", "log"]) if (it[k]) x[k] = pick(it[k]);
+      out.push(x);
+    }
+  }
+  return out;
+}
 let seq = 50000;
 
 // ---------- the story ----------
 Lab.prototype.playStory = function (items) {
-  for (const it of items || []) {
+  for (const it of expandStory(items)) {
     const time = it.at || "09:00:00";
     if (it.fgt) {
       const fg = this.dev(it.fgt);
@@ -81,7 +112,7 @@ function winEvents(lab, siem) {
     let ok = realOk(lab, h.id, siem.ip(), 443);
     if (ok === undefined) { lab.quiet = (lab.quiet || 0) + 1; try { ok = lab.probe(h.id, { dst: siem.ip(), proto: 6, dport: 443 }).ok; } finally { lab.quiet--; } }
     if (!ok) continue;
-    for (const w of h.winlog) out.push({ eventType: `Win-Security-${w.id}`, time: w.time, date: w.date, reptDevName: h.hostname, reptDevIp: intToIp(h.ip() || 0), srcIpAddr: w.src, user: w.user, hostName: w.ws, logonType: w.logon_type, procName: w.process, svcName: w.service, msg: WIN[w.id] || "", raw: `<13>${w.date}T${w.time} ${h.hostname} Microsoft-Windows-Security-Auditing EventID=${w.id} ${WIN[w.id] || ""} TargetUserName=${w.user || "-"} IpAddress=${w.src || "-"} WorkstationName=${w.ws || "-"}${w.process ? " NewProcessName=" + w.process : ""}${w.service ? " ServiceName=" + w.service : ""}`, seq: w.seq });
+    for (const w of h.winlog) out.push(winToSiem(h.hostname, intToIp(h.ip() || 0), w));
   }
   return out;
 }
@@ -106,6 +137,16 @@ Lab.prototype.siemEvents = function (siem) {
   return [...heartbeats(this, siem), ...siem.siem.events, ...winEvents(this, siem)].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time) || a.seq - b.seq);
 };
 
+// Is a FortiGate's syslog reaching this FortiSIEM right now (configured, routed, allowed)?
+Lab.prototype.siemReceiving = function (siem, devname) {
+  const fg = [...this.devices.values()].find((d) => d instanceof FortiGate && d.hostname && d.hostname() === devname);
+  if (!fg) return false;
+  const set = fg.cfg.get("log syslogd setting");
+  if (!set || fg.one("log syslogd setting", set, "status") !== "enable" || ipToInt(fg.one("log syslogd setting", set, "server") || "") !== siem.ip()) return false;
+  this.quiet = (this.quiet || 0) + 1;
+  try { return this.probe(fg.id, { dst: siem.ip(), proto: 17, dport: Number(fg.one("log syslogd setting", set, "port") || 514) }).ok; } finally { this.quiet--; }
+};
+
 // ---------- FortiSIEM rules ----------
 const tsec = (e) => { const [h, m, s] = String(e.time).split(":").map(Number); return h * 3600 + m * 60 + (s || 0); };
 function defaultRules(spec) {
@@ -119,11 +160,40 @@ function defaultRules(spec) {
     { name: "Port Scan From Single Source", sev: 7, on: true, threshold: 15, window: 300, desc: "≥N denied connections to distinct ports from one source in 5 minutes" },
   ];
   for (const o of (spec && spec.rules) || []) { const r = R.find((x) => x.name === o.name); if (r) Object.assign(r, o); }
+  for (const c of (spec && spec.custom_rules) || []) R.push({ on: true, sev: 7, window: 300, ...c, custom: true });
   return R;
 }
 function rulesOf(siem) { siem.siem = siem.siem || { events: [], inc: new Map(), rules: null }; if (!siem.siem.rules) siem.siem.rules = defaultRules(siem.spec.fortisiem); return siem.siem.rules; }
 const excepted = (r, e) => (r.exceptions || []).some((x) => Object.entries(x).every(([k, v]) => String(e[k] ?? "") === String(v)));
 
+// A user-written rule: where (filters), group by, count or distinct count of an attribute, threshold, window.
+export function evalCustom(r, E, push) {
+  // values: exact, glob with * (case-insensitive), alternatives with |, contains with ~, negation with a leading !
+  const one = (x, pat) => (pat.startsWith("~") ? x.toLowerCase().includes(pat.slice(1).toLowerCase()) : new RegExp("^" + pat.replace(/[.+?^${}()[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$", "i").test(x));
+  const match = (e) => Object.entries(r.where || {}).every(([k, v]) => {
+    const x = String(e[k] ?? ""), vs = String(v);
+    const neg = vs.startsWith("!");
+    const hit = (neg ? vs.slice(1) : vs).split("|").some((p) => one(x, p));
+    return neg ? !hit : hit;
+  });
+  const g = new Map();
+  for (const e of E.filter(match)) { const k = (r.group || []).map((a) => e[a] ?? "").join("|"); if (!g.has(k)) g.set(k, []); g.get(k).push(e); }
+  const measure = (list) => (r.distinct ? new Set(list.map((x) => x[r.distinct] ?? "")).size : list.length);
+  for (const [k, list] of g) {
+    for (let i = 0; i < list.length; i++) {
+      const win = list.filter((x) => tsec(x) >= tsec(list[i]) && tsec(x) - tsec(list[i]) <= (r.window || 300));
+      if (measure(win) >= (r.threshold || 1)) { push(r, k, win, Object.fromEntries((r.group || []).map((a) => [a, list[0][a]]))); break; }
+    }
+  }
+}
+Lab.prototype.siemTestRule = function (siem, name, stream) {
+  const r = rulesOf(siem).find((x) => x.name.toLowerCase() === String(name).toLowerCase());
+  if (!r || !r.custom) return null;
+  const E = expandStory(stream).filter((x) => x.win).map((x, i) => winToSiem(x.host, "", { time: x.at, date: day(this), seq: i + 1, ...x.win })).filter((e) => !excepted(r, e));
+  let n = 0;
+  evalCustom(r, E, () => n++);
+  return n;
+};
 Lab.prototype.siemIncidents = function (siem) {
   const ev = this.siemEvents(siem);
   const feed = new Set(((siem.spec.fortisiem && siem.spec.fortisiem.threat_feed) || []).map(String));
@@ -136,6 +206,7 @@ Lab.prototype.siemIncidents = function (siem) {
   for (const r of rulesOf(siem)) {
     if (!r.on) continue;
     const E = ev.filter((e) => !excepted(r, e));
+    if (r.custom) { evalCustom(r, E, push); continue; }
     if (r.name === "Excessive Windows Logon Failures") {
       const g = new Map();
       for (const e of E.filter((x) => x.eventType === "Win-Security-4625")) { const k = `${e.srcIpAddr}>${e.reptDevName}`; if (!g.has(k)) g.set(k, []); g.get(k).push(e); }
@@ -167,7 +238,7 @@ Lab.prototype.siemConsole = function (siem, line) {
   const c = (toks[0] || "").toLowerCase();
   if (!c) return "";
   const ev = () => this.siemEvents(siem);
-  if (c === "help" || c === "?") return "FortiSIEM GUI actions:\n  cmdb                              devices discovered from the logs they send\n  analytics key=value ... [group-by=attr] [last=N]   search events (eventType, srcIpAddr, user, reptDevName…)\n  rules                             rule list (enabled, threshold)\n  rule \"<name>\" enable|disable | threshold <n> | exception key=value\n  incidents [status=Active|Cleared]   incidents from enabled rules\n  incident <id> | incident <id> assign <user> | incident <id> clear \"<reason>\"";
+  if (c === "help" || c === "?") return "FortiSIEM GUI actions:\n  rule new \"<name>\" where key=value ... group a,b count|distinct <attr> >= N window <s> [sev N]   write a correlation rule\n  rule delete \"<name>\"\n  cmdb                              devices discovered from the logs they send\n  analytics key=value ... [group-by=attr] [last=N]   search events (eventType, srcIpAddr, user, reptDevName…)\n  rules                             rule list (enabled, threshold)\n  rule \"<name>\" enable|disable | threshold <n> | exception key=value\n  incidents [status=Active|Cleared]   incidents from enabled rules\n  incident <id> | incident <id> assign <user> | incident <id> clear \"<reason>\"";
   if (c === "cmdb") {
     const seen = new Map();
     for (const e of ev()) seen.set(e.reptDevName, e);
@@ -180,9 +251,45 @@ Lab.prototype.siemConsole = function (siem, line) {
     for (const a of toks.slice(1)) { const i = a.indexOf("="); if (i < 0) continue; const k = a.slice(0, i), v = a.slice(i + 1); if (k === "last") last = Number(v) || 25; else if (k === "group-by") by = v; else f[k] = v; }
     const hits = ev().filter((e) => Object.entries(f).every(([k, v]) => { const x = String(e[k] ?? ""); return v.endsWith("*") ? x.startsWith(v.slice(0, -1)) : x === v; }));
     if (by) { const cnt = new Map(); for (const e of hits) cnt.set(e[by] ?? "(none)", (cnt.get(e[by] ?? "(none)") || 0) + 1); return `(GUI: Analytics > group by ${by}) ${hits.length} event(s)\n` + [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${pad(k, 28)}${v}`).join("\n"); }
-    return `(GUI: Analytics) ${hits.length} event(s)${Object.keys(f).length ? " where " + Object.entries(f).map(([k, v]) => `${k}=${v}`).join(" ") : ""}\n` + hits.slice(-last).map((e) => `${e.date} ${e.time}  ${pad(e.eventType, 30)}${pad(e.reptDevName, 16)}${e.srcIpAddr ? "src=" + e.srcIpAddr + " " : ""}${e.destIpAddr ? "dst=" + e.destIpAddr + " " : ""}${e.user ? "user=" + e.user + " " : ""}${e.ipsSignature ? 'sig="' + e.ipsSignature + '" ' : ""}${e.svcName ? "service=" + e.svcName : ""}`).join("\n");
+    return `(GUI: Analytics) ${hits.length} event(s)${Object.keys(f).length ? " where " + Object.entries(f).map(([k, v]) => `${k}=${v}`).join(" ") : ""}\n` + hits.slice(-last).map((e) => `${e.date} ${e.time}  ${pad(e.eventType, 30)}${pad(e.reptDevName, 16)}${e.srcIpAddr ? "src=" + e.srcIpAddr + " " : ""}${e.destIpAddr ? "dst=" + e.destIpAddr + " " : ""}${e.user ? "user=" + e.user + " " : ""}${e.ipsSignature ? 'sig="' + e.ipsSignature + '" ' : ""}${["svcName", "ticketEncType", "logonType", "logonProcess", "properties", "parentProcName", "procName", "command", "targetImage", "grantedAccess", "shareName", "taskName", "certSubject", "preAuthType", "failureCode"].filter((k) => e[k] !== undefined && e[k] !== "").map((k) => `${k}=${String(e[k]).includes(" ") ? '"' + e[k] + '"' : e[k]}`).join(" ")}`).join("\n");
   }
   if (c === "rules") return `(GUI: Resources > Rules)\n` + rulesOf(siem).map((r) => `${r.on ? "[on] " : "[off]"} ${pad(r.name, 42)}sev ${r.sev}${r.threshold ? `  threshold ${r.threshold}` : ""}${(r.exceptions || []).length ? `  exceptions ${r.exceptions.length}` : ""}\n       ${r.desc}`).join("\n");
+  if (c === "rule" && (toks[1] || "").toLowerCase() === "new") {
+    // rule new "<name>" where k=v ... group a,b count|distinct <attr> >= N window <s> [sev N]
+    const name = toks[2];
+    if (!name) return 'Usage: rule new "<name>" where key=value ... group attr[,attr] count|distinct <attr> >= N window <seconds> [sev N]';
+    const r = { name, on: true, sev: 7, window: 300, threshold: 1, where: {}, group: [], custom: true, desc: "" };
+    let i = 3;
+    const words = toks.slice(3).map((x) => x.toLowerCase());
+    for (; i < toks.length; i++) {
+      const w = toks[i].toLowerCase();
+      if (w === "where") continue;
+      if (w === "group") { r.group = String(toks[++i] || "").split(",").filter(Boolean); continue; }
+      if (w === "count") { if (toks[i + 1] && toks[i + 1] !== ">=" && !/^\d+$/.test(toks[i + 1])) i++; continue; }
+      if (w === "distinct") { r.distinct = toks[++i]; continue; }
+      if (w === ">=") { r.threshold = Number(toks[++i]) || 1; continue; }
+      if (w === "window") { r.window = Number(String(toks[++i] || "").replace(/s$/, "")) || 300; continue; }
+      if (w === "sev") { r.sev = Number(toks[++i]) || 7; continue; }
+      const eq = toks[i].indexOf("=");
+      if (eq > 0) r.where[toks[i].slice(0, eq)] = toks[i].slice(eq + 1);
+    }
+    if (!Object.keys(r.where).length) return "A rule needs at least one where filter (for example eventType=Win-Security-4769).";
+    r.desc = `${Object.entries(r.where).map(([k, v]) => `${k}=${v}`).join(" ")}; ${r.distinct ? `distinct ${r.distinct}` : "count"} >= ${r.threshold} in ${r.window}s${r.group.length ? ` by ${r.group.join(",")}` : ""}`;
+    void words;
+    const all = rulesOf(siem);
+    const old = all.findIndex((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (old >= 0) { if (!all[old].custom) return `"${name}" is a built-in rule; give yours another name.`; all.splice(old, 1, r); }
+    else all.push(r);
+    this.ver++;
+    return `Rule "${name}" saved and enabled: ${r.desc}, severity ${r.sev}.`;
+  }
+  if (c === "rule" && (toks[1] || "").toLowerCase() === "delete") {
+    const all = rulesOf(siem);
+    const i = all.findIndex((x) => x.custom && x.name.toLowerCase() === String(toks[2] || "").toLowerCase());
+    if (i < 0) return `No custom rule named "${toks[2] || ""}".`;
+    all.splice(i, 1); this.ver++;
+    return `Rule "${toks[2]}" deleted.`;
+  }
   if (c === "rule") {
     const r = rulesOf(siem).find((x) => x.name.toLowerCase() === String(toks[1] || "").toLowerCase());
     if (!r) return `No rule named "${toks[1] || ""}". Type rules.`;

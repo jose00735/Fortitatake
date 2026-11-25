@@ -1,0 +1,225 @@
+id: M1.02
+title: "Addressing and core services: subnetting, ICMP, DHCP, DNS and NTP"
+stage: S1
+stage_title: "S1 · Network foundations"
+order: 19
+quality: 2
+est_sessions: 1
+objectives:
+  - Subnet IPv4 quickly and read IPv6 prefixes without hesitation
+  - Use ICMP messages as evidence (unreachable codes, TTL exceeded, fragmentation needed)
+  - Troubleshoot DHCP (DORA, relay) and DNS (records, recursion, split DNS) on and through a FortiGate
+  - Explain why NTP is a security control, not housekeeping
+sources:
+  - "FortiOS 8.0.2 Administration Guide: DNS (p. 405), DHCP server and relay (p. 607), IPv6 (p. 987)"
+  - "RFC 792 (ICMP), RFC 2131 (DHCP), RFC 1034/1035 (DNS), RFC 5905 (NTP), RFC 4291 (IPv6 addressing)"
+
+units:
+  - id: M1.02.u1
+    title: "Subnetting at interview speed"
+    tier: 2
+    est_min: 12
+    body: |
+      Block size = 256 − the interesting mask octet. For a /27 (255.255.255.224) the block is 32: networks at .0,
+      .32, .64…; broadcast is the next network − 1; usable hosts = 2^(32−prefix) − 2.
+
+      | Prefix | Mask | Block | Usable |
+      |---|---|---|---|
+      | /24 | 255.255.255.0 | 256 | 254 |
+      | /26 | 255.255.255.192 | 64 | 62 |
+      | /27 | 255.255.255.224 | 32 | 30 |
+      | /29 | 255.255.255.248 | 8 | 6 |
+      | /30 | 255.255.255.252 | 4 | 2 |
+
+      **IPv6** in one paragraph: 128-bit addresses, /64 per LAN, link-local fe80::/10 always present, global unicast
+      2000::/3, unique local fc00::/7; neighbours via NDP (ICMPv6), not ARP. Blocking all ICMPv6 breaks IPv6.
+
+      :::recall
+      Q: Broadcast address of 172.16.5.77/27?
+      A: 172.16.5.95 (block 32: network .64, broadcast .95).
+      :::
+  - id: M1.02.u2
+    title: "ICMP as evidence"
+    tier: 3
+    est_min: 10
+    body: |
+      ICMP messages tell you who gave up and why:
+
+      | Message | Type/code | Means |
+      |---|---|---|
+      | Echo request/reply | 8 / 0 | Reachability |
+      | Destination unreachable, net/host | 3 / 0, 1 | A router had no route / no ARP answer |
+      | Port unreachable | 3 / 3 | The host is up, nothing listens on that UDP port |
+      | Fragmentation needed | 3 / 4 | Packet bigger than the next hop MTU with DF set |
+      | Administratively prohibited | 3 / 13 | A filter rejected it (some firewalls send it) |
+      | Time exceeded | 11 / 0 | TTL hit zero: the basis of traceroute |
+
+      A FortiGate deny policy drops silently by default; a timeout is therefore a hint of a firewall, a quick
+      "unreachable" a hint of routing.
+
+      :::recall
+      Q: What does traceroute rely on?
+      A: ICMP time exceeded (type 11) from each hop as TTL increases.
+      :::
+  - id: M1.02.u3
+    title: "DHCP, DNS and NTP"
+    tier: 3
+    est_min: 14
+    body: |
+      **DHCP** is DORA: Discover (broadcast), Offer, Request, Acknowledge. Broadcasts don't cross routers, so a
+      central server needs a **relay** on the client's gateway (`set dhcp-relay-service enable` and the server IP on
+      the FortiGate interface). Typical faults: relay missing, scope exhausted, wrong gateway/DNS options.
+
+      **DNS**: A/AAAA (address), CNAME (alias), MX (mail), PTR (reverse), TXT (SPF, DKIM, verification), SRV
+      (services such as AD's `_ldap._tcp`). Recursive resolvers ask on clients' behalf; authoritative servers own a
+      zone. **Split DNS** answers internal names with internal addresses. A FortiGate can be a DNS forwarder or a
+      server (`config system dns-server`) and hands out DNS in DHCP (`dns-service default | specify | local`).
+
+      **NTP** matters for security: Kerberos fails beyond 5 minutes of skew by default, certificates can look
+      not-yet-valid, and log timelines lie. Point FortiGates, DCs and SIEMs at the same time source.
+
+      :::recall
+      Q: Why does DHCP across subnets need a relay?
+      A: The Discover is a broadcast and routers don't forward broadcasts; the relay unicasts it to the server.
+      :::
+
+      :::why
+      Q: Why is NTP a security control?
+      A: Authentication (Kerberos), certificate validity and incident timelines all depend on correct time.
+      :::
+
+cards:
+  - {id: M1.02.c01, unit: M1.02.u1, tier: 1, front: "/27 mask and usable hosts", back: "255.255.255.224, 30 hosts."}
+  - {id: M1.02.c02, unit: M1.02.u1, tier: 2, front: "IPv6 link-local prefix", back: "fe80::/10."}
+  - {id: M1.02.c03, unit: M1.02.u1, tier: 2, front: "IPv6 neighbour discovery uses", back: "ICMPv6 (NDP), not ARP."}
+  - {id: M1.02.c04, unit: M1.02.u2, tier: 2, front: "ICMP type 3 code 3", back: "Port unreachable: host up, nothing on that UDP port."}
+  - {id: M1.02.c05, unit: M1.02.u2, tier: 2, front: "ICMP type 3 code 4", back: "Fragmentation needed (DF set, packet too big)."}
+  - {id: M1.02.c06, unit: M1.02.u2, tier: 2, front: "ICMP type 11", back: "Time exceeded: TTL reached zero (traceroute)."}
+  - {id: M1.02.c07, unit: M1.02.u3, tier: 1, front: "DORA", back: "Discover, Offer, Request, Acknowledge."}
+  - {id: M1.02.c08, unit: M1.02.u3, tier: 2, front: "DNS record for AD service discovery", back: "SRV (e.g. _ldap._tcp.dc._msdcs)."}
+  - {id: M1.02.c09, unit: M1.02.u3, tier: 3, front: "FortiGate DHCP dns-service options", back: "default (system DNS), specify (dns-server1/2), local (the FortiGate itself)."}
+  - {id: M1.02.c10, unit: M1.02.u3, tier: 3, front: "Kerberos default max clock skew", back: "5 minutes."}
+
+quiz:
+  - id: M1.02.q01
+    type: text
+    tier: 2
+    pretest: true
+    stem: "What is the broadcast address of 192.168.40.130/26?"
+    accept: ["192.168.40.191"]
+    explanation: "/26 → block 64: networks .0, .64, .128, .192. .130 is in .128–.191."
+  - id: M1.02.q02
+    type: single
+    tier: 3
+    stem: "Clients on VLAN 30 get APIPA addresses (169.254.x.x). The DHCP server is in the data centre and works for other VLANs. What is the most likely cause?"
+    options:
+      - {id: a, text: "The VLAN 30 gateway interface has no DHCP relay pointing at the server", correct: true}
+      - {id: b, text: "The DHCP server's scope for VLAN 30 has the wrong DNS servers in its options", trap: near-miss, why_wrong: "Wrong options still give an address; APIPA means no offer arrived at all."}
+      - {id: c, text: "The clients' DNS suffix doesn't match the domain name the DHCP server expects", trap: misconception, why_wrong: "DHCP doesn't check DNS suffixes before offering an address."}
+      - {id: d, text: "A firewall policy blocks UDP 67 from the data centre back to the VLAN 30 clients", trap: near-miss, why_wrong: "Possible in theory, but relay traffic is from the relay to the server; the missing relay is the common cause."}
+    explanation: "Other VLANs work, so the server is fine. VLAN 30's broadcasts never reach it without a relay on its gateway."
+  - id: M1.02.q03
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      C:\Users\User>tracert -d 10.50.1.20
+      Tracing route to 10.50.1.20 over a maximum of 30 hops
+        1    <1 ms    <1 ms    <1 ms  10.10.10.1
+        2     2 ms     1 ms     2 ms  10.255.0.1
+        3  10.255.0.1  reports: Destination net unreachable.
+    stem: "What do you check first?"
+    options:
+      - {id: a, text: "The routing table of 10.255.0.1: it has no route toward 10.50.1.0/24", correct: true}
+      - {id: b, text: "The firewall policy on 10.10.10.1, because hop 1 is the first device that filters traffic", trap: near-miss, why_wrong: "The packet passed hop 1 and reached hop 2; the router at hop 2 answered that it has no route."}
+      - {id: c, text: "The destination host 10.50.1.20, which is probably down or blocking traceroute", trap: near-miss, why_wrong: "A down host gives timeouts at the end, not a 'net unreachable' from an earlier hop."}
+      - {id: d, text: "The client's DNS settings, since tracert could not resolve the names of the hops", trap: irrelevant, why_wrong: "-d disables name resolution on purpose; DNS isn't involved."}
+    explanation: "'Destination net unreachable' from 10.255.0.1 is ICMP type 3 code 0: that router has no route. Check its table (and what should advertise 10.50.1.0/24)."
+  - id: M1.02.q04
+    type: single
+    tier: 3
+    stem: "Users can browse internal sites by IP but not by name since a new FortiGate went in. Clients use DHCP from the FortiGate with dns-service local. What is the likely gap?"
+    options:
+      - {id: a, text: "The FortiGate isn't configured as a DNS server on that interface with system dns-server", correct: true}
+      - {id: b, text: "The FortiGate's system DNS is set to public resolvers instead of the internal ones", trap: near-miss, why_wrong: "Would break internal names in forwarder mode, but with 'local' the interface must first act as a DNS server."}
+      - {id: c, text: "A policy is missing for UDP 53 from the LAN to the WAN toward public DNS resolvers", trap: near-miss, why_wrong: "Clients are told to ask the FortiGate itself; traffic to the FortiGate isn't a forward policy."}
+      - {id: d, text: "The DHCP lease time is too short, so the clients lose their DNS settings over and over again", trap: misconception, why_wrong: "Lease renewals keep the same options; lease time doesn't break name resolution."}
+    explanation: "'local' hands out the FortiGate's interface IP as DNS; without `config system dns-server` on that interface nobody answers."
+  - id: M1.02.q05
+    type: multi
+    tier: 3
+    stem: "Which can break when a domain controller's clock drifts 9 minutes? Select all that apply."
+    options:
+      - {id: a, text: "Kerberos authentication for users and services", correct: true}
+      - {id: b, text: "The order of events in a SIEM investigation timeline", correct: true}
+      - {id: c, text: "Validation of certificates near their start or end dates", correct: true}
+      - {id: d, text: "ARP resolution between hosts on the same VLAN", trap: near-miss, why_wrong: "ARP has no notion of time beyond cache ageing on each host."}
+      - {id: e, text: "Spanning tree root election between the core switches", trap: irrelevant, why_wrong: "STP uses bridge IDs and timers, not wall-clock time."}
+    explanation: "Time underpins Kerberos (5 min skew), certificate validity windows and every log timeline."
+  - id: M1.02.q06
+    type: numeric
+    tier: 2
+    stem: "How many usable host addresses does a /28 have?"
+    answer: 14
+    tolerance: 0
+    explanation: "2^4 − 2 = 14."
+
+labs:
+  - id: M1.02.lab1
+    title: DHCP relay on a FortiGate interface
+    goal: "Relay VLAN 30's DHCP to the server at 10.20.40.5."
+    worked:
+      config: |
+        config system interface
+        edit "VLAN30"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip "10.20.40.5"
+        next
+        end
+    faded:
+      template: |
+        config system interface
+        edit "VLAN40"
+        set dhcp-relay-service {{enable}}
+        set dhcp-relay-ip "{{10.20.40.5}}"
+        next
+        end
+    solo:
+      prompt: "Relay VLAN 50's DHCP to 10.20.40.6."
+      required: ["dhcp-relay-service enable", "10.20.40.6"]
+      solution: |
+        config system interface
+        edit "VLAN50"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip "10.20.40.6"
+        next
+        end
+      notes: "The server must have a scope for VLAN 50's subnet and a route back."
+
+scenarios:
+  - id: M1.02.sc1
+    kind: situation
+    tier: 3
+    title: "The 9-minute clock"
+    situation: "After a hypervisor migration, some users can't log on to file shares; others can. Event logs on the DC show Kerberos errors. The SIEM timeline for the morning looks out of order."
+    ask: "What do you look at and fix?"
+    right_thinking:
+      - "Mixed Kerberos failures + odd timelines → time skew"
+      - "Check NTP on the DC (PDC emulator), the hypervisor time sync, and clients"
+      - "Fix the time source hierarchy, then re-check logons and log ordering"
+    what: "Clock skew after the migration."
+    why: "Kerberos tolerates 5 minutes; beyond that tickets fail and logs misorder."
+    how: ["Check skew", "Fix NTP hierarchy", "Verify"]
+    model_answer: "\"Kerberos errors for some users plus a scrambled SIEM timeline both point at time. I'd compare the DC's clock with a reliable source — after a VM migration the hypervisor often overrides it — fix the NTP hierarchy with the PDC emulator syncing externally, and confirm logons and log order are back.\""
+    best_way: "Kerberos and timelines both break on time: fix NTP."
+    rubric: ["links symptoms to time", "right checks", "hierarchy fix"]
+
+interview:
+  - id: M1.02.t01
+    stage: technical
+    question: "DHCP works on one VLAN and not on another behind the same FortiGate. Walk me through it."
+    testing: "Structured L2/L3 service troubleshooting"
+    framework: "Scope → relay/server → options → verify"
+    model_answer: "\"Same server, one VLAN fails, so I look at what's specific to that VLAN: is the relay enabled on its gateway interface with the right server IP, does the server have a scope for that subnet, and is there a route back. Then I'd run a sniffer for UDP 67/68 on the VLAN interface to see the Discover and whether an Offer comes back.\""
+    best_way: "What's specific to that VLAN: relay, scope, route — then sniff DORA."
+    target: "0:40"

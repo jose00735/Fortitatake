@@ -1,0 +1,246 @@
+id: M1.01
+title: "Layers, Ethernet and switching: frames, MAC learning, ARP, VLANs, STP and MTU"
+stage: S1
+stage_title: "S1 · Network foundations"
+order: 18
+quality: 2
+est_sessions: 1
+objectives:
+  - Place protocols and problems in the right layer, and troubleshoot bottom-up
+  - Explain MAC learning, flooding, ARP and what a switch does with unknown or broadcast frames
+  - Configure and read 802.1Q VLAN tagging and spot native-VLAN and allowed-VLAN mismatches
+  - Reason about STP roles and MTU/MSS problems that break only some traffic
+sources:
+  - "FortiOS 8.0.2 Administration Guide: Interfaces (p. 236+), VLANs; FortiSwitch 7.6 Administration Guide: VLANs (p. 370), STP (p. 273)"
+  - "IEEE 802.1Q, 802.1D/802.1w concepts; RFC 879/RFC 6691 (MSS)"
+
+units:
+  - id: M1.01.u1
+    title: "Layers as a troubleshooting tool"
+    tier: 1
+    est_min: 10
+    body: |
+      The OSI model has seven layers; the TCP/IP model folds them into four (link, internet, transport,
+      application). In the field the model is a **troubleshooting order**: prove the lower layer before blaming the
+      upper one.
+
+      | Layer | Question | Evidence on a FortiGate |
+      |---|---|---|
+      | 1 Physical | Is the link up, at what speed and duplex? | `get system interface physical`, CRC errors |
+      | 2 Data link | Do frames arrive, right VLAN, ARP resolved? | `diagnose ip arp list`, sniffer with MACs |
+      | 3 Network | Is there a route each way? | `get router info routing-table all` |
+      | 4 Transport | Does the TCP handshake complete? | sniffer flags, session table |
+      | 7 Application | Does the service answer correctly? | curl, logs, UTM verdicts |
+
+      A sniffer that shows SYN out and nothing back already tells you which layers are fine (the packet left) and
+      which aren't proven (the return path).
+
+      :::recall
+      Q: Why troubleshoot bottom-up?
+      A: Every layer depends on the one below; a perfect policy can't help a frame that never arrives.
+      :::
+  - id: M1.01.u2
+    title: "Ethernet, MAC learning and ARP"
+    tier: 2
+    est_min: 12
+    body: |
+      A switch learns **source MACs** per port and forwards by **destination MAC**. Unknown unicast and broadcast
+      frames are **flooded** to every port in the VLAN. MAC entries age out (often 300 s).
+
+      **ARP** maps an IPv4 address to a MAC inside a subnet. A host sending to another subnet ARPs for its
+      **gateway**, not the destination. Classic faults:
+
+      - Wrong mask: the host thinks the destination is local and ARPs for it; nobody answers.
+      - Duplicate IP: ARP replies from two MACs; the session works, then breaks.
+      - Stale ARP after a failover: traffic goes to the old MAC until the cache updates (gratuitous ARP fixes this,
+        which is why FortiGate HA sends it).
+
+      :::recall
+      Q: Which MAC does a host put in the frame for a packet to another subnet?
+      A: The gateway's MAC (the IP header still carries the final destination).
+      :::
+
+      :::why
+      Q: Why does an HA failover send gratuitous ARP?
+      A: So switches and hosts update their tables to the new active unit's MAC quickly.
+      :::
+  - id: M1.01.u3
+    title: "VLANs, STP and MTU"
+    tier: 3
+    est_min: 15
+    body: |
+      **802.1Q** adds a 4-byte tag with a 12-bit VLAN ID (1–4094 usable). A **trunk** carries several VLANs tagged;
+      an **access** port carries one untagged. The **native VLAN** of a trunk travels untagged; both ends must agree,
+      and the VLAN must be in the trunk's **allowed** list. On a FortiGate a VLAN is a sub-interface with a `vlanid`
+      on a physical port.
+
+      **STP** (802.1D) and **RSTP** (802.1w) block redundant links to prevent loops: one root bridge (lowest bridge
+      ID), root ports toward it, designated ports per segment, the rest blocked. A misplaced root (an access switch
+      with a low priority) forces traffic across the wrong links. RSTP converges in seconds, classic STP in up to
+      ~50.
+
+      **MTU and MSS.** Ethernet MTU is 1500 bytes; tunnels (IPsec, GRE, VXLAN) add overhead. When path MTU
+      discovery is blocked (ICMP "fragmentation needed" dropped), small packets work and large ones vanish: SSH works,
+      file copies hang, HTTPS pages half-load. TCP MSS clamping on the tunnel interface (`set tcp-mss`) fixes TCP.
+
+      :::recall
+      Q: Symptom set of a PMTU black hole?
+      A: Small transfers and logins work; large transfers, page loads or file copies stall.
+      :::
+
+      :::why
+      Q: Why must the native VLAN match on both ends of a trunk?
+      A: Untagged frames are assigned to each end's native VLAN; a mismatch silently merges two VLANs.
+      :::
+
+cards:
+  - {id: M1.01.c01, unit: M1.01.u1, tier: 1, front: "TCP/IP model layers", back: "Link, internet, transport, application."}
+  - {id: M1.01.c02, unit: M1.01.u1, tier: 1, front: "Troubleshooting order", back: "Bottom-up: physical, link, network, transport, application."}
+  - {id: M1.01.c03, unit: M1.01.u2, tier: 1, front: "A switch learns", back: "Source MACs per port; forwards by destination MAC."}
+  - {id: M1.01.c04, unit: M1.01.u2, tier: 2, front: "Unknown unicast frame", back: "Flooded to all ports in the VLAN."}
+  - {id: M1.01.c05, unit: M1.01.u2, tier: 2, front: "Host sends to another subnet: ARP for", back: "The default gateway."}
+  - {id: M1.01.c06, unit: M1.01.u2, tier: 2, front: "Gratuitous ARP", back: "Unsolicited ARP announcing an IP/MAC pair; used after HA failover."}
+  - {id: M1.01.c07, unit: M1.01.u3, tier: 2, front: "802.1Q tag", back: "4 bytes, 12-bit VLAN ID (1–4094)."}
+  - {id: M1.01.c08, unit: M1.01.u3, tier: 2, front: "Native VLAN", back: "The VLAN carried untagged on a trunk; must match both ends."}
+  - {id: M1.01.c09, unit: M1.01.u3, tier: 2, front: "STP root bridge", back: "Lowest bridge ID (priority + MAC)."}
+  - {id: M1.01.c10, unit: M1.01.u3, tier: 3, front: "PMTU black hole fix for TCP", back: "Clamp TCP MSS on the tunnel/interface (set tcp-mss)."}
+
+quiz:
+  - id: M1.01.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "A PC at 10.1.1.20/24 pings 10.1.2.30. Which address does it ARP for?"
+    options:
+      - {id: a, text: "Its default gateway's IP, since the destination is on another subnet", correct: true}
+      - {id: b, text: "10.1.2.30 directly, since ARP works across routed subnets on a LAN", trap: misconception, why_wrong: "ARP is link-local; it never crosses a router."}
+      - {id: c, text: "The broadcast 10.1.1.255, so that the routers answer for the subnet", trap: near-miss, why_wrong: "ARP requests are broadcast frames, but they ask for one specific IP, the gateway."}
+      - {id: d, text: "The DNS server's address, which then answers with the remote host's MAC", trap: misconception, why_wrong: "DNS maps names to IPs, not IPs to MACs."}
+    explanation: "Different subnet → next hop is the gateway → ARP for the gateway's IP."
+  - id: M1.01.q02
+    type: single
+    tier: 3
+    stem: "After an IPsec tunnel goes up, SSH to a remote server works but SCP of a 50 MB file stalls at 0%. What is the most likely cause?"
+    options:
+      - {id: a, text: "Large packets exceed the tunnel MTU and the ICMP that signals it is dropped", correct: true}
+      - {id: b, text: "The policy allows SSH, but its service object leaves out the separate SCP protocol port", trap: near-miss, why_wrong: "SCP runs over SSH on TCP 22; the same session works for small packets."}
+      - {id: c, text: "The tunnel phase 2 selectors exclude large flows from the encrypted path", trap: misconception, why_wrong: "Selectors match addresses and ports, not packet sizes."}
+      - {id: d, text: "Duplex mismatch on the WAN port drops frames once throughput goes up enough", trap: near-miss, why_wrong: "Duplex issues cause errors and slowness, not a clean stall only on large packets."}
+    explanation: "Small works, large stalls: a PMTU black hole. Clamp TCP MSS on the tunnel or allow ICMP type 3 code 4."
+  - id: M1.01.q03
+    type: single
+    tier: 3
+    stem: "Two switches connect with a trunk. Users in VLAN 20 on switch B suddenly appear in VLAN 30's DHCP scope. Which misconfiguration explains it?"
+    options:
+      - {id: a, text: "The trunk's native VLAN is 20 on one side and 30 on the other", correct: true}
+      - {id: b, text: "VLAN 20 is missing from the trunk's allowed VLAN list on switch B", trap: near-miss, why_wrong: "Users would lose connectivity, not land in VLAN 30."}
+      - {id: c, text: "STP blocks the trunk, so the users fall back to the management VLAN", trap: misconception, why_wrong: "STP blocking stops traffic; it doesn't reassign VLANs."}
+      - {id: d, text: "The DHCP server's scope for VLAN 30 overlaps the VLAN 20 address range", trap: near-miss, why_wrong: "Overlap would confuse addressing, but the frames themselves are crossing VLANs here."}
+    explanation: "Untagged frames take each side's native VLAN; a mismatch bridges VLAN 20 into VLAN 30."
+  - id: M1.01.q04
+    type: order
+    tier: 1
+    stem: "Order the troubleshooting layers bottom-up."
+    items: ["Link up, speed and duplex", "Frames and ARP in the right VLAN", "Routes in both directions", "TCP handshake completes", "Application answers correctly"]
+    explanation: "Each layer depends on the one below."
+  - id: M1.01.q05
+    type: single
+    tier: 3
+    stem: "After an HA failover, half the users lose connectivity for several minutes, then recover on their own. What most likely helped them recover?"
+    options:
+      - {id: a, text: "Their ARP or switch MAC entries aged out and relearned the new active unit", correct: true}
+      - {id: b, text: "STP reconverged around the failed unit's ports after its default timers ran out", trap: near-miss, why_wrong: "Possible in some designs, but the classic minutes-long pattern after failover is stale ARP/MAC entries."}
+      - {id: c, text: "The DHCP leases expired and the clients requested new gateway addresses", trap: misconception, why_wrong: "The gateway IP doesn't change in HA; leases are hours long."}
+      - {id: d, text: "The session table synchronised to the new active unit after the failover", trap: near-miss, why_wrong: "Session sync helps existing sessions; it doesn't fix L2 forwarding to the wrong MAC."}
+    explanation: "Stale MAC/ARP entries point at the old unit until they age out or a gratuitous ARP updates them."
+  - id: M1.01.q06
+    type: numeric
+    tier: 2
+    stem: "How many bits long is the VLAN ID field in an 802.1Q tag?"
+    answer: 12
+    tolerance: 0
+    explanation: "12 bits: 4,096 values, 1–4094 usable."
+  - id: M1.01.q07
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      FGT # diagnose sniffer packet any 'host 10.10.10.25 and icmp' 4 3
+      interfaces=[any]
+      2.104411 port2 in 10.10.10.25 -> 10.10.20.40: icmp: echo request
+      2.104502 port3 out 10.10.10.25 -> 10.10.20.40: icmp: echo request
+      3.105377 port2 in 10.10.10.25 -> 10.10.20.40: icmp: echo request
+    stem: "The ping from 10.10.10.25 to 10.10.20.40 fails. What is the best next step?"
+    options:
+      - {id: a, text: "Check 10.10.20.40 itself: its gateway, mask and firewall, since the request left port3", correct: true}
+      - {id: b, text: "Add a firewall policy from port2 to port3, because the echo request is being denied", trap: near-miss, why_wrong: "The packet went out port3, so a policy already allowed it."}
+      - {id: c, text: "Add a static route to 10.10.20.0/24, because the FortiGate cannot reach that subnet", trap: near-miss, why_wrong: "It forwarded out port3, so it has a route; the reply is what's missing."}
+      - {id: d, text: "Replace the cable on port2, since some of the echo requests seem to be lost before the FortiGate", trap: misconception, why_wrong: "Requests arrive every second as expected; nothing points at layer 1 on port2."}
+    explanation: "In and out are both visible: the FortiGate did its job. No reply comes back, so look at the destination host (wrong gateway or mask, local firewall) or its return path."
+
+labs:
+  - id: M1.01.lab1
+    title: VLAN sub-interface on a FortiGate
+    goal: "Create VLAN 20 on port2 with an IP and ping access."
+    worked:
+      config: |
+        config system interface
+        edit "VLAN20"
+        set vdom "root"
+        set interface "port2"
+        set vlanid 20
+        set ip 10.20.0.1 255.255.255.0
+        set allowaccess ping
+        next
+        end
+    faded:
+      template: |
+        config system interface
+        edit "VLAN30"
+        set interface "{{port2}}"
+        set vlanid {{30}}
+        set ip 10.30.0.1 255.255.255.0
+        next
+        end
+    solo:
+      prompt: "Create VLAN 40 on port3, 10.40.0.1/24."
+      required: ["vlanid 40", "interface \"port3\"", "10.40.0.1"]
+      solution: |
+        config system interface
+        edit "VLAN40"
+        set vdom "root"
+        set interface "port3"
+        set vlanid 40
+        set ip 10.40.0.1 255.255.255.0
+        next
+        end
+      notes: "The switch port toward port3 must carry VLAN 40 tagged."
+
+scenarios:
+  - id: M1.01.sc1
+    kind: situation
+    tier: 3
+    title: "It works for small files"
+    situation: "A new IPsec tunnel to a branch: users log in to the ERP fine, but report exports never finish. The branch ISP uses PPPoE."
+    ask: "What do you suspect and how do you prove it?"
+    right_thinking:
+      - "Small works, large stalls → MTU/PMTU"
+      - "PPPoE (1492) plus IPsec overhead lowers the path MTU"
+      - "Prove with ping using DF and growing sizes; sniff for missing ICMP frag-needed"
+      - "Fix with TCP MSS clamping on the tunnel; document the value"
+    what: "A PMTU problem from PPPoE plus IPsec overhead."
+    why: "Each encapsulation eats bytes; when ICMP feedback is lost, large TCP segments vanish."
+    how: ["DF pings", "Sniffer", "MSS clamp", "Document"]
+    model_answer: "\"Small transactions work and big exports hang, and PPPoE plus IPsec shrinks the path MTU, so I'd test with DF pings of growing size across the tunnel. If 1400 passes and 1450 fails, I clamp TCP MSS on the tunnel interface and re-test the export.\""
+    best_way: "Small works, large hangs: prove the MTU, clamp the MSS."
+    rubric: ["recognises pattern", "proves it", "correct fix"]
+
+interview:
+  - id: M1.01.t01
+    stage: technical
+    question: "A user says 'the network is slow' only when copying big files over the VPN. What do you check?"
+    testing: "MTU reasoning"
+    framework: "Pattern → proof → fix"
+    model_answer: "\"That pattern — small things fine, big transfers stall — is usually MTU across the tunnel with ICMP feedback blocked. I'd prove it with DF pings of increasing size, then clamp the TCP MSS on the tunnel interface and confirm the copy completes.\""
+    best_way: "Prove the MTU, clamp the MSS."
+    target: "0:30"

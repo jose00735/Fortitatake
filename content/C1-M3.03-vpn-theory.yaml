@@ -1,0 +1,198 @@
+id: M3.03
+title: "VPN theory: IPsec phases, IKEv1 vs IKEv2, NAT-T, and TLS-based remote access"
+stage: S3
+stage_title: "S3 · Security, crypto, identity and the threat landscape"
+order: 141
+quality: 2
+est_sessions: 1
+objectives:
+  - Explain IKE phase 1 and phase 2 (IKE SA vs IPsec SAs) and what each negotiates
+  - Compare IKEv1 and IKEv2, and route-based vs policy-based tunnels
+  - Explain NAT traversal, ESP vs AH, and why MTU problems follow tunnels
+  - Read a failing negotiation and name the mismatch from the log
+sources:
+  - "RFC 7296 (IKEv2), RFC 4303 (ESP), RFC 3948 (UDP encapsulation of ESP)"
+  - "FortiOS 8.0.2 Administration Guide: IPsec VPN (phase 1 / phase 2 settings, NAT traversal)"
+
+units:
+  - id: M3.03.u1
+    title: "Two phases, three SAs"
+    tier: 2
+    est_min: 12
+    body: |
+      **Phase 1** builds the **IKE SA**: the peers authenticate (pre-shared key or certificates), agree on encryption,
+      integrity, a **DH group** and a lifetime. It's the secure control channel.
+
+      **Phase 2** (IKEv2: CHILD_SA) builds a pair of **IPsec SAs**, one per direction, each with its own **SPI**. It
+      negotiates the protected networks (**selectors / traffic selectors**), ESP ciphers, optional **PFS** group and
+      lifetime.
+
+      | | Phase 1 | Phase 2 |
+      |---|---|---|
+      | Result | 1 IKE SA | 2 IPsec SAs (in + out) |
+      | Must match | Auth, proposal, DH group, peer ID | Selectors, proposal, PFS group |
+      | Port | UDP 500 (4500 with NAT-T) | Rides inside phase 1 |
+
+      **ESP** (IP protocol 50) encrypts and authenticates; **AH** (51) only authenticates and breaks with NAT, so it's
+      rare.
+
+      :::recall
+      Q: How many IPsec SAs does one working phase 2 create?
+      A: Two, one per direction, each with its own SPI.
+      :::
+  - id: M3.03.u2
+    title: "IKEv1 vs IKEv2, route vs policy"
+    tier: 3
+    est_min: 12
+    body: |
+      | | IKEv1 | IKEv2 |
+      |---|---|---|
+      | Setup | Main mode (6 msgs) or aggressive (3) + quick mode | 4 messages for the first CHILD_SA |
+      | Remote access | Needs XAuth / mode-config add-ons | EAP and config payload built in |
+      | Reliability | Optional DPD | Liveness checks and retransmission built in |
+      | Selector mismatch | Fails | Responder can narrow the selectors |
+
+      **Route-based** tunnels (FortiGate's default) create a tunnel interface: routing decides what goes in, policies
+      control it, and dynamic routing (BGP/OSPF) can run over it. **Policy-based** tunnels match traffic by policy;
+      easier to describe, harder to scale. Interop with older third-party gear often depends on matching **selectors**
+      exactly (one phase 2 per subnet pair) and **NAT-T** behaviour.
+
+      **NAT-T**: when NAT is detected between peers, IKE moves to UDP 4500 and ESP is wrapped in UDP 4500, because
+      plain ESP has no ports for PAT to track.
+
+      :::why
+      Q: Why does plain ESP break behind a PAT device?
+      A: ESP has no port numbers, so PAT can't map return traffic; NAT-T wraps it in UDP 4500.
+      :::
+  - id: M3.03.u3
+    title: "Reading a failed negotiation"
+    tier: 4
+    est_min: 10
+    body: |
+      Map the symptom to the phase:
+      - **Nothing comes back on UDP 500**: reachability, ISP filtering, wrong peer IP.
+      - **"no proposal chosen" in phase 1**: cipher, hash or DH group differ.
+      - **Phase 1 up, phase 2 "no matching selector" / TS_UNACCEPTABLE**: subnets differ between ends.
+      - **Tunnel up, no traffic**: missing route or policy, or the remote side lacks a return route.
+      - **Tunnel up, small packets pass, big ones hang**: MTU / fragmentation → lower the TCP MSS.
+
+      On a FortiGate: `diagnose vpn ike log-filter dst-addr4 <peer>` then `diagnose debug application ike -1`;
+      `diagnose vpn tunnel list` shows SAs, SPIs and counters.
+
+      :::recall
+      Q: Phase 1 up, phase 2 fails with TS_UNACCEPTABLE. Where is the mismatch?
+      A: The traffic selectors (protected subnets) differ between the peers.
+      :::
+
+cards:
+  - {id: M3.03.c01, unit: M3.03.u1, tier: 1, front: "Phase 1 result", back: "One IKE SA: authenticated control channel."}
+  - {id: M3.03.c02, unit: M3.03.u1, tier: 2, front: "Phase 2 result", back: "Two IPsec SAs, one per direction, each with its SPI."}
+  - {id: M3.03.c03, unit: M3.03.u1, tier: 2, front: "ESP vs AH", back: "ESP (50) encrypts + authenticates; AH (51) authenticates only and breaks with NAT."}
+  - {id: M3.03.c04, unit: M3.03.u2, tier: 2, front: "NAT-T port", back: "UDP 4500 for IKE and UDP-wrapped ESP."}
+  - {id: M3.03.c05, unit: M3.03.u2, tier: 3, front: "IKEv2 advantages", back: "Fewer messages, EAP built in, liveness, selector narrowing."}
+  - {id: M3.03.c06, unit: M3.03.u3, tier: 3, front: "no proposal chosen", back: "Phase 1 or 2 algorithms or DH group differ."}
+  - {id: M3.03.c07, unit: M3.03.u3, tier: 4, front: "Big packets hang in the tunnel", back: "MTU: lower TCP MSS on the tunnel policy or interface."}
+
+quiz:
+  - id: M3.03.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Why does a site-to-site tunnel switch from UDP 500 to UDP 4500 when a branch sits behind a home router?"
+    options:
+      - {id: a, text: "The peers detected NAT and wrap ESP in UDP so the router can track the flows", correct: true}
+      - {id: b, text: "UDP 4500 carries phase 2 traffic, while UDP 500 keeps carrying the phase 1 SA", trap: near-miss, why_wrong: "With NAT-T both IKE and ESP move to 4500; the port isn't split by phase."}
+      - {id: c, text: "The router blocks UDP 500, so the peers retry on the alternate IKE port 4500", trap: misconception, why_wrong: "The move follows NAT detection inside IKE, not a blocked port."}
+      - {id: d, text: "IKEv2 uses UDP 4500 by default, while IKEv1 keeps UDP 500 for the exchange", trap: misconception, why_wrong: "Both versions start on 500 and move to 4500 when NAT is detected."}
+    explanation: "ESP has no ports; NAT-T wraps it in UDP 4500 so PAT can map it."
+  - id: M3.03.q02
+    type: output
+    tier: 3
+    format: answer-reason
+    output: |
+      ike 0:to-lima:4512: responder received SA_INIT
+      ike 0:to-lima:4512: negotiation result: OK
+      ike 0:to-lima:4512: IKE SA established
+      ike 0:to-lima:4512: received AUTH ... TSi 10.30.0.0/16 TSr 10.10.0.0/24
+      ike 0:to-lima:4512: no matching phase2 found
+      ike 0:to-lima:4512: sending TS_UNACCEPTABLE
+    stem: "The Lima peer is a third-party firewall. Where is the mismatch, and why?"
+    options:
+      - {id: a, text: "Phase 2 selectors: Lima proposes 10.30.0.0/16, the local side expects another range", correct: true}
+      - {id: b, text: "Phase 1 proposal: the DH groups differ, so the IKE SA can't finish authentication", trap: near-miss, why_wrong: "The log says the IKE SA was established; phase 1 is fine."}
+      - {id: c, text: "Phase 2 proposal: the ESP ciphers differ, which IKEv2 then reports as TS_UNACCEPTABLE", trap: near-miss, why_wrong: "Cipher mismatches give NO_PROPOSAL_CHOSEN; TS_UNACCEPTABLE is about selectors."}
+      - {id: d, text: "Routing: the local side has no route to 10.30.0.0/16 through the to-lima interface", trap: misconception, why_wrong: "Routes matter after the SA exists; this fails during negotiation."}
+    explanation: "The IKE SA is up; the CHILD_SA fails on traffic selectors. Make the subnets match on both ends."
+  - id: M3.03.q03
+    type: single
+    tier: 3
+    stem: "A tunnel is up. Pings and SSH work, but file copies and web pages over the tunnel hang. First fix to try?"
+    options:
+      - {id: a, text: "Lower the TCP MSS for traffic through the tunnel to fit under the path MTU", correct: true}
+      - {id: b, text: "Enable PFS on phase 2 so each data transfer is protected by its own key", trap: irrelevant, why_wrong: "PFS changes keying, not packet size."}
+      - {id: c, text: "Shorten the phase 2 lifetime so that the stuck SAs get renegotiated more often", trap: near-miss, why_wrong: "Rekeys don't change packet size; small packets already work."}
+      - {id: d, text: "Allow ICMP 'fragmentation needed' end to end so path MTU discovery works", trap: near-miss, why_wrong: "Can help, but often outside your control; clamping MSS fixes TCP right away."}
+    explanation: "Small packets fine, large ones hang = MTU. Clamping MSS fixes TCP immediately."
+  - id: M3.03.q04
+    type: single
+    tier: 3
+    stem: "A customer wants BGP between HQ and 30 branches over IPsec. Which tunnel style fits?"
+    options:
+      - {id: a, text: "Route-based tunnels, giving each peer a tunnel interface for its BGP session", correct: true}
+      - {id: b, text: "Policy-based tunnels with one phase 2 per subnet pair for each of the branches", trap: near-miss, why_wrong: "Works for static designs but can't run dynamic routing and doesn't scale to 30 sites."}
+      - {id: c, text: "IKEv1 aggressive mode, since branches with dynamic IPs need its speed", trap: misconception, why_wrong: "Aggressive mode is about identity with dynamic peers, not routing, and it's weaker."}
+      - {id: d, text: "Transport-mode ESP between loopbacks with BGP on top of the hosts", trap: near-miss, why_wrong: "Not how FortiGate site-to-site is built; tunnel interfaces do the job."}
+    explanation: "Dynamic routing needs an interface; route-based tunnels give one per peer (or per overlay)."
+
+labs:
+  - id: M3.03.lab1
+    title: Debug an IKE negotiation
+    goal: "Know the commands that show a negotiation and the SAs."
+    worked:
+      cli: |
+        diagnose vpn ike log-filter dst-addr4 203.0.113.20
+        diagnose debug application ike -1
+        diagnose debug enable
+        diagnose vpn tunnel list name to-lima
+    faded:
+      template: |
+        diagnose vpn ike log-filter dst-addr4 {{198.51.100.7}}
+        diagnose debug application {{ike}} -1
+        diagnose debug {{enable}}
+    solo:
+      prompt: "Filter IKE debug to peer 192.0.2.44, enable it, and list the tunnel named to-cusco."
+      required: ["log-filter", "192.0.2.44", "application ike", "debug enable", "tunnel list"]
+      solution: |
+        diagnose vpn ike log-filter dst-addr4 192.0.2.44
+        diagnose debug application ike -1
+        diagnose debug enable
+        diagnose vpn tunnel list name to-cusco
+      notes: "Run `diagnose debug disable` and `diagnose debug reset` when done."
+
+scenarios:
+  - id: M3.03.sc1
+    kind: situation
+    tier: 4
+    title: "The tunnel to the partner's Palo Alto"
+    situation: "You're building a tunnel from a customer FortiGate to a partner's Palo Alto. The partner's engineer sends a PDF with phase 1/2 settings and two /24 subnets. Phase 1 comes up; only one of the two subnets works."
+    ask: "What do you check and how do you work with the partner?"
+    right_thinking:
+      - "One phase 2 per subnet pair on both ends; the second pair is likely missing or mismatched"
+      - "Compare proxy IDs on their side with selectors on ours"
+      - "Agree on a shared worksheet and test plan with the partner"
+    what: "Selector per subnet pair; verify jointly."
+    why: "Third-party interop fails most often on selectors."
+    how: ["Debug IKE", "Compare proxy IDs", "Joint worksheet"]
+    model_answer: "\"Phase 1 is fine, so I'd look at phase 2. With third-party firewalls each subnet pair often needs its own phase 2, matching their proxy IDs exactly. I'd run the IKE debug, see what they propose for the second subnet, and then agree a one-page worksheet with their engineer — both ends' selectors, ciphers, PFS and lifetimes — so we change things once, together.\""
+    best_way: "Selectors per pair, one shared worksheet."
+    rubric: ["phase 2 focus", "proxy IDs", "joint process"]
+
+interview:
+  - id: M3.03.t01
+    stage: technical
+    question: "Walk me through how an IPsec tunnel comes up."
+    testing: "Clear model of the two phases"
+    framework: "Phase 1 → phase 2 → data → failure points"
+    model_answer: "\"First the peers build the IKE SA on UDP 500: they authenticate with a key or certificates and agree on ciphers and a DH group. Inside that channel they negotiate phase 2: the subnets to protect, ESP ciphers and optional PFS, which creates two IPsec SAs, one per direction. Then data flows in ESP, or in UDP 4500 if NAT was detected. When it fails I ask which phase broke: proposals, identity, or selectors.\""
+    best_way: "IKE SA first, two IPsec SAs second, then data."
+    target: "0:45"

@@ -1,0 +1,231 @@
+id: M3.01
+title: "Cryptography and PKI: what the algorithms do, how trust chains work, and what breaks in projects"
+stage: S3
+stage_title: "S3 · Security, crypto, identity and the threat landscape"
+order: 140
+quality: 2
+est_sessions: 1
+objectives:
+  - Tell symmetric, asymmetric and hash functions apart by job, and explain Diffie-Hellman and PFS
+  - Read a certificate chain and diagnose untrusted, expired, wrong-name and revoked certificates
+  - Plan certificate work in FortiGate projects (VPN, admin GUI, SSL inspection CA)
+  - Explain post-quantum migration in one minute without hype
+sources:
+  - "FortiOS 8.0.2 Administration Guide: Certificates (p. 4411), cipher suites (p. 4504), post-quantum cryptography (p. 3898)"
+  - "NIST FIPS 203/204/205 (ML-KEM, ML-DSA, SLH-DSA, 2024); RFC 5280 (X.509), RFC 6960 (OCSP)"
+
+units:
+  - id: M3.01.u1
+    title: "Three tools, three jobs"
+    tier: 2
+    est_min: 12
+    body: |
+      | Tool | Job | Examples |
+      |---|---|---|
+      | **Symmetric cipher** | Encrypt bulk data fast with one shared key | AES-GCM, ChaCha20-Poly1305 |
+      | **Asymmetric** | Key exchange and signatures with a key pair | RSA, ECDSA, Ed25519; ECDH |
+      | **Hash / MAC** | Integrity fingerprint; with a key (HMAC) proves origin | SHA-256, HMAC-SHA256 |
+
+      Real protocols combine them: asymmetric to agree on keys and authenticate, symmetric for the data, hashes for
+      integrity. **AEAD** modes (GCM, ChaCha20-Poly1305) encrypt and authenticate in one step.
+
+      **Diffie-Hellman** lets two parties derive a shared secret over an open channel. **Perfect forward secrecy
+      (PFS)** uses fresh (ephemeral) DH keys per session, so stealing a server's long-term key later doesn't decrypt
+      recorded traffic. In IPsec, PFS is the extra DH exchange in phase 2; in TLS 1.3 it is always on.
+
+      :::recall
+      Q: What does PFS protect against?
+      A: Decrypting recorded sessions after the long-term private key is stolen.
+      :::
+  - id: M3.01.u2
+    title: "Certificates and chains"
+    tier: 3
+    est_min: 14
+    body: |
+      A certificate binds a **public key** to a **name** (Subject / SAN), signed by an issuer. Clients trust it if
+      they can build a chain to a **root CA** they already trust, every certificate is in its validity window, the
+      name matches (the **SAN**, not the CN, in modern clients), and it isn't **revoked** (CRL or OCSP).
+
+      Four errors you'll meet and their causes:
+
+      | Error | Usual cause |
+      |---|---|
+      | Untrusted issuer | Private CA not installed on clients, or the server doesn't send the intermediate |
+      | Name mismatch | Users connect by IP or a name missing from the SAN |
+      | Expired / not yet valid | Renewal missed, or clock skew |
+      | Revoked / status unknown | CA revoked it, or the client can't reach the CRL/OCSP URL |
+
+      On a FortiGate: import the server cert with its chain for SSL VPN or the admin GUI, and for **deep
+      inspection** use a CA certificate the FortiGate can sign with — which every client must trust.
+
+      :::recall
+      Q: Which field do modern browsers use for the name check?
+      A: Subject Alternative Name (SAN).
+      :::
+
+      :::why
+      Q: Why can a perfectly valid server certificate fail on some clients only?
+      A: The server doesn't send the intermediate CA, and only clients that cached it can build the chain.
+      :::
+  - id: M3.01.u3
+    title: "Post-quantum in one minute"
+    tier: 3
+    est_min: 8
+    body: |
+      A large quantum computer would break RSA and elliptic-curve key exchange and signatures; symmetric ciphers and
+      hashes mostly survive with larger sizes. The threat today is **harvest now, decrypt later**: record
+      encrypted traffic now, decrypt it when the computer exists.
+
+      NIST standardised **ML-KEM** (key encapsulation, FIPS 203) and **ML-DSA / SLH-DSA** (signatures, FIPS 204/205) in
+      2024. The near-term move is **hybrid key exchange** (classical + ML-KEM), so a session is safe if either holds.
+      FortiOS supports post-quantum options for IPsec (see the admin guide's PQC section).
+
+      Customer message: inventory where long-lived secrets travel (VPNs between sites, backups), plan hybrid key
+      exchange there first, don't rip out RSA certificates in a panic.
+
+      :::recall
+      Q: Why does PQC start with key exchange rather than signatures?
+      A: Harvest-now-decrypt-later attacks target recorded traffic, which only key exchange protects.
+      :::
+
+cards:
+  - {id: M3.01.c01, unit: M3.01.u1, tier: 1, front: "Symmetric vs asymmetric", back: "Symmetric: one shared key, fast bulk encryption. Asymmetric: key pair for exchange and signatures."}
+  - {id: M3.01.c02, unit: M3.01.u1, tier: 2, front: "AEAD", back: "Encrypt and authenticate in one mode (AES-GCM, ChaCha20-Poly1305)."}
+  - {id: M3.01.c03, unit: M3.01.u1, tier: 2, front: "PFS", back: "Ephemeral DH per session; a stolen long-term key can't decrypt old traffic."}
+  - {id: M3.01.c04, unit: M3.01.u2, tier: 2, front: "Certificate trust checks", back: "Chain to trusted root, validity dates, SAN name match, not revoked."}
+  - {id: M3.01.c05, unit: M3.01.u2, tier: 3, front: "Some clients trust a cert, others don't", back: "Server isn't sending the intermediate CA."}
+  - {id: M3.01.c06, unit: M3.01.u2, tier: 3, front: "Deep inspection certificate", back: "A CA cert the FortiGate signs with; every client must trust it."}
+  - {id: M3.01.c07, unit: M3.01.u3, tier: 3, front: "Harvest now, decrypt later", back: "Record encrypted traffic today, decrypt with a future quantum computer."}
+  - {id: M3.01.c08, unit: M3.01.u3, tier: 3, front: "ML-KEM", back: "NIST post-quantum key encapsulation (FIPS 203, 2024)."}
+
+quiz:
+  - id: M3.01.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Which property means a stolen VPN gateway private key can't be used to decrypt last month's recorded tunnel traffic?"
+    options:
+      - {id: a, text: "Perfect forward secrecy from ephemeral Diffie-Hellman keys per session", correct: true}
+      - {id: b, text: "Strong hashing of each packet with SHA-256 in the integrity check value", trap: near-miss, why_wrong: "Integrity proves packets weren't changed; it doesn't protect confidentiality of recorded traffic."}
+      - {id: c, text: "AES-256 encryption, since its key is long enough to resist brute force", trap: near-miss, why_wrong: "Strong ciphers don't help if the session keys can be derived from the stolen long-term key."}
+      - {id: d, text: "Certificate revocation, which invalidates the stolen key for older sessions", trap: misconception, why_wrong: "Revocation stops future trust; it can't change how past sessions were keyed."}
+    explanation: "With PFS, session keys came from ephemeral DH and are gone; the long-term key only authenticated."
+  - id: M3.01.q02
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      $ openssl s_client -connect vpn.andes.com.co:443 -servername vpn.andes.com.co
+      depth=0 CN = vpn.andes.com.co
+      verify error:num=20:unable to get local issuer certificate
+      verify error:num=21:unable to verify the first certificate
+      ---
+      Certificate chain
+       0 s:CN = vpn.andes.com.co
+         i:C = US, O = Let's Encrypt, CN = R11
+    stem: "Windows laptops connect fine; Android phones show an untrusted-certificate warning. What do you fix first?"
+    options:
+      - {id: a, text: "Import the intermediate CA and send the full chain from the SSL VPN certificate", correct: true}
+      - {id: b, text: "Add vpn.andes.com.co as a SAN entry and reissue the certificate with the CA", trap: near-miss, why_wrong: "The name matches already (depth 0 CN and SNI); the chain is the problem."}
+      - {id: c, text: "Install the Let's Encrypt root on the Android phones through the MDM platform", trap: near-miss, why_wrong: "The root is already trusted; the phones can't reach it without the intermediate."}
+      - {id: d, text: "Switch the VPN to a self-signed certificate and push it to all of the devices", trap: misconception, why_wrong: "Replaces a public chain with a private one everyone must trust; more work, same lesson."}
+    explanation: "Only the leaf is sent (chain depth 0). Windows often fetches the missing intermediate itself; Android doesn't. Send the full chain."
+  - id: M3.01.q03
+    type: single
+    tier: 3
+    stem: "After enabling deep inspection, users get certificate warnings on every HTTPS site. What did the rollout miss?"
+    options:
+      - {id: a, text: "Distributing the FortiGate's inspection CA to the clients' trusted root stores", correct: true}
+      - {id: b, text: "Adding exemptions for the categories that pin their certificates, such as banking", trap: near-miss, why_wrong: "Needed for pinned apps, but warnings on every site mean the CA isn't trusted at all."}
+      - {id: c, text: "Enabling certificate inspection instead of deep inspection on the same policy", trap: near-miss, why_wrong: "That avoids warnings by not decrypting, which isn't the requirement."}
+      - {id: d, text: "Renewing the FortiGate's admin GUI certificate, which inspection reuses to sign", trap: misconception, why_wrong: "Inspection signs with its own CA certificate, not the GUI's server cert."}
+    explanation: "The FortiGate re-signs every site with its CA; clients must trust that CA."
+  - id: M3.01.q04
+    type: single
+    tier: 3
+    stem: "A customer asks what to do about quantum computing this year. Which advice is most defensible?"
+    options:
+      - {id: a, text: "Inventory long-lived sensitive traffic and plan hybrid key exchange there first", correct: true}
+      - {id: b, text: "Replace all RSA certificates with post-quantum signature certificates now", trap: near-miss, why_wrong: "Signatures matter less for harvest-now risk, and ecosystem support is still maturing."}
+      - {id: c, text: "Move bulk encryption from AES-128 to AES-256 to offset Grover's speed-up first", trap: near-miss, why_wrong: "Reasonable hygiene, but symmetric ciphers are the least affected; key exchange is the urgent part."}
+      - {id: d, text: "Wait for a working quantum computer, since recorded traffic stays safe until then", trap: misconception, why_wrong: "Harvest-now-decrypt-later means recorded traffic is the risk today."}
+    explanation: "Key exchange protects recorded traffic; hybrid ML-KEM where secrets live long is the pragmatic first step."
+  - id: M3.01.q05
+    type: multi
+    tier: 2
+    stem: "Which checks must pass for a client to trust a server certificate? Select all that apply."
+    options:
+      - {id: a, text: "A chain to a root CA in the client's trust store", correct: true}
+      - {id: b, text: "The name used to connect matches an entry in the SAN", correct: true}
+      - {id: c, text: "The current time falls within each certificate's validity", correct: true}
+      - {id: d, text: "The key length matches the cipher suite negotiated", trap: near-miss, why_wrong: "Key types must be usable, but key length isn't matched to the cipher suite."}
+      - {id: e, text: "The certificate was issued by the same CA as the client's", trap: misconception, why_wrong: "Clients trust any CA in their store, not just their own issuer."}
+    explanation: "Chain, name, time (and revocation status) are the trust checks."
+
+labs:
+  - id: M3.01.lab1
+    title: Import a CA for deep inspection
+    goal: "Know the CLI that selects the inspection CA in an SSL/SSH profile."
+    worked:
+      config: |
+        config firewall ssl-ssh-profile
+        edit "deep-inspection-andes"
+        set server-cert-mode re-sign
+        set caname "Andes-Inspection-CA"
+        config https
+        set ports 443
+        set status deep-inspection
+        end
+        next
+        end
+    faded:
+      template: |
+        config firewall ssl-ssh-profile
+        edit "deep-inspection-lab"
+        set server-cert-mode {{re-sign}}
+        set caname "{{Lab-CA}}"
+        next
+        end
+    solo:
+      prompt: "Create profile 'di-clinic' that re-signs with 'Clinic-CA' and deep-inspects HTTPS on 443."
+      required: ["di-clinic", "re-sign", "Clinic-CA", "deep-inspection"]
+      solution: |
+        config firewall ssl-ssh-profile
+        edit "di-clinic"
+        set server-cert-mode re-sign
+        set caname "Clinic-CA"
+        config https
+        set ports 443
+        set status deep-inspection
+        end
+        next
+        end
+      notes: "Then push Clinic-CA to every client's trusted roots."
+
+scenarios:
+  - id: M3.01.sc1
+    kind: situation
+    tier: 3
+    title: "The certificate that expired on a Saturday"
+    situation: "Saturday 08:00: remote staff can't connect to SSL VPN; the error says the certificate expired. Nobody owns certificate renewals."
+    ask: "What do you do now and what do you leave behind?"
+    right_thinking:
+      - "Restore: issue/import a new certificate with full chain, assign it to the VPN"
+      - "Verify from outside with a client and openssl"
+      - "Leave a certificate inventory with owners and expiry alerts (FortiGate certificate expiry warnings, monitoring)"
+    what: "Restore now, then fix ownership."
+    why: "Expiry is a process failure, not a technical one."
+    how: ["Renew and import with chain", "Verify", "Inventory and alerts"]
+    model_answer: "\"First restore: get a new certificate with its full chain, import it and assign it to the VPN, then test from outside. Then I'd leave them a certificate inventory — VPN, GUI, inspection CA, LDAPS — with owners and alerts at 60 and 30 days, so this never depends on someone remembering.\""
+    best_way: "Renew with the chain, then give certificates an owner and an alert."
+    rubric: ["restores", "verifies", "process fix"]
+
+interview:
+  - id: M3.01.t01
+    stage: technical
+    question: "Explain perfect forward secrecy to a customer's network manager."
+    testing: "Plain-language crypto"
+    framework: "Analogy → mechanism → where it applies"
+    model_answer: "\"Each session gets its own temporary key that's thrown away afterwards. So even if someone steals the VPN gateway's private key next year, the traffic they recorded today stays encrypted, because those temporary keys are gone. In IPsec it's the PFS option in phase 2; in TLS 1.3 it's always on.\""
+    best_way: "Temporary keys per session, thrown away — a stolen key can't unlock the past."
+    target: "0:30"
