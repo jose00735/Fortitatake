@@ -193,7 +193,7 @@ quiz:
     stem: "After connecting the DC hub for SPA, remote users lose internet access and the PoP health degrades. The hub advertises 10.0.0.0/8, 172.16.0.0/12 and 0.0.0.0/1 + 128.0.0.0/1. What's the cause?"
     options:
       - {id: a, text: "The two /1 prefixes pull the PoP's internet-bound traffic into the SPA tunnel", correct: true}
-      - {id: b, text: "The 10.0.0.0/8 prefix overlaps the IPAM pool and breaks agent address assignment", trap: near-miss, why_wrong: "Overlap is a real risk, but 100.65.0.0/16 (default pool) isn't inside 10/8; the /1s explain the internet loss."}
+      - {id: b, text: "10.0.0.0/8 prefix overlaps the IPAM pool and breaks agent address assignment", trap: near-miss, why_wrong: "Overlap is a real risk, but 100.65.0.0/16 (default pool) isn't inside 10/8; the /1s explain the internet loss."}
       - {id: c, text: "The hub selection method needs to be BGP MED when a hub advertises more than two prefixes", trap: misconception, why_wrong: "No such rule; the selection method is independent of the number of prefixes."}
       - {id: d, text: "The hub's ASN differs from FortiSASE's ASN, so eBGP routes take over the default route", trap: near-miss, why_wrong: "Different ASNs are supported (eBGP); what matters is which prefixes are advertised."}
     explanation: "0.0.0.0/1 + 128.0.0.0/1 together cover the whole internet and beat the PoP's default route. Advertise only the private prefixes meant for SPA."

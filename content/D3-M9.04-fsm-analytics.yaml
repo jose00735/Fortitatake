@@ -114,7 +114,7 @@ quiz:
       - {id: a, text: "UEBA or baseline anomaly detection on logon time per user", correct: true}
       - {id: b, text: "A threat feed of known-bad IPs matched against logon sources", trap: near-miss, why_wrong: "Feeds catch known indicators; a first-ever login time is behaviour."}
       - {id: c, text: "A rule for logons between 00:00 and 05:00 for all the accounts", trap: near-miss, why_wrong: "Static hours fire on night-shift staff; a per-user baseline doesn't."}
-      - {id: d, text: "A parser update so the logon events carry a time attribute", trap: misconception, why_wrong: "Event time is already parsed; detection logic is missing."}
+      - {id: d, text: "Parser update so the logon events carry a time attribute", trap: misconception, why_wrong: "Event time is already parsed; detection logic is missing."}
     explanation: "Behavioral anomaly."
 
 labs:

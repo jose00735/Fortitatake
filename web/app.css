@@ -495,3 +495,7 @@ button.danger { color: var(--bad); border-color: var(--bad); }
 .pl-line b:nth-child(3) { animation-delay: .94s; }
 @keyframes plflow { from { left: -30px; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .pl-line b { animation: none; left: 45%; } }
+.conf { gap: 8px; align-items: center; margin: 4px 0 10px; }
+.conf .chip { cursor: pointer; gap: 6px; }
+.conf .chip input { margin: 0; }
+.conf .chip:has(input:checked) { border-color: var(--acc, var(--ok)); color: var(--ink); }

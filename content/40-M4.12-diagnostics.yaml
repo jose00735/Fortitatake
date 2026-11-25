@@ -374,7 +374,7 @@ quiz:
     options:
       - {id: a, text: "That port doesn't permit HTTPS administration, or a local-in rule denies it", correct: true}
       - {id: b, text: "There's no firewall policy from lan to the FortiGate's own lan address for HTTPS", trap: near-miss, why_wrong: "Admin access is local-in traffic; forward policies don't apply."}
-      - {id: c, text: "The admin certificate expired, so the FortiGate drops the TLS handshake for it", trap: misconception, why_wrong: "That gives a browser warning, not a local-in drop."}
+      - {id: c, text: "Admin certificate expired, so the FortiGate drops the TLS handshake for it", trap: misconception, why_wrong: "That gives a browser warning, not a local-in drop."}
       - {id: d, text: "The admin's PC isn't in a trusted host range, so the GUI login page is refused", trap: near-miss, why_wrong: "Trusted hosts reject the login, but the debug points to local-in on the interface."}
     explanation: iprope_in_check relates to traffic destined to the FortiGate itself.
   - id: M4.12.q14

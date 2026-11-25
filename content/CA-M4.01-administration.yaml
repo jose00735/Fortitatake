@@ -127,7 +127,7 @@ quiz:
     stem: "You type `set member DNS` on a service group that had HTTP HTTPS. Result?"
     options:
       - {id: a, text: "The group now holds DNS alone", correct: true}
-      - {id: b, text: "The group holds HTTP HTTPS DNS", trap: near-miss, why_wrong: "That's what append does; set replaces."}
+      - {id: b, text: "Group holds HTTP HTTPS DNS", trap: near-miss, why_wrong: "That's what append does; set replaces."}
       - {id: c, text: "An error: the list isn't empty", trap: misconception, why_wrong: "set replaces the list silently."}
       - {id: d, text: "No change until the unit reboots", trap: misconception, why_wrong: "Changes apply on next or end."}
     explanation: "set replaces lists."

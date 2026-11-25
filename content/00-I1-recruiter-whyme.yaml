@@ -4,6 +4,7 @@ kind: interview
 stage: INT
 stage_title: "Interview track"
 order: 10
+quality: 2
 est_sessions: 1
 objectives:
   - Deliver your pitch in 30 seconds, 90 seconds and 3 minutes, from evidence only
@@ -173,10 +174,10 @@ quiz:
     pretest: true
     stem: "The recruiter asks: 'Tell me about yourself.' What should the first answer be?"
     options:
-      - { id: a, text: "A 30–60 second pitch: who you are, two proof points, why this role", correct: true }
-      - { id: b, text: "Your full career story from university", why_wrong: "Too long; they'll ask for more if they want it." }
-      - { id: c, text: "Your certifications list", why_wrong: "A list isn't a story and doesn't explain fit." }
-      - { id: d, text: "Why you left your last job", why_wrong: "Leads with the weakest topic." }
+      - {id: a, text: "A 30–60 s pitch: who you are, two proof points, why this role", correct: true}
+      - {id: b, text: "Your career story from university onward, so they see the arc", trap: misconception, why_wrong: "Too long; they'll ask for more if they want it."}
+      - {id: c, text: "Your certifications and products, as the proof of technical depth", trap: near-miss, why_wrong: "Useful proof points, but a list isn't a story and doesn't explain fit."}
+      - {id: d, text: "Your current situation first, then a summary of the last role", trap: near-miss, why_wrong: "Leads with the weakest topic instead of your strengths and fit."}
     explanation: Short, structured, ends with why this role.
   - id: I1.q02
     type: single
@@ -184,10 +185,10 @@ quiz:
     pretest: true
     stem: "'Why did you leave Netskope?' Which answer is best?"
     options:
-      - { id: a, text: "A short, neutral fact, something positive, and why this role is your next step", correct: true }
-      - { id: b, text: "A detailed account of what went wrong", why_wrong: "Invites more questions and sounds negative." }
-      - { id: c, text: "Avoid the question", why_wrong: "Evasion is a red flag." }
-      - { id: d, text: "Say you're still there", why_wrong: "Untrue, and easy to verify." }
+      - {id: a, text: "A short neutral fact, something positive, and why this role is next", correct: true}
+      - {id: b, text: "A full account of what happened, so that nothing looks hidden later on", trap: misconception, why_wrong: "Invites more questions and sounds negative; keep private details private."}
+      - {id: c, text: "A one-line fact and then straight to your pitch for this new role", trap: near-miss, why_wrong: "Close, but skipping the positive line can sound abrupt or defensive."}
+      - {id: d, text: "That you wanted a change, and that you'd rather not go into detail", trap: near-miss, why_wrong: "Honest, but without a forward-looking reason it reads as evasive."}
     explanation: Neutral, positive, forward-looking. Keep private details private.
   - id: I1.q03
     type: single
@@ -195,10 +196,10 @@ quiz:
     pretest: true
     stem: The recruiter asks for your salary expectation. Best approach?
     options:
-      - { id: a, text: "A researched range for the total monthly package, flexible on structure", correct: true }
-      - { id: b, text: "Say 'whatever you think is fair'", why_wrong: "Gives away your anchor." }
-      - { id: c, text: "Give a single number below your real floor to look flexible", why_wrong: "The first number anchors the offer." }
-      - { id: d, text: "Refuse to answer", why_wrong: "Recruiters need it to move you forward." }
+      - {id: a, text: "A researched range for the total monthly package, flexible on structure", correct: true}
+      - {id: b, text: "'Whatever you think is fair', so the recruiter can propose a figure", trap: misconception, why_wrong: "It gives away your negotiating anchor."}
+      - {id: c, text: "A single number below your real floor, to look easy to work with", trap: misconception, why_wrong: "The first number anchors the offer."}
+      - {id: d, text: "A researched base salary figure alone, leaving the benefits aside for now", trap: near-miss, why_wrong: "Research is right, but a total package range leaves room to negotiate structure."}
     explanation: A range anchored on research, as a total package.
   - id: I1.q04
     type: single
@@ -206,40 +207,41 @@ quiz:
     pretest: true
     stem: When should you mention that the PS manager referred you?
     options:
-      - { id: a, text: "Early and naturally, e.g. in your opening or pitch", correct: true }
-      - { id: b, text: "Never; it looks like name-dropping", why_wrong: "A referral is a legitimate, strong signal." }
-      - { id: c, text: "Only if they ask", why_wrong: "They may not know; it's context they want." }
-      - { id: d, text: "Repeatedly in every answer", why_wrong: "Once is enough." }
+      - {id: a, text: "Early and naturally, e.g. in your opening or pitch", correct: true}
+      - {id: b, text: "At the end, when you ask about next steps in the process", trap: near-miss, why_wrong: "They may already have formed a view; it's context they want early."}
+      - {id: c, text: "When they ask how you heard about the role, if they do", trap: near-miss, why_wrong: "They may not ask; mention it once, early."}
+      - {id: d, text: "Not at all, as it could look like name-dropping to them", trap: misconception, why_wrong: "A referral is a legitimate, strong signal."}
     explanation: Mention it once, early.
   - id: I1.q05
     type: multi
     tier: 2
     stem: Which of these belong in your 90-second pitch? Select all that apply.
     options:
-      - { id: a, text: "Former Fortinet TAC P3, escalation point for NAM and Brazil", correct: true }
-      - { id: b, text: "Netskope: enterprise accounts, partner PS completion, USD 900k+ TCV kept", correct: true }
-      - { id: c, text: "Languages and travel readiness", correct: true }
-      - { id: d, text: "A figure from the Cato cheatsheet you can't back up", why_wrong: "Only evidenced claims; unverified numbers break under follow-up." }
+      - {id: a, text: "Ex-Fortinet TAC P3, escalation point for NAM and Brazil", correct: true}
+      - {id: b, text: "Netskope: enterprise accounts, partner PS completion, $900k+ TCV kept", correct: true}
+      - {id: c, text: "English, Spanish, Portuguese and readiness to travel", correct: true}
+      - {id: d, text: "A cheatsheet figure about the market you can't back up", trap: misconception, why_wrong: "Unverified numbers break under follow-up; use evidenced claims."}
+      - {id: e, text: "All certifications you hold, with each exam's date", trap: near-miss, why_wrong: "Certs matter, but a full list with dates eats the 90 seconds."}
     explanation: Evidence, scope, readiness.
   - id: I1.q06
     type: single
     tier: 2
     stem: "'You've worked in support and customer success, not PS. Why should we hire you?' Best response?"
     options:
-      - { id: a, text: "Acknowledge it, show the PS pieces you've done, and explain how you'd ramp up", correct: true }
-      - { id: b, text: "Say support and PS are the same", why_wrong: "Not true, and it shows you don't understand PS." }
-      - { id: c, text: "Claim you've done PS projects", why_wrong: "Untrue claims collapse under follow-up." }
-      - { id: d, text: "Say you'll learn on the job", why_wrong: "True but weak without evidence." }
+      - {id: a, text: "Acknowledge it, show the PS pieces you've done, and explain how you'd ramp", correct: true}
+      - {id: b, text: "Explain that TAC escalations are close enough to PS that it doesn't really matter", trap: misconception, why_wrong: "Not true, and it shows you don't understand PS."}
+      - {id: c, text: "Say you'll learn on the job fast, as you did when moving from TAC to CSM", trap: near-miss, why_wrong: "True but weak without the PS pieces you've already done."}
+      - {id: d, text: "List your certifications, as they cover the same ground as PS projects do", trap: near-miss, why_wrong: "Certifications help but don't answer the delivery question."}
     explanation: Honest, specific, forward-looking.
   - id: I1.q07
     type: single
     tier: 2
     stem: How long should most recruiter-screen answers be?
     options:
-      - { id: a, text: "About 30–60 seconds, then let them ask more", correct: true }
-      - { id: b, text: "3–5 minutes so they get everything", why_wrong: "Loses the listener and the time box." }
-      - { id: c, text: "One word", why_wrong: "Too thin to judge fit." }
-      - { id: d, text: "As long as needed to cover all your experience", why_wrong: "They'll ask for more if they want it." }
+      - {id: a, text: "About 30–60 seconds, then let them ask more", correct: true}
+      - {id: b, text: "3–5 minutes, so they get the whole picture", trap: misconception, why_wrong: "Loses the listener and the time box."}
+      - {id: c, text: "Under 15 seconds, to leave time for questions", trap: near-miss, why_wrong: "Too thin to judge fit."}
+      - {id: d, text: "About 2 minutes, as in a hiring manager round", trap: near-miss, why_wrong: "Longer answers suit deeper rounds; a screen is quick."}
     explanation: Short answers, more conversation.
   - id: I1.q08
     type: numeric
@@ -251,32 +253,33 @@ quiz:
   - id: I1.q09
     type: single
     tier: 3
-    stem: Which question is best to ask the recruiter at the end?
+    format: "first-step"
+    stem: "The recruiter asks if you have questions. Which do you ask first?"
     options:
-      - { id: a, text: "What does success look like in the first six months, and what are the next steps?", correct: true }
-      - { id: b, text: "How many vacation days do I get?", why_wrong: "Fine later, but weak as your main question in a first screen." }
-      - { id: c, text: "Did I get the job?", why_wrong: "Puts the recruiter on the spot." }
-      - { id: d, text: "No questions", why_wrong: "Signals low interest." }
+      - {id: a, text: "What does success look like in six months, and what are the next steps?", correct: true}
+      - {id: b, text: "How many vacation days come with the role, and when do benefits start?", trap: near-miss, why_wrong: "Fine later, but weak as the main question in a first screen."}
+      - {id: c, text: "How did I do today, and is there a chance I'll move on to the next round?", trap: misconception, why_wrong: "Puts the recruiter on the spot."}
+      - {id: d, text: "Which tools does the PS team use, and how big is the LATAM delivery team?", trap: near-miss, why_wrong: "Good for the hiring manager; with the recruiter, ask about success and process."}
     explanation: Ask about success and process.
   - id: I1.q10
     type: single
     tier: 3
     stem: "'Why do you want to come back to Fortinet?' Which answer is strongest?"
     options:
-      - { id: a, text: "You know the product deeply from TAC, like the culture, and PS uses both your technical and customer skills", correct: true }
-      - { id: b, text: "Because you need a job", why_wrong: "Honest but gives no reason to choose you." }
-      - { id: c, text: "Because Netskope was worse", why_wrong: "Never criticise former employers." }
-      - { id: d, text: "Because the salary is higher", why_wrong: "Motivation should be about the work." }
+      - {id: a, text: "Deep product knowledge from TAC, the culture, and a role using both skill sets", correct: true}
+      - {id: b, text: "The pay and benefits are better than the other offers you have right now", trap: misconception, why_wrong: "Motivation should be about the work."}
+      - {id: c, text: "Fortinet is the market leader, so it's the safest next move for your career path", trap: near-miss, why_wrong: "Flattering but generic; it says nothing about you and the role."}
+      - {id: d, text: "You prefer firewalls to SASE after two years at Netskope on the cloud side", trap: near-miss, why_wrong: "Sounds like a criticism of your last role; frame it as what you're moving toward."}
     explanation: Product, people, and the role as the natural next step.
   - id: I1.q11
     type: single
     tier: 2
     stem: "IBM 2026: the average global cost of a data breach was…"
     options:
-      - { id: a, text: "USD 4.99 million", correct: true }
-      - { id: b, text: "USD 1.93 million", why_wrong: "That's the saving from extensive security AI and automation." }
-      - { id: c, text: "USD 11.5 million", why_wrong: "That's the US average." }
-      - { id: d, text: "USD 6.29 million", why_wrong: "That's financial services." }
+      - {id: a, text: "USD 4.99M", correct: true}
+      - {id: b, text: "USD 1.93M", trap: near-miss, why_wrong: "That's the saving from extensive security AI and automation."}
+      - {id: c, text: "USD 11.50M", trap: near-miss, why_wrong: "That figure is the US average."}
+      - {id: d, text: "USD 6.29M", trap: near-miss, why_wrong: "That's the financial services average."}
     explanation: USD 4.99M globally, up 12 %.
     source: IBM Cost of a Data Breach Report 2026
   - id: I1.q12
@@ -284,10 +287,10 @@ quiz:
     tier: 3
     stem: Which positioning line is evidenced and strongest for PS?
     options:
-      - { id: a, text: "At Netskope I completed partners' half-delivered PS projects in stages, acting as QA on their work", correct: true }
-      - { id: b, text: "I led dozens of Fortinet PS projects", why_wrong: "Not evidenced." }
-      - { id: c, text: "I eliminated shadow AI across all my accounts", why_wrong: "Near zero applied to a couple of accounts only." }
-      - { id: d, text: "I have four years of SASE PS delivery", why_wrong: "Not evidenced." }
+      - {id: a, text: "At Netskope I finished partners' half-delivered PS projects in stages", correct: true}
+      - {id: b, text: "I led dozens of Fortinet PS projects across Latin America as owner", trap: misconception, why_wrong: "Not evidenced; it collapses on the first follow-up."}
+      - {id: c, text: "I eliminated shadow AI across each enterprise account I managed", trap: near-miss, why_wrong: "Near zero applied to a couple of accounts, not all of them."}
+      - {id: d, text: "I have two years of hands-on SASE delivery work from my time at Netskope", trap: near-miss, why_wrong: "Two years is right, but the role was customer success, not delivery."}
     explanation: Use exactly what you can back up.
 
 scenarios:

@@ -107,7 +107,7 @@ quiz:
     stem: "Someone plugs a small switch into a user port protected by BPDU guard. What happens?"
     options:
       - {id: a, text: "The interface is shut down on receipt", correct: true}
-      - {id: b, text: "The new switch becomes root of the tree", trap: misconception, why_wrong: "BPDU guard stops it before it can take part."}
+      - {id: b, text: "New switch becomes root of the tree", trap: misconception, why_wrong: "BPDU guard stops it before it can take part."}
       - {id: c, text: "The port blocks BPDUs but keeps passing data", trap: near-miss, why_wrong: "That's closer to BPDU filter; guard disables the port."}
       - {id: d, text: "The port stays up and a log is raised for it", trap: near-miss, why_wrong: "A log is written, but the port also goes down."}
     explanation: "Edge ports shouldn't see BPDUs."

@@ -142,7 +142,7 @@ quiz:
     stem: "Routes to 10.0.0.0/8 (static, distance 10) and 10.1.0.0/16 (OSPF). Traffic to 10.1.5.5 uses…"
     options:
       - {id: a, text: "The OSPF /16 route", correct: true}
-      - {id: b, text: "The static /8 route", trap: misconception, why_wrong: "Longest prefix wins before distance is compared."}
+      - {id: b, text: "Static /8 route", trap: misconception, why_wrong: "Longest prefix wins before distance is compared."}
       - {id: c, text: "ECMP across both routes", trap: near-miss, why_wrong: "ECMP needs the same prefix."}
       - {id: d, text: "The static /8, distance 10", trap: near-miss, why_wrong: "Lower distance matters only for the same prefix."}
     explanation: "Longest prefix match comes first."

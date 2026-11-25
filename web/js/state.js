@@ -130,6 +130,7 @@ export function rebuild() {
         p.items.set(b.item, st);
         p.reviews++;
         if (b.rating >= 3) addXP(overdue ? 2 : 1, e.ts);
+        if (b.rating === 1 && b.conf === "sure") addXP(-3, e.ts); // confident miss
         break;
       }
       case "quiz_attempt":
@@ -137,6 +138,7 @@ export function rebuild() {
         if (!p.quizFirst.has(b.item)) {
           p.quizFirst.set(b.item, { correct: !!b.correct, tier: b.tier, module: b.module });
           if (b.correct) addXP(2 * (b.tier || 1), e.ts);
+          else if (b.conf === "sure") addXP(-(b.tier || 1), e.ts); // confident miss on first try
         }
         break;
       case "unit_done":
@@ -196,6 +198,7 @@ export function rebuild() {
   for (const c of p.userCards) if (!S.itemIndex.has(c.id)) S.itemIndex.set(c.id, { item: c, kind: "card", module: c.module });
 
   // level and rank
+  p.xp = Math.max(0, p.xp);
   let lvl = 1, left = p.xp;
   while (left >= xpForNext(lvl) && lvl < 30) { left -= xpForNext(lvl); lvl++; }
   p.level = lvl; p.levelXP = left; p.levelNeed = xpForNext(lvl);

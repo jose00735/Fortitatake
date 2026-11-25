@@ -319,7 +319,7 @@ quiz:
     options:
       - {id: a, text: "diagnose sys sdwan service4 for the rule's member choice", correct: true}
       - {id: b, text: "A sniffer on wan1 to look for retransmissions to Office 365", trap: near-miss, why_wrong: "Useful later; first see which member the rule picked and why."}
-      - {id: c, text: "The policy log for the Office 365 sessions in FortiAnalyzer", trap: near-miss, why_wrong: "Shows sessions, but not why SD-WAN chose the member."}
+      - {id: c, text: "Policy log for the Office 365 sessions in FortiAnalyzer", trap: near-miss, why_wrong: "Shows sessions, but not why SD-WAN chose the member."}
       - {id: d, text: "A firmware upgrade to the current release on the FortiGate", trap: misconception, why_wrong: "No evidence of a bug yet; follow the troubleshooting order."}
     explanation: "Health, then the rule's decision, then the installed result, then packets."
 

@@ -54,6 +54,8 @@ export function flashcard(root, id, done, opts = {}) {
 // mode: pretest | graded | boss | review | practice
 export function quiz(root, q, module, done, opts = {}) {
   const mode = opts.mode || "graded";
+  // confidence rating on Boss and review items: a confident miss costs XP and comes back sooner
+  const askConf = mode === "boss" || mode === "review" || opts.confidence === true;
   const el = h(`<div class="panel task">
     ${opts.label ? `<div class="progress-line">${esc(opts.label)}</div>` : ""}
     <div class="row spread" style="margin-bottom:10px"><span class="tag acc">${mode === "pretest" ? "Pretest · ungraded" : "Question"}</span>${TIER(q.tier)}</div>
@@ -61,6 +63,7 @@ export function quiz(root, q, module, done, opts = {}) {
     <div class="q">${inline(q.stem)}</div>
     <div class="body"></div>
     <div class="fb"></div>
+    ${askConf ? `<div class="row conf" role="radiogroup" aria-label="How sure are you?"><span class="tiny muted">How sure?</span><label class="chip"><input type="radio" name="conf" value="sure"> Sure</label><label class="chip"><input type="radio" name="conf" value="unsure" checked> Not sure</label></div>` : ""}
     <div class="row"><button class="primary" data-submit>Check <span class="kbd">Enter</span></button><button data-next hidden>Next <span class="kbd">Enter</span></button></div>
   </div>`);
   const body = $(".body", el);
@@ -107,7 +110,7 @@ export function quiz(root, q, module, done, opts = {}) {
     getAnswer = () => inp.value;
     grade = (a) => {
       if (q.type === "numeric") return Math.abs(parseFloat(String(a).replace(/,/g, "")) - q.answer) <= (q.tolerance || 0);
-      return (q.accept || []).some((x) => norm(x) === norm(a));
+      return (q.accept || []).some((x) => (String(x).startsWith("~") ? norm(a).includes(norm(String(x).slice(1))) : norm(x) === norm(a)));
     };
     showResult = () => {
       inp.disabled = true;
@@ -122,12 +125,16 @@ export function quiz(root, q, module, done, opts = {}) {
     if ((Array.isArray(a) && !a.length && q.type !== "order") || a === "") return;
     answered = true;
     correct = grade(a);
+    const conf = askConf ? (($("input[name=conf]:checked", el) || {}).value || "unsure") : undefined;
+    if (askConf) $$("input[name=conf]", el).forEach((i) => (i.disabled = true));
     showResult();
     const fb = $(".fb", el);
-    fb.innerHTML = `<div class="verdict ${correct ? "ok" : "no"}">${correct ? "Correct" : "Not quite"}</div>` +
+    const confNote = conf === "sure" && !correct ? `<div class="small"><b>Confident miss.</b> This one comes back soon and costs XP: the gap is in what you were sure of.</div>`
+      : conf === "unsure" && correct ? `<div class="small muted">Right, but unsure: it comes back sooner than a confident answer.</div>` : "";
+    fb.innerHTML = `<div class="verdict ${correct ? "ok" : "no"}">${correct ? "Correct" : "Not quite"}</div>` + confNote +
       (q.explanation ? `<div class="md small">${md(q.explanation)}</div>` : "") + src(q.source);
-    record("quiz_attempt", { item: q.id, module, correct, tier: q.tier || 1, pretest: mode === "pretest", boss: mode === "boss" });
-    if (mode !== "pretest" && S.itemIndex.has(q.id)) record("review", { item: q.id, kind: "quiz", module, rating: correct ? 3 : 1 });
+    record("quiz_attempt", { item: q.id, module, correct, tier: q.tier || 1, pretest: mode === "pretest", boss: mode === "boss", ...(conf ? { conf } : {}) });
+    if (mode !== "pretest" && S.itemIndex.has(q.id)) record("review", { item: q.id, kind: "quiz", module, rating: correct ? (conf === "unsure" ? 2 : 3) : 1, ...(conf ? { conf } : {}) });
     $("[data-submit]", el).hidden = true;
     $("[data-next]", el).hidden = false;
     $("[data-next]", el).focus();

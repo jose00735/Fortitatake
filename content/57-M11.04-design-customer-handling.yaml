@@ -126,7 +126,7 @@ quiz:
     stem: Which document should contain the full NAT table and every VPN parameter?
     options:
       - {id: a, text: "The low-level design (LLD)", correct: true}
-      - {id: b, text: "The high-level design (HLD)", trap: near-miss, why_wrong: "The HLD is for approval; details go in the LLD."}
+      - {id: b, text: "High-level design (HLD)", trap: near-miss, why_wrong: "The HLD is for approval; details go in the LLD."}
       - {id: c, text: "The statement of work (SOW)", trap: misconception, why_wrong: "The SOW defines scope, not configuration."}
       - {id: d, text: "The acceptance test plan (ATP)", trap: near-miss, why_wrong: "The ATP tests results; it doesn't hold the build parameters."}
     explanation: LLD is the build document.
@@ -137,7 +137,7 @@ quiz:
     stem: '"The ISP circuit for the branch wasn''t delivered and cutover is next week." In a RAID log, this is…'
     options:
       - {id: a, text: "An issue, since it's happening now", correct: true}
-      - {id: b, text: "A risk, since cutover hasn't failed", trap: near-miss, why_wrong: "The missing circuit already happened; that makes it an issue."}
+      - {id: b, text: "Risk, since cutover hasn't failed", trap: near-miss, why_wrong: "The missing circuit already happened; that makes it an issue."}
       - {id: c, text: "An assumption that the ISP will deliver", trap: misconception, why_wrong: "It's a fact now, not something you rely on."}
       - {id: d, text: "A dependency to add to the project plan", trap: near-miss, why_wrong: "The circuit was a dependency; once missed it's tracked as an issue."}
     explanation: Issue, with owner and due date.

@@ -266,7 +266,7 @@ quiz:
     stem: In an uninterruptible cluster upgrade, which unit is upgraded first?
     options:
       - {id: a, text: "The secondary units", correct: true}
-      - {id: b, text: "The primary unit first", trap: near-miss, why_wrong: "The primary goes last, after a new primary is chosen."}
+      - {id: b, text: "Primary unit first", trap: near-miss, why_wrong: "The primary goes last, after a new primary is chosen."}
       - {id: c, text: "All of them at the same time", trap: misconception, why_wrong: "That's the simultaneous (interrupting) mode."}
       - {id: d, text: "The lowest serial number", trap: misconception, why_wrong: "Order is by role, not serial."}
     explanation: Subordinates, new primary from upgraded units, then the former primary.

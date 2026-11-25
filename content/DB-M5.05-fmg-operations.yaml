@@ -83,7 +83,7 @@ quiz:
     stem: "Branch FortiGates over VPN show offline in FortiManager. Likely cause?"
     options:
       - {id: a, text: "FGFM sourced from the WAN IP, not an IP covered by the tunnel", correct: true}
-      - {id: b, text: "The FortiManager licence expired for the branches' device count", trap: misconception, why_wrong: "A licence issue would affect devices beyond the VPN branches."}
+      - {id: b, text: "FortiManager licence expired for the branches' device count", trap: misconception, why_wrong: "A licence issue would affect devices beyond the VPN branches."}
       - {id: c, text: "The policy package is too large to install over the VPN tunnels", trap: misconception, why_wrong: "Package size is an install issue, not a connectivity status."}
       - {id: d, text: "A firewall policy on the hub blocks TCP 541 from the WAN interface", trap: near-miss, why_wrong: "Blocking FGFM would cause it, but over VPN the source IP is the usual culprit."}
     explanation: "Source IP over tunnels."

@@ -210,7 +210,7 @@ quiz:
       - {id: a, text: "Replies match the session the first packet created", correct: true}
       - {id: b, text: "Replies from port 443 are allowed by a built-in rule", trap: misconception, why_wrong: "There's no blanket rule for 443; replies pass because they match a session."}
       - {id: c, text: "NAT on the outbound policy opens the return path too", trap: near-miss, why_wrong: "NAT rewrites addresses; the session is what permits the reply, NAT or not."}
-      - {id: d, text: "The implicit deny is applied to new UDP flows alone", trap: misconception, why_wrong: "The implicit deny covers all traffic with no policy and no session."}
+      - {id: d, text: "Implicit deny is applied to new UDP flows alone", trap: misconception, why_wrong: "The implicit deny covers all traffic with no policy and no session."}
     explanation: The first packet is checked against policies and creates a session keyed by the 5-tuple. Replies match the session.
   - id: M1.03.q02
     type: order

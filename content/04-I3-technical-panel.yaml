@@ -4,6 +4,7 @@ kind: interview
 stage: INT
 stage_title: "Interview track"
 order: 14
+quality: 2
 est_sessions: 1
 objectives:
   - Run a whiteboard design the way a consultant does: clarify, draw, justify, risk
@@ -125,93 +126,97 @@ quiz:
   - id: I3.q02
     type: single
     tier: 1
+    format: "first-step"
     pretest: true
     stem: The panel says "Design SD-WAN for our retail chain." What should you do first?
     options:
-      - { id: a, text: "Ask clarifying questions: sites, links, apps, availability, management", correct: true }
-      - { id: b, text: "Start drawing a hub and spoke", why_wrong: "You may design for the wrong requirements." }
-      - { id: c, text: "List SD-WAN CLI commands", why_wrong: "Commands come much later." }
-      - { id: d, text: "Ask which version they run and stop there", why_wrong: "One question isn't discovery." }
+      - {id: a, text: "Ask clarifying questions: sites, links, apps, availability, management", correct: true}
+      - {id: b, text: "Draw a dual-hub topology with ADVPN, then ask what they'd change on it", trap: near-miss, why_wrong: "A good design may follow, but you'd be designing before you know the requirements."}
+      - {id: c, text: "Ask which FortiOS version they run, then design for that release's features", trap: near-miss, why_wrong: "One question isn't discovery; requirements come before versions."}
+      - {id: d, text: "Walk through the SD-WAN config blocks in order so they see your CLI depth", trap: misconception, why_wrong: "Commands come much later; they want design thinking."}
     explanation: Clarify, then draw.
   - id: I3.q03
     type: single
     tier: 2
+    format: "first-step"
     stem: "'Users can't reach a server through the FortiGate.' Which first two checks follow the packet-flow method?"
     options:
-      - { id: a, text: "Sniffer to see if packets arrive and leave, then debug flow to see route and policy decisions", correct: true }
-      - { id: b, text: "Reboot the FortiGate, then check the logs", why_wrong: "Reboots destroy evidence." }
-      - { id: c, text: "Upgrade firmware", why_wrong: "No evidence of a bug." }
-      - { id: d, text: "Disable all security profiles", why_wrong: "Changes without proof." }
+      - {id: a, text: "Sniffer to see packets arrive and leave, then debug flow for route and policy", correct: true}
+      - {id: b, text: "Check the traffic logs for denies, then reboot if nothing at all shows up there", trap: near-miss, why_wrong: "Logs help, but a reboot destroys evidence and changes nothing."}
+      - {id: c, text: "Debug flow first, then a sniffer if the debug output turns out to be empty", trap: near-miss, why_wrong: "Close, but proving arrival first tells you whether the FortiGate is involved at all."}
+      - {id: d, text: "Disable the security profiles on the policy, then retest the server access", trap: misconception, why_wrong: "Changes without proof of where the packet stops."}
     explanation: Prove where it stops.
   - id: I3.q04
     type: single
     tier: 2
     stem: "You don't remember a default value during the panel. Best response?"
     options:
-      - { id: a, text: "Give your best understanding and say you'd verify it in the docs before a change", correct: true }
-      - { id: b, text: "Make up a confident number", why_wrong: "Panels test honesty; wrong and confident is worse." }
-      - { id: c, text: "Say nothing", why_wrong: "Silence reads as stuck." }
-      - { id: d, text: "Ask to skip the question", why_wrong: "Offer what you know first." }
+      - {id: a, text: "Give your best understanding and say you'd verify it in the docs", correct: true}
+      - {id: b, text: "Give a confident number, since the panels reward decisive answers", trap: misconception, why_wrong: "Panels test honesty; wrong and confident is worse."}
+      - {id: c, text: "Say you don't know it and ask to move on to the next question", trap: near-miss, why_wrong: "Honest, but offer what you know and how you'd check first."}
+      - {id: d, text: "Explain how you'd find it in the CLI with a question mark there", trap: near-miss, why_wrong: "Good habit, but also give your best understanding of the value."}
     explanation: Honest and practical.
   - id: I3.q05
     type: single
     tier: 2
     stem: Which routing component is evaluated first on FortiGate?
     options:
-      - { id: a, text: "Policy routes", correct: true }
-      - { id: b, text: "SD-WAN rules", why_wrong: "They come after policy routes." }
-      - { id: c, text: "Static routes", why_wrong: "The routing table comes last." }
-      - { id: d, text: "BGP", why_wrong: "BGP feeds the routing table." }
+      - {id: a, text: "Policy routes", correct: true}
+      - {id: b, text: "SD-WAN rules", trap: near-miss, why_wrong: "They come after policy routes."}
+      - {id: c, text: "Static routes", trap: misconception, why_wrong: "The routing table comes last."}
+      - {id: d, text: "Connected routes", trap: misconception, why_wrong: "Connected routes are in the routing table, checked after policy routes."}
     explanation: Policy routes, SD-WAN rules, then the routing table.
   - id: I3.q06
     type: multi
     tier: 3
     stem: Which failure modes are worth naming in a DC HA design? Select all that apply.
     options:
-      - { id: a, text: "Split brain if heartbeats share one switch or path", correct: true }
-      - { id: b, text: "Sessions dropping on failover without session pickup", correct: true }
-      - { id: c, text: "Override taking the primary role back after a reboot", correct: true }
-      - { id: d, text: "Web filter categories changing", why_wrong: "Not an HA failure mode." }
+      - {id: a, text: "Split brain if heartbeats share one switch", correct: true}
+      - {id: b, text: "Sessions dropping without session pickup", correct: true}
+      - {id: c, text: "Override taking primary back after reboot", correct: true}
+      - {id: d, text: "Web filter ratings changing after failover", trap: misconception, why_wrong: "Not an HA failure mode."}
+      - {id: e, text: "Config drift if one unit isn't in sync", trap: near-miss, why_wrong: "Worth checking, but FGCP syncs config; it's a symptom, not a design failure mode."}
     explanation: Name the failure, then how you designed it out.
   - id: I3.q07
     type: single
     tier: 3
     stem: Why end a whiteboard design with acceptance tests?
     options:
-      - { id: a, text: "They define how the customer signs off that the design works, and show delivery thinking", correct: true }
-      - { id: b, text: "To fill time", why_wrong: "They're a deliverable." }
-      - { id: c, text: "Fortinet requires them in the GUI", why_wrong: "No such requirement." }
-      - { id: d, text: "They replace the design document", why_wrong: "They complement it." }
+      - {id: a, text: "They define how the customer signs off that the design works", correct: true}
+      - {id: b, text: "They let the panel see you know the FortiGate diagnostic commands", trap: near-miss, why_wrong: "A side benefit; the point is agreed proof that it works."}
+      - {id: c, text: "They capture the low-level settings, so the LLD itself can stay short", trap: near-miss, why_wrong: "Tests prove behaviour; the LLD still holds the settings."}
+      - {id: d, text: "They're a Fortinet requirement for PS projects before any go-live", trap: misconception, why_wrong: "There's no such product requirement; it's delivery practice."}
     explanation: Prove it works; it's what gets signed.
   - id: I3.q08
     type: single
     tier: 2
     stem: In a debug flow, which line shows the policy decision?
     options:
-      - { id: a, text: "Allowed by Policy-N (or Denied by forward policy check)", correct: true }
-      - { id: b, text: "allocate a new session", why_wrong: "That's session creation." }
-      - { id: c, text: "find a route", why_wrong: "That's routing." }
-      - { id: d, text: "received a packet", why_wrong: "That's ingress." }
+      - {id: a, text: "Allowed by Policy-N, or Denied by forward policy check", correct: true}
+      - {id: b, text: "allocate a new session, which follows the policy match", trap: near-miss, why_wrong: "That's session creation, before the policy line."}
+      - {id: c, text: "find a route, which picks the policy by egress interface", trap: near-miss, why_wrong: "That's routing; it sets the egress, but the policy line comes after."}
+      - {id: d, text: "received a packet, which lists the matched policy's ID", trap: misconception, why_wrong: "That's ingress; no policy is named there."}
     explanation: Policy lines name the policy ID.
   - id: I3.q09
     type: single
     tier: 3
+    format: answer-reason
     stem: A panelist asks "Why A-P and not A-A?" for a mid-size DC. Strongest answer?
     options:
-      - { id: a, text: "A-P is simpler to operate and troubleshoot, and one unit's throughput fits; A-A adds complexity for gains they don't need", correct: true }
-      - { id: b, text: "A-A isn't supported", why_wrong: "It is supported." }
-      - { id: c, text: "A-P is always faster", why_wrong: "Not the point; one unit handles traffic." }
-      - { id: d, text: "Because Fortinet says so", why_wrong: "Give your reasoning." }
+      - {id: a, text: "A-P is simpler to run and one unit's throughput fits; A-A adds complexity they don't need", correct: true}
+      - {id: b, text: "A-A suits it less, as most sessions would still pass through the primary unit anyway", trap: near-miss, why_wrong: "Partly true, but the deciding reason is that one unit fits and A-P is simpler."}
+      - {id: c, text: "A-P gives more throughput, because the secondary keeps its CPU free for the session sync", trap: misconception, why_wrong: "Not the point; one unit handles the traffic either way."}
+      - {id: d, text: "A-A would double throughput, but the customer can't afford licences for a second FortiGate", trap: near-miss, why_wrong: "Both modes need two units; the real trade-off is complexity vs need."}
     explanation: Trade-off grounded in requirements.
   - id: I3.q10
     type: single
     tier: 2
     stem: Which design element addresses the risk that VPN gateways are prime targets?
     options:
-      - { id: a, text: "Fast patch cadence, MFA, and restricting who can reach IKE with local-in policies", correct: true }
-      - { id: b, text: "Using 3DES for compatibility", why_wrong: "Weakens security." }
-      - { id: c, text: "Disabling DPD", why_wrong: "Unrelated, and hurts recovery." }
-      - { id: d, text: "Publishing the PSK internally", why_wrong: "Never." }
+      - {id: a, text: "Fast patching, MFA, and local-in policies limiting who reaches IKE", correct: true}
+      - {id: b, text: "Strong DH groups and AES-256, so that the tunnels can't be broken into", trap: near-miss, why_wrong: "Good crypto, but gateways are breached through bugs and stolen credentials."}
+      - {id: c, text: "3DES and DH group 2 enabled as fallbacks for partner compatibility", trap: misconception, why_wrong: "Weakens security without reducing exposure."}
+      - {id: d, text: "IKE on a non-standard port, so the gateway is harder for scanners", trap: near-miss, why_wrong: "Obscurity doesn't replace patching, MFA and access limits."}
     explanation: Exposure, identity, patching.
 
 scenarios:

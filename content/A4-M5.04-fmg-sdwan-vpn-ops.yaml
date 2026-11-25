@@ -164,7 +164,7 @@ quiz:
     options:
       - {id: a, text: "FortiManager acting as a local FDS", correct: true}
       - {id: b, text: "Manual signature uploads per device", trap: near-miss, why_wrong: "Works for a few units, but doesn't scale or stay current."}
-      - {id: c, text: "A proxy allowing FortiGuard traffic", trap: near-miss, why_wrong: "Valid if policy allows Internet access through it; the factory has none."}
+      - {id: c, text: "Proxy allowing FortiGuard traffic", trap: near-miss, why_wrong: "Valid if policy allows Internet access through it; the factory has none."}
       - {id: d, text: "FortiAnalyzer sharing its threat DB", trap: misconception, why_wrong: "FortiAnalyzer handles logs, not signature updates."}
     explanation: Local FDS serves updates.
     source: FortiManager 7.6.8 Admin Guide p. 913

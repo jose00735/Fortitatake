@@ -199,7 +199,7 @@ quiz:
     stem: Which document lists every interface, IP, policy and route needed to build the solution?
     options:
       - {id: a, text: "The low-level design (LLD)", correct: true}
-      - {id: b, text: "The high-level design (HLD)", trap: near-miss, why_wrong: "The HLD explains the architecture and reasoning, not every setting."}
+      - {id: b, text: "High-level design (HLD)", trap: near-miss, why_wrong: "The HLD explains the architecture and reasoning, not every setting."}
       - {id: c, text: "The statement of work (SOW)", trap: misconception, why_wrong: "The SOW defines scope and responsibilities."}
       - {id: d, text: "The method of procedure (MOP)", trap: near-miss, why_wrong: "The MOP sequences the change steps; the LLD holds the full settings."}
     explanation: Low-level design = the build sheet.
@@ -231,7 +231,7 @@ quiz:
     stem: Which weekly status format do hiring managers usually want to hear?
     options:
       - {id: a, text: "Done, next, risks and decisions needed", correct: true}
-      - {id: b, text: "A full log of each command that was run", trap: misconception, why_wrong: "Too detailed for stakeholders to act on."}
+      - {id: b, text: "Full log of each command that was run", trap: misconception, why_wrong: "Too detailed for stakeholders to act on."}
       - {id: c, text: "Hours spent per task against the budget", trap: near-miss, why_wrong: "Useful internally, but not what a sponsor needs weekly."}
       - {id: d, text: "A report sent when there's a problem to fix", trap: misconception, why_wrong: "Silence breeds surprise; report on a fixed rhythm."}
     explanation: Short, predictable, decision-oriented.
@@ -254,7 +254,7 @@ quiz:
       - {id: a, text: "A large file transfer through each tunnel", correct: true}
       - {id: b, text: "A ping between the sites from each LAN side", trap: near-miss, why_wrong: "Small pings pass even when large packets don't."}
       - {id: c, text: "The tunnel status and SA counters on each end", trap: near-miss, why_wrong: "A tunnel can be up while large packets are dropped."}
-      - {id: d, text: "An NTP sync from a branch to the HQ server", trap: misconception, why_wrong: "NTP uses tiny UDP packets that never hit MTU."}
+      - {id: d, text: "NTP sync from a branch to the HQ server", trap: misconception, why_wrong: "NTP uses tiny UDP packets that never hit MTU."}
     explanation: Small things pass; big things reveal MTU problems.
   - id: M11.01.q09
     type: single

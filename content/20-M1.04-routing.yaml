@@ -240,7 +240,7 @@ quiz:
       - {id: a, text: "Policy routes", correct: true}
       - {id: b, text: "The routing table", trap: near-miss, why_wrong: "Used when no policy route matches."}
       - {id: c, text: "SD-WAN service rules", trap: near-miss, why_wrong: "SD-WAN rules come after policy routes."}
-      - {id: d, text: "The BGP database", trap: misconception, why_wrong: "Forwarding uses the routing table, not the protocol database."}
+      - {id: d, text: "BGP database", trap: misconception, why_wrong: "Forwarding uses the routing table, not the protocol database."}
     explanation: Policy routes are evaluated top-down before the routing table.
   - id: M1.04.q06
     type: single

@@ -202,6 +202,21 @@ def main():
         print(f"  {st:5} {r:4}/{n:<4} = {100 * r / n:5.1f}%   chance {100 * ch / n:4.1f}%")
     if tot[1]:
         print(f"  all   {tot[0]:4}/{tot[1]:<4} = {100 * tot[0] / tot[1]:5.1f}%   chance {100 * tot[2] / tot[1]:4.1f}%")
+    # simple length strategies, single-answer items: a guesser who learned "never the longest" shouldn't win either
+    strat = {"shortest": 0, "longest": 0, "2nd longest": 0}
+    n = ch = 0
+    for m in mods:
+        for q in choice_items(m):
+            if q.get("type") == "multi":
+                continue
+            o = sorted(q["options"], key=lambda x: len(str(x["text"])))
+            n += 1
+            ch += 1 / len(o)
+            strat["shortest"] += bool(o[0].get("correct"))
+            strat["longest"] += bool(o[-1].get("correct"))
+            strat["2nd longest"] += bool(o[-2].get("correct"))
+    if n:
+        print("length strategies (single-answer items): " + ", ".join(f"{k} {100 * v / n:.1f}%" for k, v in strat.items()) + f"; chance {100 * ch / n:.1f}%")
     sys.exit(1 if bad else 0)
 
 

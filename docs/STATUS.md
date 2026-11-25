@@ -98,6 +98,16 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.10.0 adds (question quality overhaul, confidence rating)
+
+- **Every module is now `quality: 2`** (71 modules, 548 items: 364 single, 62 multi, 42 order, 27 output, 25 numeric, 28 text) and `python3 tools/quiz_lint.py --strict` passes: balanced option lengths, no hedge, parenthesis or absolute-word cues on one side only, labelled traps (misconception / irrelevant / near-miss) with specific why_wrong, two near-misses at tier 3+, text answers of 3+ characters, and an output, first-step, answer-reason or not-work item in every module with tier 3+ questions. Two short text items became numeric or single-choice items.
+- **Cue bot, before → after (share of items it gets right from test-taking cues alone):** S1 57.9 → 7.9 %, S2 23.1 → 6.7 %, S4 66.3 → 3.1 %, S5 56.7 → 6.5 %, S6 68.0 → 8.0 %, S7 50.0 → 0 %, S8 65.5 → 6.5 %, S9 72.7 → 0 %, S10 54.5 → 0 %, S11 62.2 → 0 %, interview track 79.3 → 3.4 %; all stages 48.8 → 4.4 % (chance about 22 %).
+- **Residual cue, recorded honestly.** Because distractors were lengthened to stop "pick the longest", a guesser who always picks the shortest option now scores 31.7 % and "second longest" 36.1 % against 25 % chance (the lint prints these lines). The next content pass makes the right answer the longest in about a quarter of each module's items.
+- **Confidence rating** on Boss strikes and review items: pick Sure or Not sure before checking. A confident miss costs XP (tier points on a first attempt, 3 on a review) and is scheduled as Again; a right-but-unsure answer is rated Hard so it returns sooner.
+- Text answers can use `~text` (contains), as labs already do.
+- `tools/quiz_patch.py`: `--dump <module>` for a compact view and patch files that rewrite items in place without reformatting the module.
+- Not built yet: the two-step answer-plus-reason screen (items are tagged `format: answer-reason` and read as one choice for now) and the "too easy" usage flag.
+
 ### What v0.9.0 adds (SOC/SecOps and FortiSASE depth, capstones, real Internet DNS and ping)
 
 - **Real Internet for ICMP and DNS.** The lab ISP's Internet side now forwards ping and DNS for real public addresses through the app (OS agent 0.9.0 + engine relay): `ping 8.8.8.8`, `nslookup fortinet.com` and `dig @1.1.1.1 …` from a lab PC give real answers, TTLs and round-trip times. Lab-defined names still win; public resolvers (8.8.8.8, 1.1.1.1, 9.9.9.9 …) are relayed even if a lab defines them. TCP 80/443 to real addresses is answered by stand-in web listeners that log the original destination. Nothing else leaves the lab. The simulator answers the same way for real addresses.
@@ -333,7 +343,7 @@ A purpose-built Linux compiled from source on Jose's workstation by the FortiTat
 - New questions in these modules are written to the v0.10.0 rules below from the start.
 - Small fixes reported from use (output that looks wrong to a FortiOS eye).
 
-### v0.10.0: question quality overhaul (all existing content)
+### v0.10.0: question quality overhaul (done, see "What v0.10.0 adds")
 
 **Problem.** In many questions the right option can be picked without knowing the subject: it is the longest and most specific, it is the only one that hedges, and the wrong options are things no practitioner would choose. Questions must make you think, above all in SecOps and non-fundamental topics.
 

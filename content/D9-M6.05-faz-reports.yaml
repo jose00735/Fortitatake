@@ -108,7 +108,7 @@ quiz:
     type: text
     tier: 2
     stem: "Dataset variable that applies the report's time range and device filters?"
-    accept: ["$filter", "filter", "~\\$filter"]
+    accept: ["$filter", "filter", "~filter"]
     explanation: "$filter."
 
 labs:

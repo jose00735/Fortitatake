@@ -4,6 +4,7 @@ kind: interview
 stage: INT
 stage_title: "Interview track"
 order: 12
+quality: 2
 est_sessions: 1
 objectives:
   - Know what a PS hiring manager is deciding and what they worry about
@@ -131,10 +132,10 @@ quiz:
     pretest: true
     stem: "'Tell me about a time you delivered something under pressure.' How should you structure it?"
     options:
-      - { id: a, text: "One STAR-L story, 60–90 seconds, most time on your actions, with a result and a learning", correct: true }
-      - { id: b, text: "Three short examples to show range", why_wrong: "One story told well beats a list." }
-      - { id: c, text: "Describe your general approach without a story", why_wrong: "Behavioural questions want a real example." }
-      - { id: d, text: "Start with the result and skip the context", why_wrong: "The manager needs the situation to judge the action." }
+      - {id: a, text: "One STAR-L story in 60–90 s, mostly your actions, with result and lesson", correct: true}
+      - {id: b, text: "Three short examples from different jobs, to show your range under pressure", trap: near-miss, why_wrong: "One story told well beats a list; range comes across in later answers."}
+      - {id: c, text: "Your general approach to pressure, so the manager sees how you think", trap: misconception, why_wrong: "Behavioural questions want a real example."}
+      - {id: d, text: "One STAR story that starts with the result and skips most of the context", trap: near-miss, why_wrong: "The manager needs the situation to judge the actions."}
     explanation: STAR-L, one story.
   - id: I2.q02
     type: single
@@ -142,70 +143,72 @@ quiz:
     pretest: true
     stem: "A customer asks for an extra VLAN design halfway through a fixed-price project. Best response?"
     options:
-      - { id: a, text: "Acknowledge it, check the SOW, and raise a change request if it's out of scope", correct: true }
-      - { id: b, text: "Just do it to keep the customer happy", why_wrong: "Unbilled scope creep hurts the project and sets expectations." }
-      - { id: c, text: "Refuse", why_wrong: "Helpful but controlled is better: offer the change request path." }
-      - { id: d, text: "Ask the customer to call sales", why_wrong: "You own the conversation; then involve the PM or sales with a change request." }
+      - {id: a, text: "Acknowledge it, check the SOW, raise a change request if out of scope", correct: true}
+      - {id: b, text: "Do it this week to keep the customer happy, as the design is small", trap: misconception, why_wrong: "Unbilled scope creep hurts the project and sets expectations."}
+      - {id: c, text: "Decline, since the project is fixed-price and the SOW is already signed", trap: near-miss, why_wrong: "Right on scope, wrong on relationship; offer the change request path."}
+      - {id: d, text: "Ask the customer to call sales, who quote anything that's outside the SOW", trap: near-miss, why_wrong: "You own the conversation; then involve the PM or sales with a change request."}
     explanation: Scope is managed, not ignored.
   - id: I2.q03
     type: single
     tier: 2
     stem: "'Have you led full Fortinet PS implementations end to end?' Which answer is best for you?"
     options:
-      - { id: a, text: "Not as the PS lead yet; here are the pieces I've done and how I'll ramp", correct: true }
-      - { id: b, text: "Yes, many", why_wrong: "Not true, and easy to test." }
-      - { id: c, text: "No", why_wrong: "Honest but undersells real experience." }
-      - { id: d, text: "Change the subject", why_wrong: "Evasion is a red flag." }
+      - {id: a, text: "Not as the PS lead yet; here are the pieces I've done and how I'll ramp", correct: true}
+      - {id: b, text: "Yes, through TAC: I rebuilt customer deployments end to end many times", trap: misconception, why_wrong: "Stretches support work into delivery; easy to test with one follow-up."}
+      - {id: c, text: "No, my roles have been support and customer success, so this would be new", trap: near-miss, why_wrong: "Honest, but undersells real design, rollout and recovery work."}
+      - {id: d, text: "Not yet, but I'm a fast learner and I'm sure I can ramp up quickly here", trap: near-miss, why_wrong: "Honest, but gives no evidence of the pieces you've done."}
     explanation: Honest, then bridge with evidence.
   - id: I2.q04
     type: multi
     tier: 2
     stem: Which of these are evidenced and safe to say? Select all that apply.
     options:
-      - { id: a, text: "Around 60 % of roughly 60 named accounts moved from red to green", correct: true }
-      - { id: b, text: "Co-built with my team a telemetry model for a 2,000+ account book", correct: true }
-      - { id: c, text: "More than half the seats in use within six weeks after a sponsor change", correct: true }
-      - { id: d, text: "Near-zero unsanctioned AI across dozens of accounts", why_wrong: "Near zero applies to a couple of accounts only." }
+      - {id: a, text: "About 60% of roughly 60 named accounts moved red to green", correct: true}
+      - {id: b, text: "Co-built with my team a telemetry model for a 2,000+ book", correct: true}
+      - {id: c, text: "Over half the seats in use within six weeks of a new sponsor", correct: true}
+      - {id: d, text: "Near-zero unsanctioned AI across dozens of my accounts", trap: near-miss, why_wrong: "Near zero applied to a couple of accounts, not dozens."}
+      - {id: e, text: "Owned USD 6.2M ARR and grew it by half in my first year", trap: misconception, why_wrong: "The ARR figure is real, but the growth claim isn't evidenced."}
     explanation: Say exactly what the evidence supports.
   - id: I2.q05
     type: single
     tier: 2
     stem: What does a PS manager mean by utilization?
     options:
-      - { id: a, text: "The share of your time billed to customer projects", correct: true }
-      - { id: b, text: "CPU usage of the FortiGates you deploy", why_wrong: "Different meaning." }
-      - { id: c, text: "License usage at the customer", why_wrong: "That's adoption, from your CSM world." }
-      - { id: d, text: "Hours spent in training", why_wrong: "That's non-billable time." }
+      - {id: a, text: "The share of your time billed to customer projects", correct: true}
+      - {id: b, text: "The share of licensed seats customers actually use", trap: near-miss, why_wrong: "That's adoption, from your CSM world."}
+      - {id: c, text: "Your hours in training against the yearly target set", trap: misconception, why_wrong: "Training hours are non-billable time."}
+      - {id: d, text: "CPU and memory use on the FortiGates you deployed", trap: misconception, why_wrong: "That is a different, technical meaning."}
     explanation: Billable time.
   - id: I2.q06
     type: single
     tier: 3
+    format: first-step
     stem: The manager asks how you'd be productive quickly. What's strongest?
     options:
-      - { id: a, text: "A concrete 30-60-90 plan: shadow, lead with review, then independent projects", correct: true }
-      - { id: b, text: "\"I learn fast\"", why_wrong: "Claim without a plan." }
-      - { id: c, text: "\"After my certifications\"", why_wrong: "Delays value; certs run in parallel." }
-      - { id: d, text: "\"It depends on the training\"", why_wrong: "Puts it on them." }
+      - {id: a, text: "A 30-60-90 plan: shadow, lead with review, then independent projects", correct: true}
+      - {id: b, text: "Finish the remaining certifications first, then take on customer work", trap: near-miss, why_wrong: "Delays value; certifications run in parallel."}
+      - {id: c, text: "'I learn fast', with the TAC-to-CSM move as an example of picking up", trap: near-miss, why_wrong: "A real example helps, but a plan for this role is stronger."}
+      - {id: d, text: "'It depends on the onboarding you give me and on the first project'", trap: misconception, why_wrong: "Puts the responsibility on them."}
     explanation: Show the plan.
   - id: I2.q07
     type: single
     tier: 2
     stem: Which story best proves you can take over a delivery someone else started?
     options:
-      - { id: a, text: "Finishing a partner's half-delivered PS project in stages at Netskope", correct: true }
-      - { id: b, text: "Your OSCP lab report", why_wrong: "Shows skill, not taking over delivery." }
-      - { id: c, text: "Your ICFES score", why_wrong: "Not relevant here." }
-      - { id: d, text: "Running QBRs", why_wrong: "Shows executive communication, not delivery takeover." }
+      - {id: a, text: "Finishing a partner's half-delivered PS project at Netskope", correct: true}
+      - {id: b, text: "Running QBRs with C-level sponsors on renewals and adoption", trap: near-miss, why_wrong: "Shows executive communication, not taking over delivery."}
+      - {id: c, text: "Your OSCP lab report, showing how you work through a target", trap: misconception, why_wrong: "Shows skill, not taking over someone else's delivery."}
+      - {id: d, text: "Your TAC escalations for NAM and Brazil enterprise customers", trap: near-miss, why_wrong: "Shows depth under pressure, but not continuing another team's project."}
     explanation: Pick the story that matches the competency.
   - id: I2.q08
     type: single
     tier: 3
     stem: Which question to the hiring manager shows the most consultant thinking?
     options:
-      - { id: a, text: "Where do projects usually go wrong here, and what would you want me to do differently?", correct: true }
-      - { id: b, text: "How many vacation days are there?", why_wrong: "Fine later; weak here." }
-      - { id: c, text: "Is the work hard?", why_wrong: "Vague." }
-      - { id: d, text: "When will I be promoted?", why_wrong: "Premature." }
+      - {id: a, text: "Where do projects usually go wrong here, and what should I do differently?", correct: true}
+      - {id: b, text: "How many projects would I run at the same time, and with how much travel then?", trap: near-miss, why_wrong: "Useful logistics, but it doesn't show consultant thinking."}
+      - {id: c, text: "What does the promotion path look like from consultant to senior here?", trap: misconception, why_wrong: "Premature in a first manager interview."}
+      - {id: d, text: "Which Fortinet products do your customers buy most often in the region?", trap: near-miss, why_wrong: "Shows interest, but not delivery-risk thinking."}
     explanation: Shows you're already thinking about delivery risk.
   - id: I2.q09
     type: order
@@ -218,10 +221,10 @@ quiz:
     tier: 2
     stem: "'Tell me about a weakness.' Which is best for you?"
     options:
-      - { id: a, text: "Work used to scatter across tools; you built systems (trackers, automation) and now set up one tracker from day one", correct: true }
-      - { id: b, text: "\"I'm a perfectionist\"", why_wrong: "Cliché." }
-      - { id: c, text: "\"I have no weaknesses\"", why_wrong: "Signals low self-awareness." }
-      - { id: d, text: "A weakness that's core to PS, like 'I don't like customers'", why_wrong: "Disqualifying." }
+      - {id: a, text: "Work used to scatter across tools; now you set up one tracker from day one", correct: true}
+      - {id: b, text: "'I'm a perfectionist', with an example of polishing a customer report", trap: misconception, why_wrong: "A cliché that interviewers discount."}
+      - {id: c, text: "You sometimes take on too much, and you're learning to delegate earlier", trap: near-miss, why_wrong: "Common and vague; your real, evidenced example is stronger."}
+      - {id: d, text: "Presenting to large groups, which you're improving with regular practice sessions", trap: near-miss, why_wrong: "Can work, but it touches a core PS skill; pick a real, non-core one."}
     explanation: Real, improving, not core-breaking.
 
 scenarios:
