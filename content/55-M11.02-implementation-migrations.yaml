@@ -3,6 +3,7 @@ title: "Implementation craft and migrations: MOPs, cutovers and vendor conversio
 stage: S11
 stage_title: "S11 · Professional Services mastery"
 order: 62
+quality: 2
 est_sessions: 1
 objectives:
   - Write a method of procedure (MOP) with pre-checks, steps, verification and rollback
@@ -134,80 +135,82 @@ quiz:
     pretest: true
     stem: Why save pre-check outputs before a change?
     options:
-      - { id: a, text: "They're the baseline to compare against after the change", correct: true }
-      - { id: b, text: "Fortinet requires it for support", why_wrong: "Not the reason." }
-      - { id: c, text: "To fill the MOP", why_wrong: "They're evidence, not decoration." }
-      - { id: d, text: "They replace the backup", why_wrong: "You still need a backup." }
+      - {id: a, text: "They're the baseline to compare with after the change", correct: true}
+      - {id: b, text: "Fortinet TAC asks for them before it opens a priority case", trap: misconception, why_wrong: "TAC may want outputs, but that isn't why you take them."}
+      - {id: c, text: "They replace a config backup, as they show the full state", trap: misconception, why_wrong: "Outputs show state, not a restorable configuration."}
+      - {id: d, text: "They prove to the customer the change window really started", trap: near-miss, why_wrong: "Evidence matters, but their job is comparison after the change."}
     explanation: Baseline evidence.
   - id: M11.02.q03
     type: single
     tier: 2
     stem: "An ASA has 'object network WEB / host 10.1.1.10 / nat (inside,outside) static 203.0.113.10'. FortiGate equivalent?"
     options:
-      - { id: a, text: "A VIP 203.0.113.10 → 10.1.1.10 and an inbound policy using the VIP", correct: true }
-      - { id: b, text: "An IP pool", why_wrong: "IP pools are for source NAT." }
-      - { id: c, text: "set nat enable on the inbound policy", why_wrong: "That's source NAT." }
-      - { id: d, text: "A static route", why_wrong: "Routing isn't NAT." }
+      - {id: a, text: "A VIP from the public to the private IP, used by an inbound policy", correct: true}
+      - {id: b, text: "An IP pool of 203.0.113.10 applied on the inbound firewall policies", trap: near-miss, why_wrong: "IP pools do source NAT; inbound static NAT needs a VIP."}
+      - {id: c, text: "set nat enable on the inbound policy with 203.0.113.10 as source", trap: misconception, why_wrong: "Policy NAT is source NAT, not destination."}
+      - {id: d, text: "A VIP plus a matching IP pool so both directions are translated", trap: near-miss, why_wrong: "A static VIP already covers both directions for the server's own traffic."}
     explanation: Static inbound NAT = VIP.
   - id: M11.02.q04
     type: single
     tier: 3
     stem: "Translating Palo Alto rules literally, inbound rules to published servers never match on FortiGate. Why?"
     options:
-      - { id: a, text: "PAN uses pre-NAT destination IP with post-NAT zone; FortiGate policies need the VIP and the real destination interface", correct: true }
-      - { id: b, text: "FortiGate doesn't support inbound NAT", why_wrong: "It does, with VIPs." }
-      - { id: c, text: "Zones don't exist on FortiGate", why_wrong: "They do." }
-      - { id: d, text: "App-ID can't be translated", why_wrong: "Not the reason for no match." }
+      - {id: a, text: "PAN matches pre-NAT IP with post-NAT zone; FortiGate needs the VIP and real egress port", correct: true}
+      - {id: b, text: "The converter dropped the NAT rules, so the FortiGate has no VIPs for those servers yet", trap: near-miss, why_wrong: "Missing VIPs would break it too, but literal translation fails on the different semantics."}
+      - {id: c, text: "FortiGate zones block intrazone traffic by default, so the server rules hit implicit deny", trap: near-miss, why_wrong: "Intrazone behaviour differs, but these rules cross zones; the NAT model is the issue."}
+      - {id: d, text: "App-ID objects in those rules have no FortiGate equivalent, so the policies won't match", trap: misconception, why_wrong: "Application control maps imperfectly, but that isn't why nothing matches."}
     explanation: Different NAT/policy semantics.
   - id: M11.02.q05
     type: single
     tier: 2
     stem: At 01:15 the new firewall passes traffic but one critical app fails. The MOP's go/no-go is 01:30. Best action?
     options:
-      - { id: a, text: "Assess quickly with evidence; if not fixed by 01:30, roll back as agreed", correct: true }
-      - { id: b, text: "Keep trying fixes until it works", why_wrong: "Ignores the agreed limit and risks the morning." }
-      - { id: c, text: "Roll back immediately without looking", why_wrong: "Take the available time to assess." }
-      - { id: d, text: "Leave it and email the customer tomorrow", why_wrong: "Unacceptable risk." }
+      - {id: a, text: "Assess with evidence; if it isn't fixed by 01:30, roll back as agreed", correct: true}
+      - {id: b, text: "Keep trying fixes past 01:30, as most of the migration already works", trap: misconception, why_wrong: "Ignores the agreed limit and risks the morning."}
+      - {id: c, text: "Roll back right away to be safe, without spending time on the cause", trap: near-miss, why_wrong: "Rollback may come, but use the 15 minutes to assess."}
+      - {id: d, text: "Ask the app owner to accept the failure and fix it in tomorrow's window", trap: near-miss, why_wrong: "A critical app failing in the morning is the risk the go/no-go guards against."}
     explanation: Respect go/no-go.
   - id: M11.02.q06
     type: multi
     tier: 2
     stem: What belongs in a MOP's prerequisites? Select all that apply.
     options:
-      - { id: a, text: "Fresh configuration backup", correct: true }
-      - { id: b, text: "Tested console access", correct: true }
-      - { id: c, text: "Licences and firmware path checked", correct: true }
-      - { id: d, text: "Admin passwords in the email", why_wrong: "Never send credentials by email." }
+      - {id: a, text: "Fresh configuration backup", correct: true}
+      - {id: b, text: "Tested console access", correct: true}
+      - {id: c, text: "Licences and firmware path", correct: true}
+      - {id: d, text: "Admin passwords in the MOP", trap: misconception, why_wrong: "Credentials never belong in documents or email."}
+      - {id: e, text: "The as-built document", trap: near-miss, why_wrong: "The as-built is written after the change."}
     explanation: Be ready to recover.
   - id: M11.02.q07
     type: single
     tier: 3
-    stem: During hypercare the customer asks for a new VPN to a partner. How do you treat it?
+    stem: During hypercare the customer asks for a new VPN to a partner. What do you do first?
+    format: first-step
     options:
-      - { id: a, text: "As a new request: change request or new scope, separate from hypercare defects", correct: true }
-      - { id: b, text: "Do it as part of hypercare", why_wrong: "Hypercare covers your delivered work, not new scope." }
-      - { id: c, text: "Refuse", why_wrong: "Offer the right path instead." }
-      - { id: d, text: "Ignore until hypercare ends", why_wrong: "Respond, but via the right process." }
+      - {id: a, text: "As a new request: a change request, separate from hypercare defects", correct: true}
+      - {id: b, text: "As part of hypercare, since the customer is still in the support period", trap: misconception, why_wrong: "Hypercare covers your delivered work, not new scope."}
+      - {id: c, text: "Do it quickly, then log it as a hypercare defect to keep things simple", trap: near-miss, why_wrong: "Mixing new work into defects hides cost and scope."}
+      - {id: d, text: "Park it until hypercare ends, then let sales follow up with the customer", trap: near-miss, why_wrong: "Respond now through the right process rather than parking it."}
     explanation: Separate defects from new requests.
   - id: M11.02.q08
     type: single
     tier: 2
     stem: What makes an acceptance test plan useful?
     options:
-      - { id: a, text: "Agreed before the change, with expected results, and signed after", correct: true }
-      - { id: b, text: "Written after go-live from what worked", why_wrong: "Then it proves nothing." }
-      - { id: c, text: "Only covering FortiGate CLI outputs", why_wrong: "Include business applications." }
-      - { id: d, text: "Kept internal", why_wrong: "The customer signs it." }
+      - {id: a, text: "Agreed before the change, with expected results, signed after", correct: true}
+      - {id: b, text: "Written after go-live from the tests that worked on the night itself", trap: misconception, why_wrong: "Written afterwards it proves nothing."}
+      - {id: c, text: "Built from FortiGate CLI checks so each result is objective", trap: near-miss, why_wrong: "Include business application tests, not just CLI output."}
+      - {id: d, text: "Kept as an internal checklist for the delivery team to follow", trap: near-miss, why_wrong: "The customer agrees and signs it; that's what makes it acceptance."}
     explanation: Agreed up front, signed at the end.
   - id: M11.02.q09
     type: single
     tier: 3
     stem: Why is a migration a good moment for rule cleanup?
     options:
-      - { id: a, text: "You're already reviewing every rule; removing unused and broad rules reduces risk and complexity", correct: true }
-      - { id: b, text: "FortiGate can't import more than 100 rules", why_wrong: "No such limit." }
-      - { id: c, text: "Cleanup is required by FortiConverter", why_wrong: "It's good practice, not a tool requirement." }
-      - { id: d, text: "It avoids testing", why_wrong: "You still test." }
+      - {id: a, text: "You're reviewing each rule anyway, so removing unused ones cuts risk", correct: true}
+      - {id: b, text: "The new FortiGate model holds fewer policies than the old firewall did", trap: near-miss, why_wrong: "Model limits exist but are rarely the issue; the value is reduced risk."}
+      - {id: c, text: "FortiConverter refuses rulebases that still contain shadowed rules", trap: misconception, why_wrong: "Cleanup is good practice, not a tool requirement."}
+      - {id: d, text: "A smaller rulebase lets you skip the lab testing before the cutover", trap: near-miss, why_wrong: "Less to test, but you still test."}
     explanation: Cleanup is value you add.
   - id: M11.02.q10
     type: text

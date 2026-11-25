@@ -3,6 +3,7 @@ title: "PS delivery: from kickoff to handover, plus your STAR bank"
 stage: S11
 stage_title: "S11 · Professional Services mastery"
 order: 60
+quality: 2
 est_sessions: 1
 objectives:
   - Describe the PS delivery lifecycle end to end and the document each phase produces
@@ -186,10 +187,10 @@ quiz:
     pretest: true
     stem: During implementation the customer asks you to "also quickly set up SD-WAN for the two other branches", which isn't in the SOW. Best answer?
     options:
-      - { id: a, text: "Welcome it and raise a change request so it's scoped, approved and scheduled", correct: true }
-      - { id: b, text: "Do it tonight to keep the customer happy", why_wrong: "Untracked work breaks timelines, testing and budgets." }
-      - { id: c, text: "Refuse; it's out of scope", why_wrong: "Correct on scope, wrong on relationship; offer the proper path." }
-      - { id: d, text: "Tell them to ask sales", why_wrong: "Own it: you can start the change request yourself." }
+      - {id: a, text: "Welcome it and raise a change request so it's scoped and scheduled", correct: true}
+      - {id: b, text: "Do it tonight as goodwill, since it's small and the window is open", trap: near-miss, why_wrong: "Untracked work breaks timelines, testing and budgets, and becomes expected."}
+      - {id: c, text: "Decline politely, as the SOW is signed and the branches aren't in it", trap: near-miss, why_wrong: "Right on scope, wrong on relationship; offer the proper path instead."}
+      - {id: d, text: "Ask them to contact sales, who handle anything outside the signed SOW", trap: misconception, why_wrong: "Own it: you can start the change request yourself."}
     explanation: Protect scope without saying no to the customer.
   - id: M11.01.q03
     type: single
@@ -197,10 +198,10 @@ quiz:
     pretest: true
     stem: Which document lists every interface, IP, policy and route needed to build the solution?
     options:
-      - { id: a, text: "LLD", correct: true }
-      - { id: b, text: "HLD", why_wrong: "The HLD explains the architecture and reasoning, not every setting." }
-      - { id: c, text: "SOW", why_wrong: "The SOW defines scope and responsibilities." }
-      - { id: d, text: "ATP", why_wrong: "The ATP defines acceptance tests." }
+      - {id: a, text: "The low-level design (LLD)", correct: true}
+      - {id: b, text: "The high-level design (HLD)", trap: near-miss, why_wrong: "The HLD explains the architecture and reasoning, not every setting."}
+      - {id: c, text: "The statement of work (SOW)", trap: misconception, why_wrong: "The SOW defines scope and responsibilities."}
+      - {id: d, text: "The method of procedure (MOP)", trap: near-miss, why_wrong: "The MOP sequences the change steps; the LLD holds the full settings."}
     explanation: Low-level design = the build sheet.
   - id: M11.01.q04
     type: multi
@@ -208,110 +209,113 @@ quiz:
     pretest: true
     stem: Which belong in the pre-checks of a FortiGate change window? Select all that apply.
     options:
-      - { id: a, text: "Configuration backup / FortiManager revision", correct: true }
-      - { id: b, text: "Baseline outputs (status, performance, routes, sessions)", correct: true }
-      - { id: c, text: "Console or out-of-band access confirmed", correct: true }
-      - { id: d, text: "Clearing the session table", why_wrong: "That's disruptive, not a pre-check." }
+      - {id: a, text: "Config backup or FortiManager revision", correct: true}
+      - {id: b, text: "Baseline outputs: status, routes, sessions", correct: true}
+      - {id: c, text: "Console or out-of-band access confirmed", correct: true}
+      - {id: d, text: "Clearing the session table to start clean", trap: misconception, why_wrong: "Disruptive to users, and it destroys the baseline."}
+      - {id: e, text: "Upgrading firmware to the newest patch", trap: near-miss, why_wrong: "A separate change with its own window, not a pre-check."}
     explanation: Backup, baseline, console. Then start.
   - id: M11.01.q05
     type: single
     tier: 2
     stem: What makes a rollback plan usable at 2 a.m.?
     options:
-      - { id: a, text: "A written trigger with a deadline, and exact steps back", correct: true }
-      - { id: b, text: "The engineer's experience", why_wrong: "Tired people need a script, not memory." }
-      - { id: c, text: "A vendor TAC case opened in advance", why_wrong: "Useful backup, but not a rollback plan." }
-      - { id: d, text: "A full factory reset procedure", why_wrong: "Too destructive; restore the backup or revision instead." }
+      - {id: a, text: "A written trigger with a deadline, plus exact steps back", correct: true}
+      - {id: b, text: "An experienced engineer who knows the config by heart", trap: misconception, why_wrong: "Tired people at 2 a.m. need a script, not memory."}
+      - {id: c, text: "A TAC case opened in advance with the change details", trap: near-miss, why_wrong: "A useful backup, but it isn't a rollback plan."}
+      - {id: d, text: "A config backup taken from the device right before the start", trap: near-miss, why_wrong: "Necessary, but without a trigger and steps nobody knows when or how to use it."}
     explanation: Decide when and how you roll back before you start.
   - id: M11.01.q06
     type: single
     tier: 2
     stem: Which weekly status format do hiring managers usually want to hear?
     options:
-      - { id: a, text: "Done, next, risks, decisions needed", correct: true }
-      - { id: b, text: "A full log of every command", why_wrong: "Too detailed for stakeholders." }
-      - { id: c, text: "Only when there's a problem", why_wrong: "Silence breeds surprise; report every week." }
-      - { id: d, text: "Hours spent per task", why_wrong: "Useful internally, not the status customers need." }
+      - {id: a, text: "Done, next, risks and decisions needed", correct: true}
+      - {id: b, text: "A full log of each command that was run", trap: misconception, why_wrong: "Too detailed for stakeholders to act on."}
+      - {id: c, text: "Hours spent per task against the budget", trap: near-miss, why_wrong: "Useful internally, but not what a sponsor needs weekly."}
+      - {id: d, text: "A report sent when there's a problem to fix", trap: misconception, why_wrong: "Silence breeds surprise; report on a fixed rhythm."}
     explanation: Short, predictable, decision-oriented.
   - id: M11.01.q07
     type: single
     tier: 3
+    format: "first-step"
     stem: Validation fails 20 minutes before the agreed go/no-go time. What do you do?
     options:
-      - { id: a, text: "Try one targeted fix if time allows; at the go/no-go time, roll back as planned and communicate", correct: true }
-      - { id: b, text: "Keep troubleshooting until it works", why_wrong: "That's how windows overrun into business hours." }
-      - { id: c, text: "Roll back immediately without telling anyone", why_wrong: "Rollback is fine; skipping communication isn't." }
-      - { id: d, text: "Leave it half-done and fix it tomorrow", why_wrong: "Never leave production in an untested state." }
+      - {id: a, text: "One targeted fix if time allows; at go/no-go, roll back and tell them", correct: true}
+      - {id: b, text: "Keep troubleshooting past go/no-go, since you're close to the root cause", trap: misconception, why_wrong: "That's how windows overrun into business hours."}
+      - {id: c, text: "Roll back now, then write up what happened for the next morning", trap: near-miss, why_wrong: "Rolling back may be right, but the customer contact needs to hear now."}
+      - {id: d, text: "Ask the customer to extend the window by two hours to finish the job", trap: near-miss, why_wrong: "Possible, but the go/no-go time exists so this isn't decided under pressure."}
     explanation: The go/no-go time is a commitment you made to the customer.
   - id: M11.01.q08
     type: single
     tier: 3
     stem: Which ATP test is most likely to catch an MTU/MSS problem on new tunnels?
     options:
-      - { id: a, text: "A large file transfer through each tunnel", correct: true }
-      - { id: b, text: "A ping between sites", why_wrong: "Small pings pass even when large packets don't." }
-      - { id: c, text: "Checking the tunnel status page", why_wrong: "A tunnel can be up while large packets are dropped." }
-      - { id: d, text: "An NTP sync", why_wrong: "Tiny UDP packets." }
+      - {id: a, text: "A large file transfer through each tunnel", correct: true}
+      - {id: b, text: "A ping between the sites from each LAN side", trap: near-miss, why_wrong: "Small pings pass even when large packets don't."}
+      - {id: c, text: "The tunnel status and SA counters on each end", trap: near-miss, why_wrong: "A tunnel can be up while large packets are dropped."}
+      - {id: d, text: "An NTP sync from a branch to the HQ server", trap: misconception, why_wrong: "NTP uses tiny UDP packets that never hit MTU."}
     explanation: Small things pass; big things reveal MTU problems.
   - id: M11.01.q09
     type: single
     tier: 3
     stem: "A hiring manager asks: 'Have you led full Fortinet implementations end to end?' Best answer?"
     options:
-      - { id: a, text: "An honest 'not as the named delivery owner', then the concrete pieces you've done and how you'd close the gap", correct: true }
-      - { id: b, text: "Yes, many", why_wrong: "Untrue claims collapse under follow-up questions." }
-      - { id: c, text: "No, I've only done support", why_wrong: "True but undersells real design, rollout and recovery work." }
-      - { id: d, text: "Change the subject to certifications", why_wrong: "Evasion is noticed." }
+      - {id: a, text: "Not as the named owner; here are the pieces I've done and how I'd close the gap", correct: true}
+      - {id: b, text: "Yes, several, since TAC escalations meant rebuilding customer deployments often", trap: misconception, why_wrong: "Stretching support work into delivery collapses under follow-up questions."}
+      - {id: c, text: "No, I've done support and customer success, so delivery work would be new to me", trap: near-miss, why_wrong: "Honest, but undersells real design, rollout and recovery work."}
+      - {id: d, text: "Not yet, but I'm sure I'd ramp up quickly with a strong team around me", trap: near-miss, why_wrong: "Honest, but offers no evidence of what you have done."}
     explanation: Honesty plus evidence plus a plan beats both bluffing and underselling.
   - id: M11.01.q10
     type: single
     tier: 2
     stem: What's the strongest way to deliver bad news to a customer sponsor?
     options:
-      - { id: a, text: "What we found, the impact, options, and my recommendation with reasons", correct: true }
-      - { id: b, text: "Wait until you have a fix", why_wrong: "Late news destroys trust." }
-      - { id: c, text: "Explain whose fault it was", why_wrong: "Blame doesn't help the customer decide." }
-      - { id: d, text: "Send a long technical email", why_wrong: "Sponsors need impact and options." }
+      - {id: a, text: "What we found, the impact, options, and my recommendation", correct: true}
+      - {id: b, text: "Wait until there's a fix, so the message ends on good news", trap: misconception, why_wrong: "Late news destroys trust more than bad news does."}
+      - {id: c, text: "Explain the root cause in full, including whose change it was", trap: near-miss, why_wrong: "Cause matters later; blame doesn't help the sponsor decide."}
+      - {id: d, text: "A detailed technical email so they have the full picture to read", trap: near-miss, why_wrong: "Sponsors need impact and options, not a long technical write-up."}
     explanation: Bad news early, always with a plan.
   - id: M11.01.q11
     type: single
     tier: 4
+    format: "first-step"
     stem: A partner did half of a customer's deployment and left. The customer is frustrated and the renewal is near. Based on your own experience, what's the best first move?
     options:
-      - { id: a, text: "Audit what was delivered against what was promised, then propose a staged plan to complete it with quick wins first", correct: true }
-      - { id: b, text: "Start over from scratch", why_wrong: "Wastes what works and delays value." }
-      - { id: c, text: "Escalate to the partner's management only", why_wrong: "The customer still has a half-done deployment." }
-      - { id: d, text: "Offer a discount", why_wrong: "Doesn't fix the deployment." }
+      - {id: a, text: "Audit what was delivered against what was promised, then propose staged completion", correct: true}
+      - {id: b, text: "Rebuild the deployment from scratch to a known design, then hand it over properly", trap: near-miss, why_wrong: "Wastes what works and delays value; audit first."}
+      - {id: c, text: "Escalate to the partner's management so they come back and finish the work they sold", trap: near-miss, why_wrong: "May be needed, but the customer still has a half-done deployment today."}
+      - {id: d, text: "Offer a renewal discount to make up for the gap while the partner sorts things out", trap: misconception, why_wrong: "A discount doesn't fix the deployment or the frustration."}
     explanation: "That's exactly what you did at Netskope: gap analysis, then staged completion as QA on the partner's work."
   - id: M11.01.q12
     type: single
     tier: 4
     stem: Mid-window, a routing change cuts off your SSH session to the FortiGate. The MOP was followed. What should have been in place?
     options:
-      - { id: a, text: "Console or out-of-band access, checked in pre-checks, plus the rollback steps", correct: true }
-      - { id: b, text: "A second SSH session", why_wrong: "It's cut off by the same routing change." }
-      - { id: c, text: "A reboot schedule", why_wrong: "A reboot doesn't undo a saved bad config." }
-      - { id: d, text: "Nothing; wait for the route to recover", why_wrong: "Hope isn't a plan." }
+      - {id: a, text: "Console or out-of-band access, checked in pre-checks, plus rollback steps", correct: true}
+      - {id: b, text: "A second SSH session kept open from another jump host during the whole window", trap: near-miss, why_wrong: "It rides the same routed path, so the change cuts it off too."}
+      - {id: c, text: "execute config-revert scheduled before the change so it undoes itself", trap: near-miss, why_wrong: "Auto-revert helps, but you still need a way in and a plan; it complements console access."}
+      - {id: d, text: "A reboot scheduled for ten minutes later in case the session gets lost", trap: misconception, why_wrong: "A reboot doesn't undo a saved bad config."}
     explanation: You've recovered FortiGates over console after bad routing; make console part of every pre-check.
   - id: M11.01.q13
     type: single
     tier: 5
     stem: The customer's CISO wants SSL deep inspection on 3,000 endpoints in one go next week. Which plan shows PS maturity?
     options:
-      - { id: a, text: "Pilot group, CA via GPO, exemptions for pinned and sensitive apps, waves with rollback, success criteria agreed", correct: true }
-      - { id: b, text: "Enable it for everyone at once to meet the date", why_wrong: "Breaks apps everywhere at once with no rollback path." }
-      - { id: c, text: "Refuse; deep inspection is too risky", why_wrong: "It's valuable; the task is doing it safely." }
-      - { id: d, text: "Use certificate inspection only, without telling the CISO", why_wrong: "Silently changing the requirement breaks trust." }
+      - {id: a, text: "Pilot group, CA via GPO, exemptions, waves with rollback, agreed success criteria", correct: true}
+      - {id: b, text: "Everyone at once to meet the date, with TAC on standby for any broken applications", trap: misconception, why_wrong: "Breaks apps everywhere at once with no rollback path."}
+      - {id: c, text: "Certificate inspection for all next week, deep inspection after the CISO signs off", trap: near-miss, why_wrong: "A reasonable step, but it changes the requirement without the pilot and CA plan."}
+      - {id: d, text: "Deep inspection for IT staff next week and everyone else in a single second wave", trap: near-miss, why_wrong: "A pilot, but one big second wave still has no rollback per group."}
     explanation: "Phased, reversible, agreed: your real rollout experience distributing the CA through Group Policy."
   - id: M11.01.q14
     type: single
     tier: 3
     stem: Which handover item most reduces post-project support calls?
     options:
-      - { id: a, text: "Hands-on knowledge transfer where the customer's team performs the key tasks", correct: true }
-      - { id: b, text: "A 200-page PDF", why_wrong: "Rarely read." }
-      - { id: c, text: "Your personal phone number", why_wrong: "Doesn't scale or build their capability." }
-      - { id: d, text: "A list of FortiOS documentation links", why_wrong: "Useful, but not self-sufficiency." }
+      - {id: a, text: "Hands-on knowledge transfer where their team does the key tasks", correct: true}
+      - {id: b, text: "A complete as-built document with each setting and screenshot", trap: near-miss, why_wrong: "Needed, but rarely read when something breaks; doing beats reading."}
+      - {id: c, text: "Your direct phone number for questions during the first months", trap: misconception, why_wrong: "Doesn't scale or build their capability."}
+      - {id: d, text: "A curated list of FortiOS documentation and KB links for the team", trap: near-miss, why_wrong: "Useful, but it doesn't make the team self-sufficient."}
     explanation: Doing beats reading.
 
 labs:

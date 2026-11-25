@@ -3,6 +3,7 @@ title: "OSPF: neighbors, LSAs, areas and SPF"
 stage: S2
 stage_title: "S2 · Routing and WAN protocols"
 order: 150
+quality: 2
 est_sessions: 1
 objectives:
   - Walk through the OSPF neighbor states and name what each mismatch breaks
@@ -151,10 +152,10 @@ quiz:
     pretest: true
     stem: "Two routers see each other as neighbors but stay in ExStart. Most likely cause?"
     options:
-      - {id: a, text: "MTU mismatch", correct: true}
-      - {id: b, text: "Hello interval mismatch", why_wrong: "They wouldn't become neighbors at all."}
-      - {id: c, text: "Area mismatch", why_wrong: "Hellos would be discarded."}
-      - {id: d, text: "Different OSPF process IDs", why_wrong: "Process IDs are local."}
+      - {id: a, text: "An interface MTU mismatch", correct: true}
+      - {id: b, text: "Mismatched hello intervals", trap: near-miss, why_wrong: "They wouldn't become neighbours at all."}
+      - {id: c, text: "Different OSPF process IDs", trap: misconception, why_wrong: "Process IDs are local and never compared."}
+      - {id: d, text: "Duplicate router IDs on them", trap: near-miss, why_wrong: "Duplicate RIDs cause flapping and odd LSDB behaviour, not a stall at ExStart."}
     explanation: "MTU is checked in DBD packets during ExStart/Exchange."
   - id: M2.01.q02
     type: single
@@ -162,10 +163,10 @@ quiz:
     pretest: true
     stem: "Router A (priority 1, RID 10.0.0.9) is DR. Router B (priority 200) joins the segment. What happens?"
     options:
-      - {id: a, text: "A stays DR until it fails", correct: true}
-      - {id: b, text: "B becomes DR immediately", why_wrong: "Election isn't preemptive."}
-      - {id: c, text: "Both become DR", why_wrong: "One DR per segment."}
-      - {id: d, text: "B becomes DR only if its RID is higher", why_wrong: "Priority wins over RID, but still not preemptive."}
+      - {id: a, text: "A stays DR until it fails or restarts", correct: true}
+      - {id: b, text: "B becomes DR at once on higher priority", trap: misconception, why_wrong: "DR election in OSPF isn't preemptive."}
+      - {id: c, text: "B becomes BDR now and DR at A's failure", trap: near-miss, why_wrong: "Only if the BDR role is free; and B takes over only when A fails."}
+      - {id: d, text: "B becomes DR if its RID is also higher", trap: near-miss, why_wrong: "Priority beats RID, but election still isn't preemptive."}
     explanation: "DR election isn't preemptive."
   - id: M2.01.q03
     type: order
@@ -179,10 +180,10 @@ quiz:
     stem: "Which must match for two routers to become OSPF neighbors? Select all that apply."
     options:
       - {id: a, text: "Hello and dead intervals", correct: true}
-      - {id: b, text: "Area ID", correct: true}
-      - {id: c, text: "Authentication", correct: true}
-      - {id: d, text: "Router ID", why_wrong: "They must differ."}
-      - {id: e, text: "Interface cost", why_wrong: "Costs can differ per side."}
+      - {id: b, text: "The area ID on the link", correct: true}
+      - {id: c, text: "Authentication settings", correct: true}
+      - {id: d, text: "The router IDs of both", trap: misconception, why_wrong: "Router IDs must differ, not match."}
+      - {id: e, text: "The interface OSPF cost", trap: near-miss, why_wrong: "Costs are local and can differ per side."}
     explanation: "Cost is local; router IDs must be unique."
   - id: M2.01.q05
     type: single
@@ -190,25 +191,31 @@ quiz:
     stem: "Which area type lets a branch redistribute its local static routes while blocking type 5 LSAs?"
     options:
       - {id: a, text: "NSSA", correct: true}
-      - {id: b, text: "Stub", why_wrong: "No ASBR allowed inside a stub area."}
-      - {id: c, text: "Totally stubby", why_wrong: "Also no externals."}
-      - {id: d, text: "Backbone", why_wrong: "Area 0 carries type 5 anyway."}
+      - {id: b, text: "Stub", trap: near-miss, why_wrong: "Stub areas block type 5 but allow no ASBR inside."}
+      - {id: c, text: "Totally stubby", trap: near-miss, why_wrong: "Blocks externals and summaries, still with no ASBR."}
+      - {id: d, text: "Backbone", trap: misconception, why_wrong: "Area 0 carries type 5 LSAs."}
     explanation: "NSSA uses type 7 for local externals."
   - id: M2.01.q06
-    type: text
+    type: "numeric"
     tier: 2
-    stem: "Which LSA type does the DR generate for a broadcast segment?"
+    answer: 2
+    stem: "Which LSA type number does the DR generate for a broadcast segment?"
     accept: ["2", "type 2", "network", "network lsa"]
     explanation: "Type 2, the network LSA."
   - id: M2.01.q07
-    type: single
+    type: "output"
     tier: 3
-    stem: "A redistributed default shows [110/10] on routers near and far from the ASBR. Why?"
+    output: |
+      FGT-BR3 # get router info routing-table ospf
+      O*E2    0.0.0.0/0 [110/10] via 10.0.13.1, port3, 00:41:12
+      FGT-BR9 # get router info routing-table ospf
+      O*E2    0.0.0.0/0 [110/10] via 10.0.19.1, port3, 00:41:09
+    stem: "BR3 is one hop from the ASBR, BR9 is four hops away. Why do both show [110/10]?"
     options:
-      - {id: a, text: "It's an E2 route: only the external metric counts", correct: true}
-      - {id: b, text: "All links have cost 0", why_wrong: "Costs are at least 1."}
-      - {id: c, text: "It's an inter-area route", why_wrong: "Defaults redistributed by an ASBR are external."}
-      - {id: d, text: "SPF isn't running", why_wrong: "The route wouldn't be there."}
+      - {id: a, text: "It's an E2 route, so the internal path cost isn't added", correct: true}
+      - {id: b, text: "The links all have cost 0 in this area, so totals match", trap: misconception, why_wrong: "OSPF costs are at least 1."}
+      - {id: c, text: "It's an E1 route, and E1 keeps the metric set at the ASBR", trap: near-miss, why_wrong: "Reversed: E1 adds internal cost, E2 doesn't."}
+      - {id: d, text: "It's an inter-area summary, so each ABR resets the cost", trap: near-miss, why_wrong: "A redistributed default from an ASBR is external, not inter-area."}
     explanation: "E2 doesn't add internal cost; E1 does."
 
 labs:

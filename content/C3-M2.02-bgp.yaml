@@ -3,6 +3,7 @@ title: "BGP: sessions, attributes and best-path selection"
 stage: S2
 stage_title: "S2 · Routing and WAN protocols"
 order: 152
+quality: 2
 est_sessions: 1.5
 objectives:
   - Bring up eBGP and iBGP sessions and explain the FSM states you see when they fail
@@ -168,10 +169,10 @@ quiz:
     pretest: true
     stem: "Which attribute do you raise to make all routers in your AS prefer ISP-A for outbound traffic?"
     options:
-      - {id: a, text: "Local preference", correct: true}
-      - {id: b, text: "MED", why_wrong: "MED influences how a neighbor AS enters yours."}
-      - {id: c, text: "Weight", why_wrong: "Weight is local to one router."}
-      - {id: d, text: "AS-path prepend", why_wrong: "That influences inbound traffic."}
+      - {id: a, text: "Local preference on ISP-A's routes", correct: true}
+      - {id: b, text: "MED on the routes sent to ISP-A", trap: near-miss, why_wrong: "MED influences how a neighbour AS enters yours, not your outbound."}
+      - {id: c, text: "Weight on ISP-A routes at the edge", trap: near-miss, why_wrong: "Weight is local to one router and isn't shared through iBGP."}
+      - {id: d, text: "AS-path prepend toward the ISP-B links", trap: misconception, why_wrong: "Prepending influences inbound traffic, not outbound."}
     explanation: "Local preference is shared through iBGP across the AS."
   - id: M2.02.q02
     type: single
@@ -179,10 +180,10 @@ quiz:
     pretest: true
     stem: "A FortiGate has `network 10.30.0.0/16`, but only 10.30.0.0/24 is in its routing table. What's advertised by default?"
     options:
-      - {id: a, text: "Nothing", correct: true}
-      - {id: b, text: "10.30.0.0/16", why_wrong: "network-import-check requires the exact prefix."}
-      - {id: c, text: "10.30.0.0/24", why_wrong: "Network statements don't pick more specifics."}
-      - {id: d, text: "Both", why_wrong: "Neither condition holds."}
+      - {id: a, text: "Nothing, until a matching /16 exists", correct: true}
+      - {id: b, text: "10.30.0.0/16, from the network command", trap: near-miss, why_wrong: "network-import-check requires the exact prefix in the routing table."}
+      - {id: c, text: "10.30.0.0/24, as the covered route", trap: misconception, why_wrong: "Network statements don't pick more-specific routes."}
+      - {id: d, text: "Both, with the /24 as a more specific", trap: misconception, why_wrong: "Neither condition for the /16 holds, and /24 isn't configured."}
     explanation: "Add a matching route (e.g., blackhole /16) or advertise the /24."
     source: "FortiOS 8.0.2 Admin Guide p. 749"
   - id: M2.02.q03
@@ -196,24 +197,26 @@ quiz:
     tier: 2
     stem: "Router B learns 8.8.8.0/24 over iBGP with next hop 203.0.113.1 (the ISP), but doesn't install it. Fix?"
     options:
-      - {id: a, text: "next-hop-self on the router that peers with the ISP (toward B)", correct: true}
-      - {id: b, text: "Increase local preference", why_wrong: "The route is invalid, not just less preferred."}
-      - {id: c, text: "Enable ebgp-multihop on B", why_wrong: "B's session is iBGP."}
-      - {id: d, text: "Disable network-import-check", why_wrong: "That affects origination."}
+      - {id: a, text: "next-hop-self on the ISP-facing router's session to B", correct: true}
+      - {id: b, text: "A higher local preference on that route at router B", trap: misconception, why_wrong: "The route is unusable, not just less preferred."}
+      - {id: c, text: "ebgp-multihop on B so it can reach the ISP next hop", trap: near-miss, why_wrong: "B's session is iBGP; the next hop needs to be resolvable, not multihop."}
+      - {id: d, text: "A static route on B to 203.0.113.0/30 via the edge", trap: near-miss, why_wrong: "Would work, but adds static state; next-hop-self is the standard fix."}
     explanation: "B can't resolve the ISP next hop."
   - id: M2.02.q05
     type: multi
     tier: 2
     stem: "Which can keep a BGP session in Active? Select all that apply."
     options:
-      - {id: a, text: "MD5 password mismatch", correct: true}
-      - {id: b, text: "No route to the neighbor", correct: true}
-      - {id: c, text: "Wrong update-source", correct: true}
-      - {id: d, text: "A missing prefix list", why_wrong: "Filters act after the session is up."}
+      - {id: a, text: "An MD5 password mismatch", correct: true}
+      - {id: b, text: "No route to the neighbour", correct: true}
+      - {id: c, text: "The wrong update-source", correct: true}
+      - {id: d, text: "A missing inbound prefix list", trap: misconception, why_wrong: "Filters act after the session is up."}
+      - {id: e, text: "Mismatched hold-down timers", trap: near-miss, why_wrong: "Hold times are negotiated to the lower value; they don't block the session."}
     explanation: "Active means the TCP session can't be opened."
   - id: M2.02.q06
     type: text
     tier: 2
+    retired: true
     stem: "Which prefix-list keyword lets 10.20.0.0/16 also match /17 to /24 subnets? (one word)"
     accept: ["le"]
     explanation: "`set le 24`."
@@ -223,10 +226,38 @@ quiz:
     stem: "To make inbound traffic from the Internet prefer ISP-A, you…"
     options:
       - {id: a, text: "Prepend your AS on announcements to ISP-B", correct: true}
-      - {id: b, text: "Raise local preference on routes from ISP-A", why_wrong: "That changes outbound."}
-      - {id: c, text: "Raise weight on ISP-A routes", why_wrong: "Local and outbound."}
-      - {id: d, text: "Filter ISP-B's routes", why_wrong: "Outbound only, and loses redundancy."}
+      - {id: b, text: "Raise local preference on routes from ISP-A", trap: near-miss, why_wrong: "Local preference changes your outbound choice."}
+      - {id: c, text: "Set a lower MED on the routes sent to ISP-B", trap: near-miss, why_wrong: "MED is compared between links to the same AS, not across ISP-A and ISP-B."}
+      - {id: d, text: "Stop accepting routes from ISP-B on the edge", trap: misconception, why_wrong: "Filtering inbound routes changes outbound only, and loses redundancy."}
     explanation: "Longer AS path through ISP-B makes others prefer ISP-A."
+  - id: M2.02.q08
+    type: single
+    tier: 2
+    stem: "Which prefix-list setting lets the entry 10.20.0.0/16 also match /17 to /24 subnets?"
+    options:
+      - {id: a, text: "set le 24", correct: true}
+      - {id: b, text: "set ge 17", trap: near-miss, why_wrong: "ge 17 alone matches /17 up to /32."}
+      - {id: c, text: "set ge 24 le 32", trap: near-miss, why_wrong: "That matches /24 to /32 only."}
+      - {id: d, text: "set le 16", trap: misconception, why_wrong: "le can't be smaller than the prefix length; it adds nothing."}
+    explanation: "le 24 matches the /16 and anything up to /24. Add ge 17 if the /16 itself must not match."
+  - id: M2.02.q09
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      FGT-HUB # get router info bgp summary
+      Neighbor        V    AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+      10.255.0.2      4 65010       0       0        0    0    0 never    Active
+      FGT-HUB # execute ping-options source 10.255.0.1
+      FGT-HUB # execute ping 10.255.0.2
+      5 packets transmitted, 0 packets received, 100% packet loss
+    stem: "iBGP between loopbacks stays Active. What do you check first?"
+    options:
+      - {id: a, text: "The IGP or static route to the peer's loopback, both ways", correct: true}
+      - {id: b, text: "The MD5 password on both peers, since the session keeps resetting", trap: near-miss, why_wrong: "A password mismatch keeps it Active too, but the loopback doesn't even ping."}
+      - {id: c, text: "update-source on both sides so the session uses the loopbacks", trap: near-miss, why_wrong: "Needed, but no reachability between loopbacks comes first."}
+      - {id: d, text: "A longer hold timer so the session survives the slow WAN", trap: misconception, why_wrong: "Timers matter after the session is up; it never opened."}
+    explanation: "No ping from loopback to loopback means no route. Fix reachability first, then update-source and passwords."
 
 labs:
   - id: M2.02.lab1

@@ -3,6 +3,7 @@ title: "WAN, overlays and SD-WAN concepts"
 stage: S2
 stage_title: "S2 · Routing and WAN protocols"
 order: 172
+quality: 2
 est_sessions: 1
 objectives:
   - Compare MPLS, Internet and LTE/5G transports for branch connectivity
@@ -97,20 +98,20 @@ quiz:
     pretest: true
     stem: "Which overlay encrypts traffic by default?"
     options:
-      - {id: a, text: "IPsec", correct: true}
-      - {id: b, text: "GRE", why_wrong: "No encryption."}
-      - {id: c, text: "VXLAN", why_wrong: "No encryption by itself."}
-      - {id: d, text: "MPLS", why_wrong: "A transport, not encrypted."}
+      - {id: a, text: "IPsec tunnels", correct: true}
+      - {id: b, text: "GRE tunnels", trap: near-miss, why_wrong: "GRE encapsulates but doesn't encrypt."}
+      - {id: c, text: "VXLAN overlays", trap: near-miss, why_wrong: "VXLAN has no encryption by itself."}
+      - {id: d, text: "MPLS L3VPNs", trap: misconception, why_wrong: "MPLS separates traffic but doesn't encrypt it."}
     explanation: "IPsec provides confidentiality and integrity."
   - id: M2.03.q02
     type: single
     tier: 2
     stem: "With ADVPN, how does spoke A first reach spoke B?"
     options:
-      - {id: a, text: "Through the hub, then a shortcut is built", correct: true}
-      - {id: b, text: "Directly from the start, through a static tunnel", why_wrong: "That's a full mesh."}
-      - {id: c, text: "Only through the hub, forever", why_wrong: "That's plain hub-and-spoke."}
-      - {id: d, text: "Over MPLS", why_wrong: "Transport-independent."}
+      - {id: a, text: "Through the hub first, then over a shortcut", correct: true}
+      - {id: b, text: "Directly from the start, over a static tunnel", trap: misconception, why_wrong: "That's a full mesh, which ADVPN avoids."}
+      - {id: c, text: "Through the hub, with no direct path at all", trap: near-miss, why_wrong: "That's plain hub-and-spoke; ADVPN builds the shortcut."}
+      - {id: d, text: "Directly once BGP sends B's routes to spoke A", trap: near-miss, why_wrong: "Routes come through the hub; the shortcut follows the first traffic."}
     explanation: "First packets via hub, then shortcut."
     source: "FortiOS 8.0.2 Admin Guide p. 3626"
   - id: M2.03.q03
@@ -118,10 +119,11 @@ quiz:
     tier: 2
     stem: "What does an SD-WAN SLA usually include? Select all that apply."
     options:
-      - {id: a, text: "Latency threshold", correct: true}
-      - {id: b, text: "Jitter threshold", correct: true}
-      - {id: c, text: "Packet-loss threshold", correct: true}
-      - {id: d, text: "Number of users", why_wrong: "Not a link metric."}
+      - {id: a, text: "A latency threshold", correct: true}
+      - {id: b, text: "A jitter threshold", correct: true}
+      - {id: c, text: "A packet-loss threshold", correct: true}
+      - {id: d, text: "A bandwidth threshold", trap: near-miss, why_wrong: "Bandwidth is used by some strategies, but SLA targets are latency, jitter and loss."}
+      - {id: e, text: "A user-count threshold", trap: misconception, why_wrong: "User count isn't a link quality metric."}
     explanation: "Link quality metrics."
   - id: M2.03.q04
     type: text

@@ -3,6 +3,7 @@ title: "Design documents and customer handling: HLD, LLD, status, scope and esca
 stage: S11
 stage_title: "S11 · Professional Services mastery"
 order: 64
+quality: 2
 est_sessions: 1
 objectives:
   - Write a high-level and a low-level design the customer can approve and an engineer can build from
@@ -124,10 +125,10 @@ quiz:
     pretest: true
     stem: Which document should contain the full NAT table and every VPN parameter?
     options:
-      - { id: a, text: "The low-level design (LLD)", correct: true }
-      - { id: b, text: "The high-level design (HLD)", why_wrong: "The HLD is for approval; details go in the LLD." }
-      - { id: c, text: "The SOW", why_wrong: "The SOW defines scope, not configuration." }
-      - { id: d, text: "The weekly status", why_wrong: "Status is progress, not design." }
+      - {id: a, text: "The low-level design (LLD)", correct: true}
+      - {id: b, text: "The high-level design (HLD)", trap: near-miss, why_wrong: "The HLD is for approval; details go in the LLD."}
+      - {id: c, text: "The statement of work (SOW)", trap: misconception, why_wrong: "The SOW defines scope, not configuration."}
+      - {id: d, text: "The acceptance test plan (ATP)", trap: near-miss, why_wrong: "The ATP tests results; it doesn't hold the build parameters."}
     explanation: LLD is the build document.
   - id: M11.04.q02
     type: single
@@ -135,30 +136,31 @@ quiz:
     pretest: true
     stem: '"The ISP circuit for the branch wasn''t delivered and cutover is next week." In a RAID log, this is…'
     options:
-      - { id: a, text: "An issue (it's happening now)", correct: true }
-      - { id: b, text: "A risk", why_wrong: "It already happened." }
-      - { id: c, text: "An assumption", why_wrong: "Not something you're relying on; it's a fact." }
-      - { id: d, text: "A decision", why_wrong: "Not a RAID category here." }
+      - {id: a, text: "An issue, since it's happening now", correct: true}
+      - {id: b, text: "A risk, since cutover hasn't failed", trap: near-miss, why_wrong: "The missing circuit already happened; that makes it an issue."}
+      - {id: c, text: "An assumption that the ISP will deliver", trap: misconception, why_wrong: "It's a fact now, not something you rely on."}
+      - {id: d, text: "A dependency to add to the project plan", trap: near-miss, why_wrong: "The circuit was a dependency; once missed it's tracked as an issue."}
     explanation: Issue, with owner and due date.
   - id: M11.04.q03
     type: single
     tier: 2
     stem: The cutover might slip because the customer's change board meets monthly. What status do you report this week?
     options:
-      - { id: a, text: "Amber on schedule, with the reason and the decision you need", correct: true }
-      - { id: b, text: "Green until it actually slips", why_wrong: "That creates a surprise later." }
-      - { id: c, text: "Red immediately", why_wrong: "It's a risk, not yet a failure." }
-      - { id: d, text: "Don't mention it", why_wrong: "Hidden risks become escalations." }
+      - {id: a, text: "Amber on schedule, with the reason and the decision needed", correct: true}
+      - {id: b, text: "Green until it slips, to avoid alarming the sponsor early", trap: misconception, why_wrong: "That creates a surprise later."}
+      - {id: c, text: "Red now, since any slip means the date can't be met at all", trap: near-miss, why_wrong: "It's a risk, not yet a failure."}
+      - {id: d, text: "Green, with the change board listed in the risk log instead", trap: near-miss, why_wrong: "Logging it is right, but the status should reflect the risk too."}
     explanation: Amber early.
   - id: M11.04.q04
     type: multi
     tier: 2
     stem: "The customer asks: 'While you're here, can you also set up the guest Wi-Fi?' It's not in the SOW. Good responses? Select all that apply."
     options:
-      - { id: a, text: "Acknowledge it positively", correct: true }
-      - { id: b, text: "Explain it's outside the SOW and estimate it", correct: true }
-      - { id: c, text: "Offer a change request or a follow-up project", correct: true }
-      - { id: d, text: "Do it quietly tonight", why_wrong: "Unbilled work sets expectations and hides cost." }
+      - {id: a, text: "Acknowledge the request positively", correct: true}
+      - {id: b, text: "Explain it's outside the SOW, estimate it", correct: true}
+      - {id: c, text: "Offer a change request or follow-up", correct: true}
+      - {id: d, text: "Do it quietly tonight as a favour", trap: misconception, why_wrong: "Unbilled work sets expectations and hides cost."}
+      - {id: e, text: "Decline it to protect the timeline", trap: near-miss, why_wrong: "Protects scope but damages the relationship; offer the path instead."}
     explanation: Helpful and controlled.
   - id: M11.04.q05
     type: order
@@ -169,32 +171,34 @@ quiz:
   - id: M11.04.q06
     type: single
     tier: 3
+    format: "first-step"
     stem: The customer's architect insists on A-A HA where you recommended A-P. Best approach?
     options:
-      - { id: a, text: "Compare both against their requirements with evidence; if they choose A-A, document the decision and the operational impact", correct: true }
-      - { id: b, text: "Refuse to proceed", why_wrong: "It's their risk to take, with information." }
-      - { id: c, text: "Agree silently", why_wrong: "You owe them your reasoning." }
-      - { id: d, text: "Escalate to their CIO immediately", why_wrong: "Try a technical discussion first." }
+      - {id: a, text: "Compare both against their requirements with evidence, then document the choice", correct: true}
+      - {id: b, text: "Decline to build A-A, as your company's design standard requires A-P for this case", trap: misconception, why_wrong: "It's their risk to take, with information."}
+      - {id: c, text: "Build A-A as asked and note your preference in the as-built for the record", trap: near-miss, why_wrong: "You owe them your reasoning before the build, not after."}
+      - {id: d, text: "Escalate to their CIO so a senior decision-maker settles the disagreement", trap: near-miss, why_wrong: "Try the technical discussion with evidence first."}
     explanation: Evidence, then a documented decision.
   - id: M11.04.q07
     type: single
     tier: 2
     stem: Which principle does "templates in FortiManager and naming standards" serve?
     options:
-      - { id: a, text: "Manageability", correct: true }
-      - { id: b, text: "Resilience", why_wrong: "Resilience is about failures." }
-      - { id: c, text: "Segmentation", why_wrong: "Segmentation is about zones and policies." }
-      - { id: d, text: "Visibility", why_wrong: "Visibility is logging and alerts." }
+      - {id: a, text: "Manageability", correct: true}
+      - {id: b, text: "Resilience", trap: misconception, why_wrong: "Resilience is about surviving failures."}
+      - {id: c, text: "Standardisation", trap: near-miss, why_wrong: "Templates do standardise, but the design principle served is manageability."}
+      - {id: d, text: "Visibility", trap: near-miss, why_wrong: "Visibility is logging and alerts, not templates."}
     explanation: The customer must be able to operate it.
   - id: M11.04.q08
     type: single
     tier: 3
+    format: "first-step"
     stem: A sponsor is angry about repeated outages and threatens to cancel. First move?
     options:
-      - { id: a, text: "Listen, get the facts, and find the technical cause behind the anger; then present a plan", correct: true }
-      - { id: b, text: "Offer a discount", why_wrong: "Doesn't fix the cause." }
-      - { id: c, text: "Defend your team's work", why_wrong: "Defensive; doesn't address the problem." }
-      - { id: d, text: "Wait for them to calm down", why_wrong: "Silence makes it worse." }
+      - {id: a, text: "Listen, get the facts, find the cause behind the anger, then present a plan", correct: true}
+      - {id: b, text: "Offer a service credit straight away to show that you take the outages seriously", trap: near-miss, why_wrong: "May come later, but it doesn't fix the cause."}
+      - {id: c, text: "Explain the outages came from their changes, with the logs to prove it", trap: misconception, why_wrong: "Defensive; even if true, lead with listening and a plan."}
+      - {id: d, text: "Give them a day to calm down, then book a meeting to talk it through", trap: near-miss, why_wrong: "Silence makes it worse; respond now."}
     explanation: Solve the problem, and the relationship follows.
 
 scenarios:
