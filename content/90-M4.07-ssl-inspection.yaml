@@ -3,6 +3,7 @@ title: "Certificates and SSL inspection: see inside encrypted traffic, safely"
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 100
+quality: 2
 est_sessions: 1
 objectives:
   - Explain certificate inspection versus deep (full) inspection, and what each can and can't see
@@ -163,10 +164,10 @@ quiz:
     pretest: true
     stem: Which inspection lets antivirus find malware inside an HTTPS download?
     options:
-      - { id: a, text: "Deep (full) SSL inspection", correct: true }
-      - { id: b, text: "Certificate inspection", why_wrong: "It only sees the handshake, not the file." }
-      - { id: c, text: "no-inspection", why_wrong: "Nothing is inspected." }
-      - { id: d, text: "IPS alone without SSL inspection", why_wrong: "IPS sees only encrypted bytes." }
+      - {id: a, text: "Deep (full) SSL inspection", correct: true}
+      - {id: b, text: "Certificate (SNI) inspection", trap: near-miss, why_wrong: "It sees the handshake, not the file."}
+      - {id: c, text: "IPS without any SSL profile", trap: misconception, why_wrong: "IPS sees encrypted bytes alone."}
+      - {id: d, text: "Flow-mode AV with no SSL profile", trap: misconception, why_wrong: "Without decryption AV can't see inside HTTPS."}
     explanation: Only deep inspection decrypts the content.
     source: FortiOS 8.0.2 Admin Guide pp. 3055–3056
   - id: M4.07.q02
@@ -175,10 +176,10 @@ quiz:
     pretest: true
     stem: After enabling deep inspection, every website shows a certificate warning. Most likely cause?
     options:
-      - { id: a, text: "Clients don't trust the CA the FortiGate uses to re-sign (e.g. Fortinet_CA_SSL)", correct: true }
-      - { id: b, text: "The web filter is blocking everything", why_wrong: "That would show block pages, not warnings on every site." }
-      - { id: c, text: "TLS 1.3 isn't supported", why_wrong: "Not the cause of universal warnings." }
-      - { id: d, text: "The SNI check is strict", why_wrong: "That closes mismatched sessions; it doesn't cause warnings everywhere." }
+      - {id: a, text: "Clients don't trust the CA the FortiGate re-signs with", correct: true}
+      - {id: b, text: "The web filter blocks each site and returns a TLS error", trap: misconception, why_wrong: "Blocks show block pages, not warnings on every site."}
+      - {id: c, text: "The SNI check is strict and closes mismatched sessions", trap: near-miss, why_wrong: "That closes some sessions; it doesn't warn on every site."}
+      - {id: d, text: "TLS 1.3 isn't supported, so sites fall back with warnings", trap: misconception, why_wrong: "TLS 1.3 is supported; that's not why every site warns."}
     explanation: Distribute the CA before enabling deep inspection.
     source: FortiOS 8.0.2 Admin Guide p. 3056
   - id: M4.07.q03
@@ -186,10 +187,10 @@ quiz:
     tier: 2
     stem: "A user still sees a warning on one site after Fortinet_CA_SSL was installed. The site's own certificate is self-signed. What's happening?"
     options:
-      - { id: a, text: "The FortiGate re-signed it with Fortinet_CA_Untrusted, correctly warning about an untrusted server", correct: true }
-      - { id: b, text: "The CA import failed", why_wrong: "Other sites work, so the import is fine." }
-      - { id: c, text: "Import Fortinet_CA_Untrusted to fix it", why_wrong: "Never do that: it hides real attacks." }
-      - { id: d, text: "Deep inspection is off for that site", why_wrong: "Then the browser would show the site's own self-signed warning, but the cause is still the untrusted certificate." }
+      - {id: a, text: "It re-signed with Fortinet_CA_Untrusted, warning correctly about the server", correct: true}
+      - {id: b, text: "The CA import failed on that user's laptop, so this one site shows a warning", trap: misconception, why_wrong: "Other sites work, so the import is fine."}
+      - {id: c, text: "The site needs Fortinet_CA_Untrusted imported too, so the warning goes away", trap: near-miss, why_wrong: "Never import it: it would hide real attacks."}
+      - {id: d, text: "The site is exempt from inspection, so the browser shows its own cert warning", trap: near-miss, why_wrong: "Possible if exempt, but the cause is still the untrusted server certificate."}
     explanation: The warning is the system working.
     source: FortiOS 8.0.2 Admin Guide p. 3056
   - id: M4.07.q04
@@ -197,10 +198,11 @@ quiz:
     tier: 2
     stem: Which web categories are exempt from deep inspection by default? Select all that apply.
     options:
-      - { id: a, text: "Finance and Banking", correct: true }
-      - { id: b, text: "Health and Wellness", correct: true }
-      - { id: c, text: "Personal Privacy", correct: true }
-      - { id: d, text: "Social Networking", why_wrong: "Not exempt by default." }
+      - {id: a, text: "Finance and Banking", correct: true}
+      - {id: b, text: "Health and Wellness", correct: true}
+      - {id: c, text: "Personal Privacy", correct: true}
+      - {id: d, text: "Social Networking", trap: near-miss, why_wrong: "Privacy-relevant to some, but not exempt by default."}
+      - {id: e, text: "Web-based Email", trap: near-miss, why_wrong: "Not in the default exemption list."}
     explanation: The privacy-sensitive categories.
     source: FortiOS 8.0.2 Admin Guide p. 3051
   - id: M4.07.q05
@@ -208,31 +210,32 @@ quiz:
     tier: 2
     stem: A web server uses HTTPS on port 8443 and you use the built-in certificate-inspection profile. What happens?
     options:
-      - { id: a, text: "Port 8443 isn't inspected; clone the profile and add 8443 (or inspect all ports)", correct: true }
-      - { id: b, text: "It's inspected automatically", why_wrong: "The built-in profile only listens on 443." }
-      - { id: c, text: "Edit the built-in profile to add 8443", why_wrong: "It's read-only." }
-      - { id: d, text: "Switch to no-inspection", why_wrong: "That inspects nothing." }
+      - {id: a, text: "8443 isn't inspected; clone the profile and add 8443, or inspect all ports", correct: true}
+      - {id: b, text: "It's inspected automatically, as certificate inspection follows the session", trap: misconception, why_wrong: "The built-in profile listens on 443 alone."}
+      - {id: c, text: "Edit the built-in profile to add 8443 next to 443 on the HTTPS port list", trap: near-miss, why_wrong: "Built-in profiles are read-only; clone it first."}
+      - {id: d, text: "It's inspected if the VIP maps 8443, since VIP ports are added to the profile", trap: misconception, why_wrong: "VIPs don't change the inspection profile's ports."}
     explanation: Clone and add the port.
     source: FortiOS 8.0.2 Admin Guide p. 3054
   - id: M4.07.q06
     type: single
     tier: 3
+    format: first-step
     stem: A banking app on employees' phones stops working when deep inspection is enabled, but the bank's website works. Why, and what do you do?
     options:
-      - { id: a, text: "The app pins its certificate and rejects the re-signed one; exempt its destinations", correct: true }
-      - { id: b, text: "The CA isn't installed on phones; install Fortinet_CA_Untrusted", why_wrong: "Never install the untrusted CA, and pinned apps reject any CA." }
-      - { id: c, text: "The app uses UDP", why_wrong: "Irrelevant to the certificate issue." }
-      - { id: d, text: "Lower the minimum TLS version", why_wrong: "Version isn't the issue." }
+      - {id: a, text: "The app pins its certificate and rejects the re-signed one; exempt it", correct: true}
+      - {id: b, text: "The phones lack the inspection CA; push Fortinet_CA_SSL through MDM", trap: near-miss, why_wrong: "Then the website would also fail; pinned apps reject any CA anyway."}
+      - {id: c, text: "The app uses QUIC; block UDP 443 so it falls back to TLS over TCP", trap: near-miss, why_wrong: "QUIC fallback isn't a certificate failure; the website working points to pinning."}
+      - {id: d, text: "The app needs older TLS; lower the minimum TLS version on the SSL profile", trap: misconception, why_wrong: "The TLS version isn't what breaks the app."}
     explanation: Pinning needs an exemption.
   - id: M4.07.q07
     type: single
     tier: 2
     stem: How do you inspect inbound HTTPS to your own web server behind a VIP?
     options:
-      - { id: a, text: "Import the server's certificate and key, and use a Protecting SSL Server profile on the inbound policy", correct: true }
-      - { id: b, text: "Use the deep-inspection profile with Fortinet_CA_SSL", why_wrong: "Internet clients don't trust that CA; you'd break the site." }
-      - { id: c, text: "Certificate inspection is enough", why_wrong: "It doesn't see the content." }
-      - { id: d, text: "It's not possible", why_wrong: "That's what Protecting SSL Server is for." }
+      - {id: a, text: "Import the server's cert and key, and use a Protecting SSL Server profile", correct: true}
+      - {id: b, text: "Apply the deep-inspection profile with Fortinet_CA_SSL on the VIP policy", trap: misconception, why_wrong: "Internet clients don't trust that CA; you'd break the site."}
+      - {id: c, text: "Apply certificate inspection on the VIP policy, which reads the server cert", trap: near-miss, why_wrong: "It doesn't see the content."}
+      - {id: d, text: "Use a customer sub-CA for re-signing, as internet clients trust their PKI", trap: near-miss, why_wrong: "Internet users don't trust the customer's private CA."}
     explanation: Present the real certificate.
     source: FortiOS 8.0.2 Admin Guide pp. 3058–3059
   - id: M4.07.q08
@@ -240,10 +243,10 @@ quiz:
     tier: 3
     stem: In a flow-mode policy with deep inspection, Inspect all ports is disabled. Which ports are scanned?
     options:
-      - { id: a, text: "All ports", correct: true }
-      - { id: b, text: "Only the mapped ports (e.g. 443)", why_wrong: "That's proxy mode behaviour." }
-      - { id: c, text: "None", why_wrong: "Deep inspection is on." }
-      - { id: d, text: "Only 443 and 8443", why_wrong: "Not how it works in flow mode." }
+      - {id: a, text: "All ports", correct: true}
+      - {id: b, text: "Mapped ports", trap: near-miss, why_wrong: "That is how proxy mode behaves."}
+      - {id: c, text: "443 and 8443", trap: near-miss, why_wrong: "Common HTTPS ports, but flow mode scans all of them."}
+      - {id: d, text: "No ports", trap: misconception, why_wrong: "Deep inspection is on, so traffic is scanned."}
     explanation: Flow deep inspection scans all ports regardless.
     source: FortiOS 8.0.2 Admin Guide p. 3052
   - id: M4.07.q09
@@ -251,10 +254,10 @@ quiz:
     tier: 2
     stem: What is the default action for revoked server certificates with Custom invalid-certificate settings?
     options:
-      - { id: a, text: "Block", correct: true }
-      - { id: b, text: "Allow", why_wrong: "Revoked certificates are blocked by default." }
-      - { id: c, text: "Trust & Allow", why_wrong: "Not the default." }
-      - { id: d, text: "Keep Untrusted & Allow", why_wrong: "That's the deep-inspection default for validation time-outs." }
+      - {id: a, text: "Block", correct: true}
+      - {id: b, text: "Allow", trap: misconception, why_wrong: "Revoked certificates are blocked by default."}
+      - {id: c, text: "Trust & Allow", trap: misconception, why_wrong: "That isn't the default action."}
+      - {id: d, text: "Keep Untrusted", trap: near-miss, why_wrong: "That's the default for validation time-outs, not revocation."}
     explanation: Expired, revoked and validation-failed default to block.
     source: FortiOS 8.0.2 Admin Guide p. 3051
   - id: M4.07.q10
@@ -268,10 +271,10 @@ quiz:
     tier: 3
     stem: Why does Fortinet's guide recommend a certificate from the customer's own PKI (e.g. Microsoft sub-CA) for deep inspection?
     options:
-      - { id: a, text: "It's already trusted by managed devices and can be revoked if compromised", correct: true }
-      - { id: b, text: "It makes inspection faster", why_wrong: "Performance is the same." }
-      - { id: c, text: "Fortinet_CA_SSL expires after a year", why_wrong: "Not the reason given." }
-      - { id: d, text: "It removes the need for exemptions", why_wrong: "Pinned apps still need exemptions." }
+      - {id: a, text: "Managed devices already trust it, and it can be revoked if compromised", correct: true}
+      - {id: b, text: "It makes re-signing faster, since the key size is chosen by the customer", trap: misconception, why_wrong: "Re-signing performance is the same either way."}
+      - {id: c, text: "Each unit's Fortinet_CA_SSL differs, so HA peers would need separate trust", trap: near-miss, why_wrong: "Each unit's default CA does differ, but the reason given is existing trust and revocation."}
+      - {id: d, text: "It can remove the need for exemptions, as pinned apps trust enterprise CAs", trap: near-miss, why_wrong: "Pinned apps still reject any CA but their own."}
     explanation: Trust and revocation.
     source: FortiOS 8.0.2 Admin Guide p. 4435
   - id: M4.07.q12
@@ -286,10 +289,10 @@ quiz:
     tier: 2
     stem: A customer only wants category-based web filtering and refuses to deploy a CA. What do you recommend?
     options:
-      - { id: a, text: "Certificate inspection with a web filter profile, explaining what it can't see", correct: true }
-      - { id: b, text: "Deep inspection anyway", why_wrong: "Without the CA, every site breaks." }
-      - { id: c, text: "no-inspection with web filter", why_wrong: "HTTPS categories need at least certificate inspection." }
-      - { id: d, text: "Disable HTTPS", why_wrong: "Not realistic." }
+      - {id: a, text: "Certificate inspection with web filter, explaining what it can't see", correct: true}
+      - {id: b, text: "Deep inspection anyway, with exemptions for the categories they worry about", trap: misconception, why_wrong: "Without the CA, every inspected site breaks."}
+      - {id: c, text: "No SSL inspection, with a web filter profile so DNS names can be rated", trap: near-miss, why_wrong: "HTTPS categories need at least certificate inspection on the policy."}
+      - {id: d, text: "DNS filter alone, since it covers categories without any profile", trap: near-miss, why_wrong: "Works for domains, but web filter with certificate inspection is the requirement."}
     explanation: Meet the requirement and state the limits.
 
 labs:

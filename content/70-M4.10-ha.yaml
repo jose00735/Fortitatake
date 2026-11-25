@@ -3,6 +3,7 @@ title: "High availability: FGCP clusters, failover and upgrades"
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 80
+quality: 2
 est_sessions: 1
 objectives:
   - Explain FGCP, FGSP and VRRP and when each one fits
@@ -182,10 +183,10 @@ quiz:
     pretest: true
     stem: Which pair is required for two FortiGates to form an FGCP cluster?
     options:
-      - { id: a, text: "Same model and same firmware", correct: true }
-      - { id: b, text: "Same hostname and same priority", why_wrong: "Those are exactly the two settings that can differ." }
-      - { id: c, text: "Same public IP on each WAN", why_wrong: "The cluster shares virtual addresses; units don't need their own public IPs." }
-      - { id: d, text: "Different FortiCare accounts for redundancy", why_wrong: "They must be on the same FortiCare account." }
+      - {id: a, text: "Same model and same firmware", correct: true}
+      - {id: b, text: "Same hostname and same priority", trap: misconception, why_wrong: "Those are exactly the settings that can differ per unit."}
+      - {id: c, text: "Same model and same HA priority", trap: near-miss, why_wrong: "Model yes, but priority is per unit; firmware must match."}
+      - {id: d, text: "Same firmware and one shared serial", trap: misconception, why_wrong: "Each unit keeps its own serial number."}
     explanation: Same model, firmware and hardware configuration.
     source: FortiOS 8.0.2 Admin Guide p. 4557
   - id: M4.10.q02
@@ -201,20 +202,20 @@ quiz:
     tier: 2
     stem: "Override disabled. Unit A: uptime 3 days, priority 128. Unit B: uptime 2 days, priority 250. Both have all monitored interfaces up. Who is primary?"
     options:
-      - { id: a, text: "A, because uptime is compared before priority and the difference exceeds 300 s", correct: true }
-      - { id: b, text: "B, because priority 250 is higher", why_wrong: "Priority only decides first when override is enabled." }
-      - { id: c, text: "Whichever has the higher serial number", why_wrong: "Serial is the last tiebreaker." }
-      - { id: d, text: "Neither; the cluster won't form", why_wrong: "Different priorities are normal." }
+      - {id: a, text: "A, as uptime is compared first and the gap is over 300 s", correct: true}
+      - {id: b, text: "B, as priority 250 is higher than the default 128 on A", trap: near-miss, why_wrong: "Priority decides first only when override is enabled."}
+      - {id: c, text: "A, but for 300 s, after which B takes over as the primary", trap: near-miss, why_wrong: "Uptime keeps A primary; there's no timed handover."}
+      - {id: d, text: "The unit with the higher serial, since both links are fine", trap: misconception, why_wrong: "Serial is the last tiebreaker, after uptime and priority."}
     explanation: Uptime beats priority with override disabled.
   - id: M4.10.q04
     type: single
     tier: 2
     stem: "Override enabled on both units. The higher-priority primary reboots and comes back 5 minutes later. What happens by default?"
     options:
-      - { id: a, text: "It takes the primary role back, causing a second failover", correct: true }
-      - { id: b, text: "It stays secondary until an admin intervenes", why_wrong: "That's the override-disabled behaviour (uptime wins)." }
-      - { id: c, text: "Both become primary", why_wrong: "That's split brain, a heartbeat failure, not override." }
-      - { id: d, text: "It waits override-wait-time of 300 s", why_wrong: "override-wait-time defaults to 0." }
+      - {id: a, text: "It takes the primary role back, causing a second failover", correct: true}
+      - {id: b, text: "It stays secondary until an admin intervenes on the cluster", trap: near-miss, why_wrong: "That's the override-disabled behaviour, where uptime wins."}
+      - {id: c, text: "It waits for the override-wait-time of 300 s, then takes over", trap: near-miss, why_wrong: "The override-wait-time setting defaults to 0."}
+      - {id: d, text: "Both units become primary until the heartbeats are resynced", trap: misconception, why_wrong: "That's split brain, a heartbeat failure, not override."}
     explanation: Use override-wait-time if you want it to sync before taking over.
     source: FortiOS 8.0.2 Admin Guide p. 4563
   - id: M4.10.q05
@@ -230,10 +231,10 @@ quiz:
     tier: 2
     stem: "After a failover, every user had to reconnect their VPN and SSH sessions. What was most likely missing?"
     options:
-      - { id: a, text: "session-pickup enable", correct: true }
-      - { id: b, text: "A second heartbeat interface", why_wrong: "That prevents split brain; it doesn't preserve sessions." }
-      - { id: c, text: "override enable", why_wrong: "Override decides who's primary, not session survival." }
-      - { id: d, text: "A higher hb-lost-threshold", why_wrong: "That changes detection time, not session sync." }
+      - {id: a, text: "set session-pickup enable", correct: true}
+      - {id: b, text: "A second heartbeat interface", trap: near-miss, why_wrong: "That prevents split brain; it doesn't preserve sessions."}
+      - {id: c, text: "set override enable on both", trap: misconception, why_wrong: "Override decides who's primary, not session survival."}
+      - {id: d, text: "set hb-lost-threshold higher", trap: near-miss, why_wrong: "That changes detection time, not session sync."}
     explanation: Session failover is off by default; existing sessions drop without it.
     source: FortiOS 8.0.2 Admin Guide p. 4598
   - id: M4.10.q07
@@ -241,20 +242,22 @@ quiz:
     tier: 2
     stem: Which events can move the primary role? Select all that apply.
     options:
-      - { id: a, text: "Heartbeats from the primary stop", correct: true }
-      - { id: b, text: "A monitored interface on the primary goes down", correct: true }
-      - { id: c, text: "A remote IP checked by pingserver monitoring stops answering", correct: true }
-      - { id: d, text: "An administrator logs in to the secondary", why_wrong: "Logging in changes nothing." }
+      - {id: a, text: "Heartbeats from the primary stop", correct: true}
+      - {id: b, text: "A monitored port on the primary drops", correct: true}
+      - {id: c, text: "A pingserver-monitored IP goes quiet", correct: true}
+      - {id: d, text: "An admin logs in to the secondary", trap: misconception, why_wrong: "Logging in changes nothing about roles."}
+      - {id: e, text: "The secondary's uptime passes the primary's", trap: near-miss, why_wrong: "Uptime is compared at elections; it doesn't trigger one by itself."}
     explanation: Device, link and remote-link failures.
   - id: M4.10.q08
     type: single
     tier: 3
+    format: "first-step"
     stem: "Both cluster units show 'Primary' in get system ha status from the console, and switches report MAC flapping. Best first step?"
     options:
-      - { id: a, text: "Check the heartbeat links are physically up and passing heartbeats, and that group-name, group-id, mode and password match", correct: true }
-      - { id: b, text: "Upgrade both units", why_wrong: "Changing firmware during split brain adds risk." }
-      - { id: c, text: "Enable session-pickup", why_wrong: "Unrelated to heartbeat loss." }
-      - { id: d, text: "Raise priority on one unit", why_wrong: "They can't see each other, so priority isn't compared." }
+      - {id: a, text: "Check the heartbeat links pass heartbeats and group name, ID, mode and password match", correct: true}
+      - {id: b, text: "Upgrade both units to the same patch release so the cluster can form again cleanly", trap: near-miss, why_wrong: "Firmware mismatch prevents forming, but this was a working cluster; check heartbeats first."}
+      - {id: c, text: "Enable session-pickup so the users' sessions survive whichever unit ends up primary", trap: misconception, why_wrong: "Session pickup is unrelated to heartbeat loss."}
+      - {id: d, text: "Raise the priority on one unit with override enabled so that it wins the next election", trap: near-miss, why_wrong: "They can't see each other, so priority isn't compared."}
     explanation: Split brain is a heartbeat problem first.
     source: FortiOS 8.0.2 Admin Guide pp. 4702–4703
   - id: M4.10.q09
@@ -262,10 +265,10 @@ quiz:
     tier: 2
     stem: In an uninterruptible cluster upgrade, which unit is upgraded first?
     options:
-      - { id: a, text: "The subordinate (secondary) units", correct: true }
-      - { id: b, text: "The primary", why_wrong: "The primary is upgraded last, after a new primary is chosen." }
-      - { id: c, text: "All at once", why_wrong: "That's simultaneous mode." }
-      - { id: d, text: "The unit with the lowest serial number", why_wrong: "Order is by role, not serial." }
+      - {id: a, text: "The secondary units", correct: true}
+      - {id: b, text: "The primary unit first", trap: near-miss, why_wrong: "The primary goes last, after a new primary is chosen."}
+      - {id: c, text: "All of them at the same time", trap: misconception, why_wrong: "That's the simultaneous (interrupting) mode."}
+      - {id: d, text: "The lowest serial number", trap: misconception, why_wrong: "Order is by role, not serial."}
     explanation: Subordinates, new primary from upgraded units, then the former primary.
     source: FortiOS 8.0.2 Admin Guide p. 4639
   - id: M4.10.q10
@@ -280,10 +283,10 @@ quiz:
     tier: 3
     stem: A customer has many short HTTP sessions and session pickup is overloading the cluster. Which option helps most?
     options:
-      - { id: a, text: "session-pickup-delay enable (sync only sessions older than 30 s)", correct: true }
-      - { id: b, text: "session-pickup-connectionless enable", why_wrong: "That adds more sessions to sync." }
-      - { id: c, text: "Lower hb-interval", why_wrong: "Faster heartbeats don't reduce sync load." }
-      - { id: d, text: "Switch to A-A", why_wrong: "A-A still syncs sessions and adds complexity." }
+      - {id: a, text: "session-pickup-delay, syncing sessions older than 30 s", correct: true}
+      - {id: b, text: "session-pickup-connectionless, to sync UDP and ICMP too", trap: misconception, why_wrong: "That adds more sessions to sync."}
+      - {id: c, text: "A lower hb-interval so sync messages go out more often", trap: near-miss, why_wrong: "Faster heartbeats don't reduce sync load."}
+      - {id: d, text: "A dedicated session-sync link separate from the heartbeat", trap: near-miss, why_wrong: "Moves the load off the heartbeat but still syncs every short session."}
     explanation: Short sessions aren't worth syncing.
     source: FortiOS 8.0.2 Admin Guide p. 4607
   - id: M4.10.q12
@@ -291,10 +294,10 @@ quiz:
     tier: 3
     stem: "Two members are in different buildings over a shared fibre. Heartbeats are lost during backups and both go primary. Which design change does the guide recommend?"
     options:
-      - { id: a, text: "Make the heartbeat lost interval and threshold longer than the possible latency, and use redundant heartbeat links", correct: true }
-      - { id: b, text: "Lower hb-lost-threshold to fail over faster", why_wrong: "That makes false failovers more likely." }
-      - { id: c, text: "Disable heartbeat encryption", why_wrong: "Not related to latency." }
-      - { id: d, text: "Use override", why_wrong: "Override doesn't help when units can't see each other." }
+      - {id: a, text: "Longer heartbeat lost interval and threshold than the latency, plus redundant links", correct: true}
+      - {id: b, text: "A lower hb-lost-threshold so a real failure is detected sooner during the backups", trap: misconception, why_wrong: "That makes false failovers more likely."}
+      - {id: c, text: "QoS on the shared fibre for heartbeats, keeping the default heartbeat timers as they are", trap: near-miss, why_wrong: "Helps, but the guide's fix is timers matched to latency plus redundant heartbeat paths."}
+      - {id: d, text: "Override on the preferred unit, so the same one wins once the heartbeats come back", trap: near-miss, why_wrong: "Decides the winner afterwards but doesn't stop both going primary."}
     explanation: Tune timers to the link, add redundant heartbeat paths.
     source: FortiOS 8.0.2 Admin Guide p. 4703
   - id: M4.10.q13
@@ -302,10 +305,10 @@ quiz:
     tier: 2
     stem: In active-active FGCP, who receives packets sent to the cluster?
     options:
-      - { id: a, text: "The primary, which distributes sessions with a load-balancing schedule", correct: true }
-      - { id: b, text: "Each member equally, via ECMP from the switch", why_wrong: "That's closer to FGSP with an external load balancer." }
-      - { id: c, text: "The secondary only", why_wrong: "The primary owns the virtual MACs." }
-      - { id: d, text: "Whichever unit has the lower serial", why_wrong: "Not how A-A works." }
+      - {id: a, text: "The primary, which hands out sessions by schedule", correct: true}
+      - {id: b, text: "Each member equally, via ECMP from the switches", trap: near-miss, why_wrong: "That's closer to FGSP with an external load balancer."}
+      - {id: c, text: "The secondary, which forwards them to the primary", trap: misconception, why_wrong: "The primary owns the virtual MACs."}
+      - {id: d, text: "Each member for its own VLANs, set per virtual cluster", trap: near-miss, why_wrong: "Virtual clustering splits VDOMs; plain A-A still has the primary receive."}
     explanation: The primary receives and hands out sessions.
     source: FortiOS 8.0.2 Admin Guide p. 4583
   - id: M4.10.q14
@@ -313,21 +316,22 @@ quiz:
     tier: 2
     stem: The monitoring team needs SNMP and syslog from each cluster member separately. What do you configure?
     options:
-      - { id: a, text: "Reserved HA management interfaces with ha-direct", correct: true }
-      - { id: b, text: "A second cluster", why_wrong: "Unnecessary." }
-      - { id: c, text: "FGSP", why_wrong: "FGSP is for session sync with external load balancers." }
-      - { id: d, text: "override-wait-time", why_wrong: "Unrelated to management traffic." }
+      - {id: a, text: "Reserved HA management interfaces with ha-direct", correct: true}
+      - {id: b, text: "Separate SNMP communities per unit on the cluster IP", trap: near-miss, why_wrong: "Communities don't give each unit its own source address."}
+      - {id: c, text: "FGSP between the units instead of an FGCP cluster", trap: misconception, why_wrong: "FGSP is for session sync with external load balancers."}
+      - {id: d, text: "A loopback per unit as the syslog source interface", trap: near-miss, why_wrong: "Loopbacks are synced cluster config; each unit needs its own reserved port."}
     explanation: Each unit keeps its own management IP; ha-direct sends services from it.
     source: FortiOS 8.0.2 Admin Guide pp. 4622–4625
   - id: M4.10.q15
     type: single
     tier: 3
+    format: "first-step"
     stem: The GUI shows a member highlighted red as Not Synchronized. What's the right next step?
     options:
-      - { id: a, text: "Check which tables differ (hover or Config diff), fix the cause, then Force resync if needed", correct: true }
-      - { id: b, text: "Factory-reset both units", why_wrong: "Destructive and unnecessary." }
-      - { id: c, text: "Force an HA failover in production hours", why_wrong: "Failover doesn't fix sync; only do it in a window." }
-      - { id: d, text: "Ignore it; it fixes itself", why_wrong: "Out-of-sync config means a failover could change behaviour." }
+      - {id: a, text: "Check which tables differ, fix the cause, then force a resync if needed", correct: true}
+      - {id: b, text: "Force a resync from the primary straight away, then check whether it holds", trap: near-miss, why_wrong: "May clear it, but without the cause it'll drift again."}
+      - {id: c, text: "Fail over to the out-of-sync member to see whether its config is better", trap: misconception, why_wrong: "Failover doesn't fix sync and may change behaviour in production."}
+      - {id: d, text: "Wait for the next sync cycle, as the checksum mismatch usually clears", trap: near-miss, why_wrong: "Brief mismatches clear; a persistent red member needs investigation."}
     explanation: Find the differing tables, then resync.
     source: FortiOS 8.0.2 Admin Guide pp. 4707–4709
 

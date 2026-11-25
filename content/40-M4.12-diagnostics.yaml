@@ -439,7 +439,7 @@ quiz:
       - {id: a, text: "Network > Diagnostics > Debug Flow", correct: true}
       - {id: b, text: "System > Settings > Debug Options", trap: near-miss, why_wrong: "That isn't the documented location."}
       - {id: c, text: "Log & Report > Forward Traffic", trap: near-miss, why_wrong: "Shows traffic logs, not a live packet trace."}
-      - {id: d, text: "Dashboard > Network > Sessions", trap: misconception, why_wrong: "Dashboards show monitors, not the debug tool."}
+      - {id: d, text: "Dashboard > Network > Sessions view", trap: misconception, why_wrong: "Dashboards show monitors, not the debug tool."}
     explanation: The guide documents Network > Diagnostics > Debug Flow, which can export to CSV.
     source: FortiOS 8.0.2 Admin Guide p. 1150
 

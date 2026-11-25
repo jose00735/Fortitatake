@@ -3,6 +3,7 @@ title: "Security profiles: AV, web and DNS filter, application control, IPS"
 stage: S4
 stage_title: "S4 · FortiGate core (FortiGate Administrator level)"
 order: 110
+quality: 2
 est_sessions: 1
 objectives:
   - Choose flow or proxy inspection for a policy and justify it
@@ -159,10 +160,10 @@ quiz:
     pretest: true
     stem: Which inspection mode is the default on new firewall policies?
     options:
-      - { id: a, text: "Flow-based", correct: true }
-      - { id: b, text: "Proxy-based", why_wrong: "Available, but not the default." }
-      - { id: c, text: "None until a profile is added", why_wrong: "The mode is set regardless." }
-      - { id: d, text: "It depends on the model", why_wrong: "Flow is the default." }
+      - {id: a, text: "Flow-based", correct: true}
+      - {id: b, text: "Proxy-based", trap: near-miss, why_wrong: "Available, but not the default."}
+      - {id: c, text: "Set per profile", trap: misconception, why_wrong: "The mode is a policy setting, not a profile one."}
+      - {id: d, text: "Model-dependent", trap: misconception, why_wrong: "Flow is the default on every model."}
     explanation: Flow is default and recommended.
     source: FortiOS 8.0.2 Admin Guide p. 2481
   - id: M4.08.q02
@@ -178,10 +179,10 @@ quiz:
     tier: 2
     stem: The customer needs a WAF profile on the policy to their web app. What must the policy use?
     options:
-      - { id: a, text: "Proxy-based inspection", correct: true }
-      - { id: b, text: "Flow-based inspection", why_wrong: "WAF is proxy-only." }
-      - { id: c, text: "No inspection", why_wrong: "Then nothing is applied." }
-      - { id: d, text: "Certificate inspection", why_wrong: "That's an SSL setting, not the policy mode." }
+      - {id: a, text: "Proxy-based inspection mode", correct: true}
+      - {id: b, text: "Flow-based inspection mode", trap: near-miss, why_wrong: "WAF is a proxy-only feature."}
+      - {id: c, text: "Deep inspection on the policy", trap: near-miss, why_wrong: "Needed to see HTTPS, but the policy mode must still be proxy."}
+      - {id: d, text: "Certificate inspection profile", trap: misconception, why_wrong: "That's an SSL setting, not the policy mode."}
     explanation: WAF, CDR, video filter, inline CASB are proxy features.
     source: FortiOS 8.0.2 Admin Guide p. 2482
   - id: M4.08.q04
@@ -189,10 +190,10 @@ quiz:
     tier: 2
     stem: Which FortiGuard web filter action lets users continue after a message?
     options:
-      - { id: a, text: "Warning", correct: true }
-      - { id: b, text: "Monitor", why_wrong: "Monitor allows silently and logs." }
-      - { id: c, text: "Authenticate", why_wrong: "That requires a login, not just a click." }
-      - { id: d, text: "Block", why_wrong: "No way to continue." }
+      - {id: a, text: "Warning", correct: true}
+      - {id: b, text: "Monitor", trap: near-miss, why_wrong: "Monitor allows silently and logs; no message."}
+      - {id: c, text: "Authenticate", trap: near-miss, why_wrong: "Requires a login, not just a click."}
+      - {id: d, text: "Override", trap: misconception, why_wrong: "Overrides let admins change profiles; they aren't a category action."}
     explanation: Warning shows a page with a continue option.
     source: FortiOS 8.0.2 Admin Guide p. 2603
   - id: M4.08.q05
@@ -200,20 +201,20 @@ quiz:
     tier: 3
     stem: A URL is exempted in the URL filter. What happens to it?
     options:
-      - { id: a, text: "It skips the later web filter checks (categories, content, and so on)", correct: true }
-      - { id: b, text: "It's still category-checked", why_wrong: "Exempt bypasses the subsequent checks." }
-      - { id: c, text: "It's blocked", why_wrong: "Exempt is the opposite." }
-      - { id: d, text: "Only antivirus is skipped", why_wrong: "Exempt skips more than AV." }
+      - {id: a, text: "It skips the later web filter checks, categories and content", correct: true}
+      - {id: b, text: "It's allowed but still category-checked and content-filtered", trap: near-miss, why_wrong: "That's the 'allow' action; exempt bypasses the later checks."}
+      - {id: c, text: "It's blocked, as exempt removes the URL from the allow list", trap: misconception, why_wrong: "Exempt is the opposite of block."}
+      - {id: d, text: "It skips antivirus scanning, but the category check still runs", trap: near-miss, why_wrong: "Exempt skips more than AV, including the category check."}
     explanation: Use exempt sparingly.
   - id: M4.08.q06
     type: single
     tier: 2
     stem: IPS signatures haven't updated in weeks on a new FortiGate with a valid license. What's a classic cause?
     options:
-      - { id: a, text: "No policy uses an IPS sensor, so updates aren't downloaded", correct: true }
-      - { id: b, text: "Flow mode disables updates", why_wrong: "No such behaviour." }
-      - { id: c, text: "IPS only updates monthly", why_wrong: "Updates are frequent." }
-      - { id: d, text: "The SSL profile is certificate inspection", why_wrong: "Unrelated to updates." }
+      - {id: a, text: "No policy uses an IPS sensor, so updates aren't downloaded", correct: true}
+      - {id: b, text: "Flow mode turns off IPS updates until proxy mode is chosen", trap: misconception, why_wrong: "Flow mode has no such behaviour."}
+      - {id: c, text: "The FortiGuard server list points at a FortiManager offline", trap: near-miss, why_wrong: "A plausible cause in managed setups, but on a new unit the unused-sensor rule is classic."}
+      - {id: d, text: "The SSL profile is certificate inspection, so IPS can't update", trap: misconception, why_wrong: "Inspection mode is unrelated to updates."}
     explanation: At least one policy must use the profile.
     source: FortiOS 8.0.2 Admin Guide pp. 2523, 2812
   - id: M4.08.q07
@@ -221,10 +222,10 @@ quiz:
     tier: 3
     stem: How should you build the IPS sensor for a policy protecting a Linux Apache web server in the DMZ?
     options:
-      - { id: a, text: "Filters for server-side signatures matching Linux and Apache/HTTP, block on critical and high", correct: true }
-      - { id: b, text: "all_default on everything", why_wrong: "Untuned: more false positives and load." }
-      - { id: c, text: "protect_client", why_wrong: "That targets clients, not servers." }
-      - { id: d, text: "No IPS because the server is patched", why_wrong: "IPS covers the gap before the next patch." }
+      - {id: a, text: "Server-side signatures for Linux and Apache/HTTP, block critical and high", correct: true}
+      - {id: b, text: "all_default on everything, so no signature that might apply is ever missed", trap: misconception, why_wrong: "Untuned: more false positives and load."}
+      - {id: c, text: "protect_client with Linux filters, as Apache acts as the HTTP client side", trap: near-miss, why_wrong: "protect_client targets clients; the server needs server-side signatures."}
+      - {id: d, text: "Server-side signatures for Windows and IIS, as most web attacks target them", trap: near-miss, why_wrong: "Right side, wrong platform; match the protected asset."}
     explanation: Tune to what's protected.
     source: FortiOS 8.0.2 Admin Guide pp. 2812, 2817
   - id: M4.08.q08
@@ -232,10 +233,11 @@ quiz:
     tier: 2
     stem: Which are FortiOS ways to control GenAI use? Select all that apply.
     options:
-      - { id: a, text: "Web filter with the Artificial Intelligence Technology category", correct: true }
-      - { id: b, text: "Application control with the Generative AI category", correct: true }
-      - { id: c, text: "DLP keyword matching on prompts", correct: true }
-      - { id: d, text: "HA override", why_wrong: "Unrelated." }
+      - {id: a, text: "Web filter's AI technology category", correct: true}
+      - {id: b, text: "App control's Generative AI category", correct: true}
+      - {id: c, text: "DLP keyword matching on prompts", correct: true}
+      - {id: d, text: "DNS filter on AI domains alone", trap: near-miss, why_wrong: "Can block domains, but has no visibility of prompts and isn't the documented control."}
+      - {id: e, text: "IPS signatures for chatbot traffic", trap: misconception, why_wrong: "IPS targets exploits, not application use."}
     explanation: Coarse to fine.
     source: FortiOS 8.0.2 Admin Guide p. 2500
   - id: M4.08.q09
@@ -243,10 +245,10 @@ quiz:
     tier: 2
     stem: In application control, a custom signature and a FortiGuard signature both match. Which is used (same entry)?
     options:
-      - { id: a, text: "The custom signature", correct: true }
-      - { id: b, text: "The FortiGuard signature", why_wrong: "Custom takes precedence." }
-      - { id: c, text: "The one with the lower ID", why_wrong: "ID is the last tiebreaker, and higher wins." }
-      - { id: d, text: "Both actions apply", why_wrong: "One signature is selected." }
+      - {id: a, text: "The custom signature", correct: true}
+      - {id: b, text: "The FortiGuard signature", trap: near-miss, why_wrong: "Custom signatures take precedence over FortiGuard."}
+      - {id: c, text: "The one with the lower ID", trap: near-miss, why_wrong: "ID is the last tiebreaker, and the higher one wins."}
+      - {id: d, text: "Both actions, combined", trap: misconception, why_wrong: "One signature is selected per entry."}
     explanation: Custom beats FortiGuard.
     source: FortiOS 8.0.2 Admin Guide p. 2743
   - id: M4.08.q10
@@ -254,10 +256,10 @@ quiz:
     tier: 2
     stem: What does DNS filter do that web filter can't?
     options:
-      - { id: a, text: "Block malicious or C&C domains for any application at name resolution, before a connection exists", correct: true }
-      - { id: b, text: "Inspect full HTTPS URLs", why_wrong: "That's web filter with deep inspection." }
-      - { id: c, text: "Scan files", why_wrong: "That's antivirus." }
-      - { id: d, text: "Decrypt TLS", why_wrong: "That's SSL inspection." }
+      - {id: a, text: "Block bad domains for any app at name resolution, before a connection", correct: true}
+      - {id: b, text: "Inspect full HTTPS URLs without decrypting the session at the firewall", trap: misconception, why_wrong: "Full URLs need deep inspection with web filter."}
+      - {id: c, text: "Block categories by the SNI in TLS without needing any inspection setup", trap: near-miss, why_wrong: "Web filter can do that with certificate inspection; it's not unique to DNS filter."}
+      - {id: d, text: "Rate sites by reputation using FortiGuard categories for the HTTP flows", trap: near-miss, why_wrong: "Web filter does that already; DNS filter's edge is covering any protocol early."}
     explanation: Early and protocol-agnostic.
     source: FortiOS 8.0.2 Admin Guide p. 2693
   - id: M4.08.q11
@@ -265,10 +267,10 @@ quiz:
     tier: 3
     stem: A policy uses a profile group. The admin tries to add an extra web filter profile individually. What happens?
     options:
-      - { id: a, text: "Not possible: a policy uses either a profile group or individual profiles", correct: true }
-      - { id: b, text: "Both apply", why_wrong: "They can't be combined." }
-      - { id: c, text: "The individual profile overrides the group", why_wrong: "Not how it works." }
-      - { id: d, text: "The group is ignored", why_wrong: "No." }
+      - {id: a, text: "It can't: a policy uses either a group or individual profiles", correct: true}
+      - {id: b, text: "Both apply, with the group's web filter checked after the extra one", trap: misconception, why_wrong: "They can't be combined on one policy."}
+      - {id: c, text: "The individual profile replaces the group's web filter on that policy", trap: near-miss, why_wrong: "There's no partial override; it's one or the other."}
+      - {id: d, text: "Add it inside the group instead, which can then apply to that policy", trap: near-miss, why_wrong: "A group holds one profile per type; you'd edit the group's web filter."}
     explanation: Group or individual, not both.
     source: FortiOS 8.0.2 Admin Guide p. 3126
   - id: M4.08.q12
@@ -281,12 +283,13 @@ quiz:
   - id: M4.08.q13
     type: single
     tier: 3
+    format: "first-step"
     stem: A new customer wants strict web filtering from day one but doesn't know what their users need. Best approach?
     options:
-      - { id: a, text: "Monitor all categories for a short period, review logs with them, then block with evidence", correct: true }
-      - { id: b, text: "Block everything except a few categories immediately", why_wrong: "Breaks the business and erodes trust." }
-      - { id: c, text: "Leave web filter off", why_wrong: "No protection." }
-      - { id: d, text: "Use Warning on every category forever", why_wrong: "Users click through; little value." }
+      - {id: a, text: "Monitor all categories briefly, review the logs with them, then block on evidence", correct: true}
+      - {id: b, text: "Block all but a few categories from day one, and add exceptions as tickets come in", trap: near-miss, why_wrong: "Strict, but breaks the business and erodes trust."}
+      - {id: c, text: "Apply the default profile's blocks now, then tune it once the logs show the real use", trap: near-miss, why_wrong: "A reasonable start, but strict filtering still needs evidence of what users need."}
+      - {id: d, text: "Set Warning on each category for good, so users decide when a site is acceptable", trap: misconception, why_wrong: "Users click through; little value."}
     explanation: Evidence first.
 
 labs:
