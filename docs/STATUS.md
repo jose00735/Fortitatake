@@ -98,6 +98,12 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.6 adds
+
+- With the real network live, the FortiGate console's `diagnose sniffer packet <intf> '<filter>' <verbose> <count> [a]` captures real packets in the FortiGate's namespace (tcpdump underneath) and prints them in FortiOS format (verbose 1 and 4 layouts, relative or absolute time, count, Ctrl+C, the "packets received by filter" footer). Forwarded traffic shows on both interfaces, after NAT on the way out, as on a FortiGate.
+- `execute ping <ip|name>` sends real pings from the FortiGate (honouring `execute ping-options source`).
+- The commands still go into the lab history, so "ran a sniffer/ping" checks see them.
+
 ### What v0.8.5 adds (live real network)
 
 - **Live mode.** With Real network on, FortiTatake OS boots when a lab opens (status next to the switch: starting…, applying…, live) and follows the lab as you work: every config change is applied within about a second. Only what changed is redone: a policy edit reloads that FortiGate's nftables; address, route or cabling changes rebuild the lab network.
@@ -133,7 +139,7 @@
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
 - **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Not in v0.8.0 (next: v0.8.6): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, pcap download and console diagnostics from the kernel's state, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
+Not in v0.8.0 (next: v0.8.7): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, pcap download and the remaining console diagnostics from the kernel's state (session list, routing table, debug flow), and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
 
 ### What v0.7.3 fixes
 

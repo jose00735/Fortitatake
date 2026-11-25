@@ -3,6 +3,8 @@ import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
 import { RealNet } from "./real.js";
+import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing } from "./realdiag.js";
+import { intToIp, isIp } from "./net.js";
 import { api } from "../core.js";
 import { drawTopology } from "./topo.js";
 import { FortiGate } from "./fgt.js";
@@ -106,7 +108,7 @@ function mount(main, run, opts = {}) {
   const emb = !!opts.embedded;
   const devs = run.consoleDevices();
   const firstFgt = devs.find((d) => d instanceof FortiGate) || devs[0];
-  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {} };
+  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {}, cap: {} };
   const shOn = (id) => !!(ui.sh[id] && ui.sh[id].on);
   for (const d of devs) { ui.buf[d.id] = []; ui.hist[d.id] = []; }
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
@@ -174,6 +176,7 @@ function mount(main, run, opts = {}) {
   const exec = (line) => {
     const dev = ui.dev;
     if (shOn(dev)) { shellLine(dev, line); return; }
+    if (realDiag(dev, line)) return;
     print(dev, run.prompt(dev) + line);
     if (line.trim() === "clear" || line.trim() === "cls") { ui.buf[dev] = []; paint(); return; }
     const r = run.exec(dev, line);
@@ -206,6 +209,7 @@ function mount(main, run, opts = {}) {
       inp.value = hs[ui.hi[ui.dev]] || "";
     } else if ((e.key === "c" || e.key === "C") && e.ctrlKey) {
       e.preventDefault();
+      if (ui.cap[ui.dev]) { const c = ui.cap[ui.dev]; print(ui.dev, inp.value + "^C"); inp.value = ""; c.stopping = true; realCall({ op: "shell.signal", shell: c.id }).catch(() => {}); paint(); return; }
       if (shOn(ui.dev)) { const sh = ui.sh[ui.dev]; sh.text += inp.value + "^C\n"; inp.value = ""; if (sh.id) realCall({ op: "shell.signal", shell: sh.id }).catch(() => {}); paint(); return; }
       print(ui.dev, run.prompt(ui.dev) + inp.value + "^C" + run.stopCapture(ui.dev));
       inp.value = "";
@@ -299,6 +303,26 @@ function mount(main, run, opts = {}) {
         if (real.net.generation !== live.gen) { live.gen = real.net.generation; for (const sh of Object.values(ui.sh)) if (sh.id) { sh.id = null; sh.text += "\n[the lab network was rebuilt; a new shell starts with your next command]\n"; } }
       }
       setLive("live");
+      for (const [dev, c] of Object.entries(ui.cap)) {
+        const r = await realCall({ op: "shell.read", shell: c.id, since: c.next });
+        c.next = r.next;
+        const lines = (c.partial + (r.data || "")).split("\n");
+        c.partial = lines.pop();
+        for (const l of lines) {
+          if (c.kind === "ping") { print(dev, fortiPing(l)); continue; }
+          const pk = parseTcpdump(l);
+          const txt = pk && !c.full && snifferLine(c.s, pk);
+          if (!txt) continue;
+          print(dev, txt);
+          if (++c.n >= (c.s.count || Infinity)) { c.full = true; realCall({ op: "shell.signal", shell: c.id }).catch(() => {}); }
+        }
+        if (!r.alive) {
+          if (c.kind === "sniffer") print(dev, `\n${c.n} packets received by filter\n0 packets dropped by kernel`);
+          delete ui.cap[dev];
+          realCall({ op: "shell.close", shell: c.id }).catch(() => {});
+        }
+        if (dev === ui.dev) paint();
+      }
       for (const [dev, sh] of Object.entries(ui.sh)) {
         if (!sh.id) continue;
         const r = await realCall({ op: "shell.read", shell: sh.id, since: sh.next });
@@ -315,6 +339,45 @@ function mount(main, run, opts = {}) {
     sh.on = !sh.on;
     if (sh.on && !sh.text) sh.text = `Linux shell inside ${dev}, on the real lab network. Try: ip -br addr, ip route, ping -c 3 <ip>, traceroute <ip>, nslookup <name>, curl -sk https://<ip>, tcpdump -ni any -c 5\nType exit or press the button again to go back.\n\n`;
     paint(); inp.focus();
+  };
+  // FortiGate commands that read the real network when it's live
+  const realDiag = (dev, line) => {
+    const fg = run.device(dev);
+    if (!(fg instanceof FortiGate) || live.state !== "live" || fg.kind !== "fortigate") return false;
+    const sn = parseSnifferCmd(line);
+    const pg = /^\s*exec(?:u|ut|ute)?\s+ping\s+(\S+)\s*$/i.exec(line);
+    if (!sn && !pg) return false;
+    if (ui.cap[dev]) { print(dev, run.prompt(dev) + line); print(dev, "A capture or ping is still running here: press Ctrl+C first."); paint(); return true; }
+    print(dev, run.prompt(dev) + line);
+    run.exec(dev, line); // keeps the command in the history the checks look at
+    run.drain();
+    if (fg.dbg) fg.dbg.sniffer = null;
+    let cmd, cap;
+    if (sn) {
+      const known = sn.intf === "any" || run.lab.fgtIntfs(fg).some((i) => i.name === sn.intf);
+      if (!known) { print(dev, `Interface ${sn.intf} not found.`); paint(); return true; }
+      const f = safeFilter(sn.filter);
+      if (f === null) { print(dev, "Invalid filter."); paint(); return true; }
+      print(dev, snifferHeader(sn));
+      cmd = `tcpdump -Z root -l -n -S -tt -i any ${f ? `'${f}'` : ""} 2>/dev/null; exit`;
+      cap = { kind: "sniffer", s: sn, n: 0 };
+    } else {
+      let dst = pg[1];
+      if (!isIp(dst)) { const ip = run.lab.lookupName(dst); if (!ip) { print(dev, `Unable to resolve hostname.`); paint(); return true; } dst = intToIp(ip); }
+      const src = fg.dbg && fg.dbg.pingSrc ? ` -I ${intToIp(fg.dbg.pingSrc)}` : "";
+      cmd = `ping -c 5 -W 2${src} ${dst} 2>&1; exit`;
+      cap = { kind: "ping" };
+    }
+    ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
+    paint();
+    (async () => {
+      try {
+        const r = await realCall({ op: "shell.open", ns: dev });
+        ui.cap[dev] = { ...cap, id: r.shell, next: 0, partial: "" };
+        await realCall({ op: "shell.write", shell: r.shell, data: cmd + "\n" });
+      } catch (e) { print(dev, `[FortiTatake OS: ${e.message}]`); delete ui.cap[dev]; paint(); }
+    })();
+    return true;
   };
   const shellLine = async (dev, line) => {
     const sh = ui.sh[dev];
