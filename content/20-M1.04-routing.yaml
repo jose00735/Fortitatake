@@ -3,6 +3,7 @@ title: Routing fundamentals and the FortiGate route lookup
 stage: S1
 stage_title: "S1 · Network foundations"
 order: 30
+quality: 2
 est_sessions: 1
 objectives:
   - Subnet quickly and pick the route a packet takes with longest-prefix match
@@ -213,10 +214,10 @@ quiz:
     pretest: true
     stem: Routes to 10.1.0.0/16 (OSPF) and 10.1.5.0/24 (static) exist. Where does traffic to 10.1.5.9 go?
     options:
-      - { id: a, text: "Via the static /24, because it is more specific", correct: true }
-      - { id: b, text: "Via OSPF, because dynamic routes are preferred", why_wrong: "Prefix length is checked before route source or distance." }
-      - { id: c, text: "Load-balanced across both", why_wrong: "ECMP needs the same prefix." }
-      - { id: d, text: "Via the static route only if its distance is lower", why_wrong: "Distance only matters between routes with the same prefix." }
+      - {id: a, text: "Via the static /24, as the longer prefix wins", correct: true}
+      - {id: b, text: "Via OSPF, as dynamic routes are preferred first", trap: misconception, why_wrong: "Prefix length is checked before route source or distance."}
+      - {id: c, text: "Via the static /24 if its distance is also lower", trap: near-miss, why_wrong: "Distance matters between routes with the same prefix."}
+      - {id: d, text: "Load-balanced over both, as the /16 covers the /24", trap: misconception, why_wrong: "ECMP needs the same prefix."}
     explanation: Longest-prefix match comes first.
   - id: M1.04.q04
     type: single
@@ -224,10 +225,10 @@ quiz:
     pretest: true
     stem: A branch FortiGate has a static default via WAN1 (distance 10). Someone enables DHCP on WAN2 with 'Retrieve default gateway from server'. What happens?
     options:
-      - { id: a, text: "The DHCP default route (distance 5) becomes the active default, sending traffic out WAN2", correct: true }
-      - { id: b, text: "Nothing; static routes always win", why_wrong: "Lower distance wins and DHCP routes get distance 5 by default." }
-      - { id: c, text: "Both are used with ECMP", why_wrong: "Different distances: only the lower one goes into the table." }
-      - { id: d, text: "The FortiGate rejects the DHCP route", why_wrong: "It installs it unless you disable the option or change its distance." }
+      - {id: a, text: "The DHCP default (distance 5) becomes active and traffic leaves via WAN2", correct: true}
+      - {id: b, text: "Nothing changes, as static routes are preferred over DHCP-learned ones", trap: misconception, why_wrong: "Lower distance wins, and DHCP routes get distance 5 by default."}
+      - {id: c, text: "Both defaults are used with ECMP, splitting sessions between WAN1 and WAN2", trap: near-miss, why_wrong: "Different distances: only the lower one is active."}
+      - {id: d, text: "The DHCP route is added as a backup (distance 20) behind the static default", trap: near-miss, why_wrong: "The DHCP default gets distance 5, not 20, unless you change it."}
     explanation: The guide warns about exactly this. Disable gateway retrieval or set the DHCP distance higher.
     source: FortiOS 8.0.2 Admin Guide p. 645
   - id: M1.04.q05
@@ -236,10 +237,10 @@ quiz:
     pretest: true
     stem: Which is checked first for a new session on FortiGate?
     options:
-      - { id: a, text: "Policy routes", correct: true }
-      - { id: b, text: "The routing table", why_wrong: "The routing table is used when no policy route matches." }
-      - { id: c, text: "ECMP", why_wrong: "ECMP is considered after policy routing." }
-      - { id: d, text: "The BGP database", why_wrong: "Forwarding uses the routing table, not the protocol database." }
+      - {id: a, text: "Policy routes", correct: true}
+      - {id: b, text: "The routing table", trap: near-miss, why_wrong: "Used when no policy route matches."}
+      - {id: c, text: "SD-WAN service rules", trap: near-miss, why_wrong: "SD-WAN rules come after policy routes."}
+      - {id: d, text: "The BGP database", trap: misconception, why_wrong: "Forwarding uses the routing table, not the protocol database."}
     explanation: Policy routes are evaluated top-down before the routing table.
   - id: M1.04.q06
     type: single
@@ -247,10 +248,10 @@ quiz:
     pretest: true
     stem: What does FortiGate's default reverse path check verify?
     options:
-      - { id: a, text: "That at least one active route back to the source uses the incoming interface", correct: true }
-      - { id: b, text: "That the best route back to the source uses the incoming interface", why_wrong: "That is strict mode, not the default." }
-      - { id: c, text: "That the destination is reachable", why_wrong: "RPF checks the source, not the destination." }
-      - { id: d, text: "That the source MAC is in the ARP table", why_wrong: "RPF is a layer 3 check." }
+      - {id: a, text: "That some active route back to the source uses the incoming interface", correct: true}
+      - {id: b, text: "That the best route back to the source uses the incoming interface too", trap: near-miss, why_wrong: "That's strict mode, not the default."}
+      - {id: c, text: "That the destination is reachable through an active route in the FIB", trap: misconception, why_wrong: "RPF checks the source, not the destination."}
+      - {id: d, text: "That the source MAC address is already present in the ARP table", trap: misconception, why_wrong: "RPF is a layer 3 check."}
     explanation: The default is feasible-path RPF.
   - id: M1.04.q07
     type: text
@@ -276,20 +277,20 @@ quiz:
     tier: 2
     stem: Where would you see a floating backup route that isn't active?
     options:
-      - { id: a, text: "`get router info routing-table database`", correct: true }
-      - { id: b, text: "`get router info routing-table all`", why_wrong: "That shows only the active routing table." }
-      - { id: c, text: "`diagnose sys session list`", why_wrong: "That lists sessions, not routes." }
-      - { id: d, text: "`get system status`", why_wrong: "System info, not routing." }
+      - {id: a, text: "get router info routing-table database", correct: true}
+      - {id: b, text: "get router info routing-table all | grep S*", trap: near-miss, why_wrong: "Shows the active routing table only."}
+      - {id: c, text: "diagnose ip route list for the backup", trap: near-miss, why_wrong: "Shows the kernel's installed routes, without the inactive candidates."}
+      - {id: d, text: "get router info routing-table static", trap: near-miss, why_wrong: "Filters active static routes; the inactive one isn't there."}
     explanation: The database holds all candidates, including inactive ones.
   - id: M1.04.q11
     type: single
     tier: 3
     stem: "Policy route: input port1, protocol 6, ports 21–21, output port4, gateway 172.20.120.23. FTP still leaves via wan1. Most likely reason?"
     options:
-      - { id: a, text: "FortiOS can't find a route making 172.20.120.23 reachable via port4, so the policy route doesn't match", correct: true }
-      - { id: b, text: "Policy routes only work for UDP", why_wrong: "They work for any protocol you specify." }
-      - { id: c, text: "SD-WAN rules always override policy routes", why_wrong: "It's the opposite: policy-based routes > SD-WAN routes." }
-      - { id: d, text: "The firewall policy is missing", why_wrong: "A missing firewall policy would drop traffic, not send it out wan1." }
+      - {id: a, text: "The gateway isn't reachable through that interface by any route, so it's skipped", correct: true}
+      - {id: b, text: "Policy routes match UDP flows alone, so the TCP 21 control channel falls through", trap: misconception, why_wrong: "They work for any protocol you specify."}
+      - {id: c, text: "An SD-WAN rule for FTP is evaluated first and points the traffic out through wan1", trap: near-miss, why_wrong: "It's the opposite: policy routes come before SD-WAN rules."}
+      - {id: d, text: "FTP data uses ports the policy route doesn't list, so the debug shows that leaving wan1", trap: near-miss, why_wrong: "Data channels use other ports, but the control session on 21 also left via wan1."}
     explanation: With both gateway and interface set, FortiOS still needs a route that makes the gateway reachable on that interface; otherwise it falls through to the routing table.
     source: FortiOS 8.0.2 Admin Guide p. 660
   - id: M1.04.q12
@@ -297,10 +298,10 @@ quiz:
     tier: 3
     stem: Which command sets FortiGate's ECMP algorithm when SD-WAN is NOT enabled?
     options:
-      - { id: a, text: "`config system settings` → `set v4-ecmp-mode`", correct: true }
-      - { id: b, text: "`config system sdwan` → `set load-balance-mode`", why_wrong: "That's the setting when SD-WAN is enabled." }
-      - { id: c, text: "`config router static` → `set ecmp enable`", why_wrong: "There's no such static route option." }
-      - { id: d, text: "`config system global` → `set ecmp-mode`", why_wrong: "Not the documented location." }
+      - {id: a, text: "config system settings → set v4-ecmp-mode", correct: true}
+      - {id: b, text: "config system sdwan → set load-balance-mode", trap: near-miss, why_wrong: "That's the setting when SD-WAN is enabled."}
+      - {id: c, text: "config router static → edit 1 → set ecmp enable", trap: misconception, why_wrong: "Static routes have no such option."}
+      - {id: d, text: "config system global → set ecmp-max-paths 4", trap: near-miss, why_wrong: "Max paths limits the count; the algorithm is v4-ecmp-mode."}
     explanation: v4-ecmp-mode lives in system settings at VDOM level.
     source: FortiOS 8.0.2 Admin Guide p. 666
   - id: M1.04.q13
@@ -308,30 +309,31 @@ quiz:
     tier: 3
     stem: Which configuration gives simple dual-WAN failover without SD-WAN?
     options:
-      - { id: a, text: "Primary default route distance 10, backup default route distance 20, plus a link monitor on the primary", correct: true }
-      - { id: b, text: "Two default routes, both distance 10, priority 1", why_wrong: "That's ECMP: both are used at once." }
-      - { id: c, text: "One default route with two gateways", why_wrong: "A static route has one gateway." }
-      - { id: d, text: "A policy route to each WAN", why_wrong: "Policy routes don't fail over on their own." }
+      - {id: a, text: "Primary default at distance 10, backup at 20, with a link monitor on the primary", correct: true}
+      - {id: b, text: "Two default routes at distance 10 and priority 1, so both stay in the table", trap: misconception, why_wrong: "That's ECMP: both are used at once."}
+      - {id: c, text: "Primary at distance 10, backup at 20, with no monitor since the port detects loss", trap: near-miss, why_wrong: "Works if the port goes down, but not when the ISP fails upstream with the link up."}
+      - {id: d, text: "A policy route to each WAN, with the backup policy route placed second in the list", trap: near-miss, why_wrong: "Policy routes don't fail over on their own."}
     explanation: The higher-distance route floats in the database and takes over when the primary is withdrawn; a link monitor withdraws it when the gateway is dead but the interface stays up.
   - id: M1.04.q14
     type: single
     tier: 4
+    format: "first-step"
     stem: "A new site-to-site VPN comes up. Pings from HQ to the branch fail and debug flow on the HQ FortiGate shows the branch's replies dropped by the reverse path check. Best fix?"
     options:
-      - { id: a, text: "Add a route for the branch subnet via the VPN interface", correct: true }
-      - { id: b, text: "Disable src-check on the WAN interface", why_wrong: "Fortinet describes it as less secure, for troubleshooting; the root cause is a missing route." }
-      - { id: c, text: "Enable asymroute", why_wrong: "Hides the problem and disables full inspection." }
-      - { id: d, text: "Enable strict RPF", why_wrong: "Stricter checking would drop even more." }
+      - {id: a, text: "Add a route for the branch subnet via the VPN interface", correct: true}
+      - {id: b, text: "Disable src-check on the interface the replies come in on", trap: near-miss, why_wrong: "A troubleshooting step that weakens security; the root cause is a missing route."}
+      - {id: c, text: "Enable asymroute so replies are accepted on any interface", trap: misconception, why_wrong: "Hides the problem and disables full inspection."}
+      - {id: d, text: "Add a policy from the VPN to the LAN for the reply traffic", trap: near-miss, why_wrong: "Policies don't fix an RPF drop; the route back is missing."}
     explanation: RPF drops mean FortiGate has no route back to the source through the incoming interface. Add the route.
   - id: M1.04.q15
     type: single
     tier: 4
     stem: "TCP from PC1 → PC2 crosses the FortiGate; the reply returns through another router. What does the user see and why?"
     options:
-      - { id: a, text: "The connection fails: the client's ACK is blocked because the FortiGate never saw a SYN/ACK", correct: true }
-      - { id: b, text: "It works but slowly", why_wrong: "FortiGate blocks the ACK; it doesn't just slow it down." }
-      - { id: c, text: "It works fine because sessions are stateless", why_wrong: "FortiGate is stateful; that is the problem." }
-      - { id: d, text: "Only UDP fails", why_wrong: "TCP is the one that breaks clearly in this scenario." }
+      - {id: a, text: "It fails: the client's ACK is dropped as the FortiGate saw no SYN/ACK", correct: true}
+      - {id: b, text: "It works but slowly, as the FortiGate retries the session at each packet", trap: near-miss, why_wrong: "The FortiGate drops the ACK; it doesn't just slow it."}
+      - {id: c, text: "It works fine, since the FortiGate checks each packet against the policy", trap: misconception, why_wrong: "FortiGate is stateful; that's the problem here."}
+      - {id: d, text: "TCP works, but UDP fails because replies arrive with no session to match", trap: near-miss, why_wrong: "TCP is the one that breaks clearly here."}
     explanation: Asymmetric routing breaks stateful TCP tracking at the third packet.
     source: FortiOS 8.0.2 Admin Guide pp. 653–654
   - id: M1.04.q16
@@ -339,10 +341,11 @@ quiz:
     tier: 3
     stem: Which conditions must hold for FortiOS to ECMP between two static routes? Select all that apply.
     options:
-      - { id: a, text: "Same destination", correct: true }
-      - { id: b, text: "Same distance and priority", correct: true }
-      - { id: c, text: "Same routing protocol", correct: true }
-      - { id: d, text: "Same outgoing interface", why_wrong: "ECMP is about different next hops, usually on different interfaces." }
+      - {id: a, text: "The same destination prefix", correct: true}
+      - {id: b, text: "The same distance and priority", correct: true}
+      - {id: c, text: "The same routing protocol", correct: true}
+      - {id: d, text: "The same outgoing interface", trap: near-miss, why_wrong: "ECMP is about different next hops, usually on different interfaces."}
+      - {id: e, text: "The same gateway IP address", trap: misconception, why_wrong: "Two routes via one gateway aren't two paths."}
     explanation: Same destination and costs (distance and priority for static), from the same protocol.
     source: FortiOS 8.0.2 Admin Guide p. 665
   - id: M1.04.q17
@@ -350,30 +353,30 @@ quiz:
     tier: 2
     stem: Which route does FortiOS prefer between eBGP (distance 20) and OSPF (distance 110) for the same /24?
     options:
-      - { id: a, text: "eBGP, because its distance is lower", correct: true }
-      - { id: b, text: "OSPF, because link-state is more accurate", why_wrong: "Route source quality isn't considered; distance is." }
-      - { id: c, text: "Both with ECMP", why_wrong: "ECMP needs the same protocol and costs." }
-      - { id: d, text: "Whichever was learned first", why_wrong: "Age isn't a tiebreaker here." }
+      - {id: a, text: "eBGP, as its distance is lower", correct: true}
+      - {id: b, text: "OSPF, as link-state is more exact", trap: misconception, why_wrong: "Route source quality isn't considered; distance is."}
+      - {id: c, text: "Both, with ECMP over the two paths", trap: near-miss, why_wrong: "ECMP needs the same protocol and costs."}
+      - {id: d, text: "OSPF, as internal routes beat eBGP", trap: near-miss, why_wrong: "Internal BGP has 200; eBGP's 20 still beats OSPF's 110."}
     explanation: Same prefix, so lower distance wins.
   - id: M1.04.q18
     type: single
     tier: 5
     stem: A customer wants all traffic from the guest VLAN to always use the cheap broadband link, while corporate traffic follows normal routing with failover. Which design is simplest and most robust?
     options:
-      - { id: a, text: "A policy route (or SD-WAN rule) for the guest VLAN source to the broadband link, with normal routes plus failover for the rest", correct: true }
-      - { id: b, text: "Make broadband the default route for everyone", why_wrong: "Changes corporate traffic too." }
-      - { id: c, text: "Use asymroute so guest replies can return any way", why_wrong: "Doesn't steer traffic and weakens security." }
-      - { id: d, text: "Put the guest VLAN in its own /16", why_wrong: "Address size doesn't choose an exit link." }
+      - {id: a, text: "Steer the guest subnet's sessions to broadband by source; leave the rest on the default routes", correct: true}
+      - {id: b, text: "Broadband as the default route for everyone, with corporate traffic pinned to MPLS by policy", trap: near-miss, why_wrong: "Changes corporate traffic too and needs a policy route per app."}
+      - {id: c, text: "asymroute enabled so guest replies can return over whichever link the ISP chooses to use", trap: misconception, why_wrong: "Doesn't steer traffic and weakens security."}
+      - {id: d, text: "A separate VDOM for guests with its own default route out of the broadband interface", trap: near-miss, why_wrong: "Works, but far heavier than steering by source."}
     explanation: Steer by source with a policy route or SD-WAN rule; keep the default routing for everything else. Document that policy routes beat SD-WAN rules.
   - id: M1.04.q19
     type: single
     tier: 4
     stem: "A customer disabled RPF checks on an interface 'temporarily' two years ago for a partner link. What's your PS recommendation?"
     options:
-      - { id: a, text: "Find the missing or asymmetric route that caused it, fix it in a change window, re-enable the check, and document the exception if one must stay", correct: true }
-      - { id: b, text: "Leave it; it's been fine for two years", why_wrong: "It removes an anti-spoofing control on a third-party path." }
-      - { id: c, text: "Disable RPF on all interfaces for consistency", why_wrong: "Spreads the weakness." }
-      - { id: d, text: "Replace it with asymroute", why_wrong: "Worse: no full inspection." }
+      - {id: a, text: "Fix the missing or asymmetric route, re-enable the check in a window, document any exception", correct: true}
+      - {id: b, text: "Leave it as it is, since the partner link has run fine with the check disabled for two years", trap: misconception, why_wrong: "It removes an anti-spoofing control on a third-party path."}
+      - {id: c, text: "Re-enable it now in business hours, as a security control shouldn't wait for a window", trap: near-miss, why_wrong: "Right goal, but without fixing the route first you'll break the partner link."}
+      - {id: d, text: "Re-enable it once the partner confirms their routing hasn't changed since the original issue", trap: near-miss, why_wrong: "Asks the right party, but you still need to find and fix the route on your side."}
     explanation: Fix the routing, restore the control, and keep exceptions documented with an expiry.
 
 labs:

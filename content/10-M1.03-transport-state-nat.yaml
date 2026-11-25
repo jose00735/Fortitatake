@@ -3,6 +3,7 @@ title: Transport, state and NAT theory
 stage: S1
 stage_title: "S1 · Network foundations"
 order: 20
+quality: 2
 est_sessions: 1
 objectives:
   - Explain TCP setup, teardown and reset, and what a stateful firewall remembers about each flow
@@ -206,10 +207,10 @@ quiz:
     pretest: true
     stem: A firewall allows HTTPS from LAN to WAN. Why doesn't it need a second policy for the server's replies?
     options:
-      - { id: a, text: "The reply packets match the session created by the first packet", correct: true }
-      - { id: b, text: "Replies on port 443 are always allowed by default", why_wrong: "There is no blanket rule for 443; replies are allowed because they match an existing session." }
-      - { id: c, text: "The implicit deny only applies to UDP", why_wrong: "The implicit deny applies to all traffic that matches no policy and no session." }
-      - { id: d, text: "NAT automatically opens the return path for any protocol", why_wrong: "NAT rewrites addresses; the session is what permits the reply." }
+      - {id: a, text: "Replies match the session the first packet created", correct: true}
+      - {id: b, text: "Replies from port 443 are allowed by a built-in rule", trap: misconception, why_wrong: "There's no blanket rule for 443; replies pass because they match a session."}
+      - {id: c, text: "NAT on the outbound policy opens the return path too", trap: near-miss, why_wrong: "NAT rewrites addresses; the session is what permits the reply, NAT or not."}
+      - {id: d, text: "The implicit deny is applied to new UDP flows alone", trap: misconception, why_wrong: "The implicit deny covers all traffic with no policy and no session."}
     explanation: The first packet is checked against policies and creates a session keyed by the 5-tuple. Replies match the session.
   - id: M1.03.q02
     type: order
@@ -231,10 +232,10 @@ quiz:
     pretest: true
     stem: Users can browse small pages over a new IPsec tunnel, but large downloads stall. Most likely cause?
     options:
-      - { id: a, text: "Packets larger than the tunnel MTU are dropped and path MTU discovery isn't working", correct: true }
-      - { id: b, text: "The IPsec phase 2 selectors are wrong", why_wrong: "Wrong selectors would break all traffic, not only large transfers." }
-      - { id: c, text: "DNS resolution is slow", why_wrong: "Slow DNS delays the start of every connection, small or large." }
-      - { id: d, text: "The session TTL is too long", why_wrong: "A long TTL keeps idle sessions longer; it doesn't affect packet size." }
+      - {id: a, text: "Packets above the tunnel MTU are dropped and PMTUD isn't working", correct: true}
+      - {id: b, text: "The IPsec phase 2 selectors leave part of the server range out", trap: near-miss, why_wrong: "Wrong selectors break traffic by address, not by packet size."}
+      - {id: c, text: "DNS through the tunnel is slow, so the large downloads time out", trap: misconception, why_wrong: "Slow DNS delays the start of every connection, small or large."}
+      - {id: d, text: "The session TTL is too short, so long transfers get cut off midway", trap: near-miss, why_wrong: "TTL ends idle sessions; an active download keeps its session alive."}
     explanation: The size-dependent symptom is the clue. ESP overhead lowers the usable MTU; clamp MSS or fix PMTUD.
   - id: M1.03.q05
     type: single
@@ -242,51 +243,52 @@ quiz:
     pretest: true
     stem: What does a FortiOS virtual IP (VIP) do?
     options:
-      - { id: a, text: "Destination NAT: maps an external address (and optionally port) to an internal one", correct: true }
-      - { id: b, text: "Source NAT for outbound users", why_wrong: "That is an IP pool or the outgoing interface address." }
-      - { id: c, text: "Creates a loopback interface", why_wrong: "Loopbacks are interfaces, not NAT objects." }
-      - { id: d, text: "Load-balances only between WAN links", why_wrong: "VIPs can load-balance servers, but their core job is DNAT." }
+      - {id: a, text: "Destination NAT from an external address to an internal one", correct: true}
+      - {id: b, text: "Source NAT for outbound users to a pool of public addresses", trap: near-miss, why_wrong: "That's an IP pool or the egress interface address."}
+      - {id: c, text: "A loopback address that the FortiGate answers on for services", trap: misconception, why_wrong: "Loopbacks are interfaces, not NAT objects."}
+      - {id: d, text: "Load balancing of outbound sessions between the two WAN links", trap: near-miss, why_wrong: "VIPs can balance servers inbound, but WAN balancing is SD-WAN."}
     explanation: VIPs are FortiOS's DNAT objects.
   - id: M1.03.q06
     type: single
     tier: 2
+    format: "first-step"
     pretest: true
     stem: An app freezes whenever users leave it idle for about an hour, then works after a restart. What do you check first?
     options:
-      - { id: a, text: "The session TTL for that traffic", correct: true }
-      - { id: b, text: "The IPS signature database version", why_wrong: "IPS wouldn't cause an idle-time pattern." }
-      - { id: c, text: "The DHCP lease time", why_wrong: "A lease renewal doesn't break an open TCP connection to a server." }
-      - { id: d, text: "The interface speed and duplex", why_wrong: "Duplex problems cause errors under load, not after idle time." }
+      - {id: a, text: "The session TTL for that traffic", correct: true}
+      - {id: b, text: "The app's TCP keepalive settings", trap: near-miss, why_wrong: "Relevant, but first confirm the firewall timer that ends the session."}
+      - {id: c, text: "The DHCP lease time on the users", trap: misconception, why_wrong: "A lease renewal doesn't break an open TCP connection."}
+      - {id: d, text: "Interface speed and duplex values", trap: misconception, why_wrong: "Duplex problems cause errors under load, not after idle time."}
     explanation: Idle-then-broken is the signature of a session expiring before the app sends its next packet.
   - id: M1.03.q07
     type: multi
     tier: 2
-    stem: Which of these protocols carry IP addresses or ports inside their payload, and so often need a session helper (ALG) to cross NAT? Select all that apply.
+    stem: "Which protocols carry IP addresses or ports in their payload, and often need a session helper (ALG) to cross NAT? Select all that apply."
     options:
-      - { id: a, text: "FTP (active mode)", correct: true }
-      - { id: b, text: "SIP", correct: true }
-      - { id: c, text: "HTTPS", why_wrong: "HTTPS carries no IP/port pairs that the firewall must rewrite." }
-      - { id: d, text: "SSH", why_wrong: "SSH runs over one TCP connection with no embedded addresses." }
+      - {id: a, text: "FTP in active mode", correct: true}
+      - {id: b, text: "SIP with SDP bodies", correct: true}
+      - {id: c, text: "HTTPS to a web app", trap: misconception, why_wrong: "HTTPS carries no IP/port pairs the firewall must rewrite."}
+      - {id: d, text: "SSH with port forwards", trap: near-miss, why_wrong: "Forwards ride inside the encrypted session; the firewall sees one TCP connection."}
     explanation: FTP's PORT command and SIP's SDP body embed addresses; helpers rewrite them and open pinholes.
   - id: M1.03.q08
     type: single
     tier: 2
     stem: In a capture you see SYN, SYN, SYN from the client with growing gaps and nothing back. What does it mean?
     options:
-      - { id: a, text: "Something is silently dropping the SYN or the reply", correct: true }
-      - { id: b, text: "The server port is closed", why_wrong: "A closed port answers with RST." }
-      - { id: c, text: "The handshake completed but data is lost", why_wrong: "There was no SYN/ACK, so the handshake never completed." }
-      - { id: d, text: "The client's MSS is too high", why_wrong: "MSS problems appear after the handshake, with full-size data packets." }
+      - {id: a, text: "Something silently drops the SYN or its reply", correct: true}
+      - {id: b, text: "The server's port is closed for that service", trap: near-miss, why_wrong: "A closed port answers with an RST."}
+      - {id: c, text: "The handshake worked but the data gets lost", trap: misconception, why_wrong: "No SYN/ACK came back, so the handshake never completed."}
+      - {id: d, text: "The client's MSS is too large for the path", trap: near-miss, why_wrong: "MSS problems appear after the handshake, with full-size data."}
     explanation: "SYN retransmissions with no answer mean a drop somewhere: routing, policy, RPF or the server's own firewall."
   - id: M1.03.q09
     type: single
     tier: 2
     stem: Why can one public IP support far more than 60,416 simultaneous PAT sessions?
     options:
-      - { id: a, text: "The port limit applies per destination service, so sessions to different destinations can reuse ports", correct: true }
-      - { id: b, text: "FortiGate compresses ports", why_wrong: "There is no port compression; ports are reused per destination." }
-      - { id: c, text: "UDP sessions don't use ports", why_wrong: "UDP uses ports exactly like TCP for PAT." }
-      - { id: d, text: "It can't; 60,416 is a hard total limit", why_wrong: "The guide states the figure per service (protocol, destination IP and port)." }
+      - {id: a, text: "The port budget is per destination service, so ports get reused", correct: true}
+      - {id: b, text: "FortiGate multiplexes several sessions onto each translated port", trap: misconception, why_wrong: "There's no multiplexing; ports are reused per destination."}
+      - {id: c, text: "UDP sessions are tracked without ports, so they don't use the pool", trap: misconception, why_wrong: "UDP uses ports exactly like TCP for PAT."}
+      - {id: d, text: "It can't; 60,416 is the hard total for any one public IP address", trap: near-miss, why_wrong: "The figure is per service (protocol, destination IP and port), not a total."}
     explanation: FortiOS documents 60,416 ports per IP for the same service, so the real total depends on how many destinations users reach.
     source: FortiOS 8.0.2 Admin Guide p. 2167
   - id: M1.03.q10
@@ -294,10 +296,10 @@ quiz:
     tier: 2
     stem: Inside users can't open the company portal by its public name, but internet users can. The portal is published with a VIP. What do you propose?
     options:
-      - { id: a, text: "Hairpin NAT (VIP plus a SNAT policy for inside users) or split DNS", correct: true }
-      - { id: b, text: "Raise the session TTL", why_wrong: "Timers are unrelated; the issue is the return path." }
-      - { id: c, text: "Disable the VIP for inside traffic", why_wrong: "Inside users still resolve the public IP and would hit nothing." }
-      - { id: d, text: "Add a static route to the public IP", why_wrong: "The public IP is the FortiGate's own; routing isn't the gap." }
+      - {id: a, text: "Hairpin NAT (VIP plus SNAT for inside users) or split DNS", correct: true}
+      - {id: b, text: "A longer session TTL on the VIP policy for inside traffic", trap: misconception, why_wrong: "Timers are unrelated; the issue is the return path."}
+      - {id: c, text: "Disable the VIP for inside sources so they reach the server", trap: near-miss, why_wrong: "Inside users still resolve the public IP and would hit nothing."}
+      - {id: d, text: "A static route to the public IP (via the inside interface)", trap: near-miss, why_wrong: "The public IP is the FortiGate's own; routing isn't the gap."}
     explanation: Inside users need either hairpin NAT so replies come back through the FortiGate, or an internal DNS answer with the private IP.
   - id: M1.03.q11
     type: numeric
@@ -310,21 +312,22 @@ quiz:
     tier: 3
     stem: Which FortiOS configuration clamps MSS for traffic matching policy 10?
     options:
-      - { id: a, text: "`set tcp-mss-sender` and `set tcp-mss-receiver` under policy 10", correct: true }
-      - { id: b, text: "`set mtu-override enable` under policy 10", why_wrong: "MTU override is an interface setting, not a policy option." }
-      - { id: c, text: "`set session-ttl 1350` under policy 10", why_wrong: "That sets a 1350-second timer, not a segment size." }
-      - { id: d, text: "`set anti-replay disable` under policy 10", why_wrong: "Anti-replay checks TCP flags; it doesn't change MSS." }
+      - {id: a, text: "set tcp-mss-sender and set tcp-mss-receiver", correct: true}
+      - {id: b, text: "set mtu-override enable with a set mtu 1400", trap: near-miss, why_wrong: "MTU override is an interface setting, not a policy option."}
+      - {id: c, text: "set session-ttl 1350 for that one policy", trap: misconception, why_wrong: "That sets a 1350-second timer, not a segment size."}
+      - {id: d, text: "set tcp-session-without-syn enable there", trap: near-miss, why_wrong: "Allows mid-stream TCP sessions; it doesn't change segment size."}
     explanation: FortiOS policies support tcp-mss-sender and tcp-mss-receiver.
     source: FortiOS 8.0.2 Admin Guide p. 2110
   - id: M1.03.q13
     type: single
     tier: 3
+    format: "first-step"
     stem: After a firewall migration, VoIP calls connect but the caller hears nothing. The PBX already handles NAT traversal. Best first move?
     options:
-      - { id: a, text: "Check whether the firewall's SIP ALG is also rewriting the signalling and test with it disabled for that traffic", correct: true }
-      - { id: b, text: "Increase the TCP MSS", why_wrong: "SIP media is RTP over UDP; MSS is irrelevant." }
-      - { id: c, text: "Move the PBX to a different VLAN", why_wrong: "Doesn't address the double NAT traversal." }
-      - { id: d, text: "Reboot the phones", why_wrong: "A reboot won't stop the SDP being rewritten twice." }
+      - {id: a, text: "Check whether the SIP ALG also rewrites the signalling, and test with it off", correct: true}
+      - {id: b, text: "Increase the TCP MSS on the voice policy so the larger RTP packets get through", trap: misconception, why_wrong: "SIP media is RTP over UDP; MSS is irrelevant."}
+      - {id: c, text: "Open the RTP port range from the carrier to the PBX with a separate VIP policy", trap: near-miss, why_wrong: "Pinholes matter, but with the PBX doing traversal the double rewrite is the usual cause."}
+      - {id: d, text: "Check the phones' codec list against the PBX, as a mismatch gives one-way audio", trap: near-miss, why_wrong: "A codec mismatch usually fails the call; this started with the firewall change."}
     explanation: One-way audio is the classic sign of two components fighting over NAT traversal. Decide who does it.
   - id: M1.03.q14
     type: order
@@ -333,24 +336,31 @@ quiz:
     items: ["First SYN is checked against the policy table", "A session is created with the original and translated 5-tuples", "The source is rewritten to the outside IP and port", "The reply matches the session and is translated back", "The session is removed after FIN/RST or the TTL"]
     explanation: Policy lookup happens once, at the first packet. Everything after rides the session.
   - id: M1.03.q15
-    type: single
+    type: "output"
     tier: 4
-    stem: "Sniffer on the inside interface shows SYN → SYN/ACK → ACK, then the client's 1460-byte data segments repeat every few seconds with no ACK from the server. The path crosses an IPsec tunnel. What is the most likely root cause?"
+    output: |
+      # diagnose sniffer packet port2 'host 10.1.1.20 and port 445' 4
+      port2 in  10.1.1.20.51022 -> 10.50.0.10.445: syn 1234 <mss 1460>
+      port2 out 10.50.0.10.445 -> 10.1.1.20.51022: syn 8890 ack 1235 <mss 1460>
+      port2 in  10.1.1.20.51022 -> 10.50.0.10.445: ack 8891
+      port2 in  10.1.1.20.51022 -> 10.50.0.10.445: psh 1235 ack 8891 (len 1460)
+      port2 in  10.1.1.20.51022 -> 10.50.0.10.445: psh 1235 ack 8891 (len 1460)
+    stem: "The path to 10.50.0.10 crosses an IPsec tunnel. What is the most likely root cause?"
     options:
-      - { id: a, text: "Full-size segments exceed the tunnel MTU and are dropped; MSS isn't being clamped", correct: true }
-      - { id: b, text: "The firewall policy denies the traffic", why_wrong: "The handshake completed through the firewall, so the policy allowed the session." }
-      - { id: c, text: "The server is down", why_wrong: "It answered the SYN/ACK." }
-      - { id: d, text: "Asymmetric routing", why_wrong: "With asymmetry the handshake itself would usually fail at the firewall." }
+      - {id: a, text: "Full-size segments exceed the tunnel MTU and MSS isn't clamped", correct: true}
+      - {id: b, text: "A policy denies SMB after the handshake has completed through it", trap: misconception, why_wrong: "Policy is checked on the first packet; the handshake passed, so it was allowed."}
+      - {id: c, text: "Asymmetric routing sends the server's replies around the firewall", trap: near-miss, why_wrong: "The SYN/ACK came back through port2, so replies use this path."}
+      - {id: d, text: "The server's receive window is full, so it stops acknowledging data", trap: near-miss, why_wrong: "A full window still sends ACKs advertising zero; here nothing comes back."}
     explanation: "Handshake fine, full-size data lost, tunnel in the path: MTU/MSS. Clamp MSS (for example 1350) and retest."
   - id: M1.03.q16
     type: single
     tier: 4
     stem: A customer raised the global session TTL to 24 hours to fix one ERP app. A week later the firewall is close to its session limit. What do you recommend?
     options:
-      - { id: a, text: "Restore the default globally and set a longer session-ttl only on the ERP policy", correct: true }
-      - { id: b, text: "Buy a bigger firewall", why_wrong: "The root cause is configuration, not capacity." }
-      - { id: c, text: "Disable anti-replay", why_wrong: "Unrelated to how long idle sessions live." }
-      - { id: d, text: "Turn on NAT for the ERP policy", why_wrong: "NAT doesn't change session lifetime." }
+      - {id: a, text: "Restore the global default and set a longer TTL on the ERP policy", correct: true}
+      - {id: b, text: "Upgrade to a model with a larger session table for the growth", trap: near-miss, why_wrong: "Treats the symptom; the cause is a global timer change."}
+      - {id: c, text: "Lower the TTL to 12 hours globally as a compromise for everyone else", trap: near-miss, why_wrong: "Still far too long for every other session in the table."}
+      - {id: d, text: "Enable NAT on the ERP policy so its sessions are tracked apart", trap: misconception, why_wrong: "NAT doesn't change session lifetime."}
     explanation: Scope the change to the policy that needs it. Global timers affect every session in the table.
   - id: M1.03.q17
     type: text
@@ -364,30 +374,30 @@ quiz:
     tier: 2
     stem: Which statement about UDP sessions on a stateful firewall is correct?
     options:
-      - { id: a, text: "The first packet creates a session; it ends when idle longer than its TTL", correct: true }
-      - { id: b, text: "UDP is never tracked; every packet is checked against policies", why_wrong: "Stateful firewalls track UDP with sessions too." }
-      - { id: c, text: "UDP sessions end with a FIN packet", why_wrong: "UDP has no FIN; timers end its sessions." }
-      - { id: d, text: "UDP replies always need their own policy", why_wrong: "Replies match the session like TCP." }
+      - {id: a, text: "The first packet creates a session, which ends after its idle TTL", correct: true}
+      - {id: b, text: "UDP isn't tracked, so each packet is checked against the policies", trap: misconception, why_wrong: "Stateful firewalls track UDP with sessions too."}
+      - {id: c, text: "UDP sessions are closed when either side sends a final FIN packet", trap: misconception, why_wrong: "UDP has no FIN; timers end its sessions."}
+      - {id: d, text: "UDP replies match the session, but for just the first second or two", trap: near-miss, why_wrong: "Replies match for as long as the session's TTL keeps it alive."}
     explanation: UDP gets pseudo-state from the 5-tuple and a timer.
   - id: M1.03.q19
     type: single
     tier: 5
     stem: A retail customer will put 9,000 users behind one public IP, all hitting the same SaaS endpoint on 443 at peak. What do you design?
     options:
-      - { id: a, text: "An IP pool with more public IPs (or port block allocation) because one IP gives 60,416 ports per destination service", correct: true }
-      - { id: b, text: "One IP is enough; PAT has unlimited ports", why_wrong: "Ports per destination service are finite: 60,416 per IP." }
-      - { id: c, text: "Static 1:1 NAT for every user", why_wrong: "You'd need 9,000 public IPs." }
-      - { id: d, text: "Disable NAT and route private IPs to the internet", why_wrong: "Private addresses aren't routable on the internet." }
+      - {id: a, text: "An IP pool of several public IPs, since one IP gives 60,416 ports per service", correct: true}
+      - {id: b, text: "One IP is enough, since PAT reuses the ports freely across all of the 9,000 users", trap: misconception, why_wrong: "Ports per destination service are finite: 60,416 per IP."}
+      - {id: c, text: "Port block allocation on the one IP, so each user gets a fixed port range", trap: near-miss, why_wrong: "PBA helps logging, but the one IP still has 60,416 ports per service."}
+      - {id: d, text: "A second public IP on the interface, as two IPs double the session limit", trap: near-miss, why_wrong: "Right direction, but size the pool from peak sessions per user to that service."}
     explanation: With one SaaS destination the per-service port budget matters. Size the pool from peak concurrent sessions per user to that service.
   - id: M1.03.q20
     type: single
     tier: 3
     stem: Which symptom best fits an FTP active-mode transfer through NAT with no session helper?
     options:
-      - { id: a, text: "Login works, but directory listings and transfers fail", correct: true }
-      - { id: b, text: "The control connection on port 21 can't be opened", why_wrong: "The control connection is a normal outbound TCP session and works." }
-      - { id: c, text: "Only large files fail", why_wrong: "That points to MTU, not to FTP data channel setup." }
-      - { id: d, text: "DNS lookups for the server fail", why_wrong: "Name resolution is unrelated to the data channel." }
+      - {id: a, text: "Login works, but listings and transfers fail", correct: true}
+      - {id: b, text: "The control connection on port 21 can't open", trap: misconception, why_wrong: "The control connection is a normal outbound TCP session and works."}
+      - {id: c, text: "Small files transfer and large files then fail", trap: near-miss, why_wrong: "That points to MTU, not to the data channel setup."}
+      - {id: d, text: "Passive transfers fail, while active ones work", trap: near-miss, why_wrong: "Reversed: active mode is the one that embeds the private address."}
     explanation: The control channel works; the data channel fails because the embedded address in PORT is private and no pinhole is opened.
 
 labs:
