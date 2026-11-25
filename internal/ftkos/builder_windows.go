@@ -107,6 +107,65 @@ func (m *Manager) wslPath(ctx context.Context, distro, win string) (string, erro
 	return strings.TrimSpace(string(out)), nil
 }
 
+// runOut is runLogged that also returns what wsl.exe said.
+func (m *Manager) runOut(ctx context.Context, args ...string) (string, error) {
+	c := wslCmd(ctx, args...)
+	b, err := c.CombinedOutput()
+	out := decodeWSL(b)
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			m.logLine(l)
+		}
+	}
+	return out, err
+}
+
+// a failed import can leave a half-registered distro behind
+func wslListClear(ctx context.Context) {
+	if ds, _ := listDistros(); slicesContains(ds, builderDistro) {
+		wslCmd(ctx, "--unregister", builderDistro).Run()
+	}
+}
+
+func slicesContains(xs []string, x string) bool {
+	for _, y := range xs {
+		if y == x {
+			return true
+		}
+	}
+	return false
+}
+
+// WSL 2 needs Windows features that only an administrator can turn on. The app runs as you,
+// so it asks Windows for permission (the UAC prompt) to run that one command, then asks for
+// a restart.
+func (m *Manager) wslMissingParts(ctx context.Context, out string, err error) error {
+	low := strings.ToLower(out)
+	missing := strings.Contains(low, "virtual machine platform") || strings.Contains(low, "wsl 2") || strings.Contains(low, "wsl2") ||
+		strings.Contains(low, "0x80370102") || strings.Contains(low, "hcs_e") || strings.Contains(low, "virtualization") ||
+		strings.Contains(low, "elevation") || strings.Contains(low, "optional component") || strings.Contains(low, "wsl_e_wsl2_needed")
+	last := ""
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			last = l
+		}
+	}
+	if !missing {
+		return fmt.Errorf("WSL couldn't create the builder: %s (%v)", last, err)
+	}
+	m.emit("step", map[string]any{"label": "WSL 2 needs Windows features turned on: approve the Windows prompt"})
+	m.logLine("Asking Windows for administrator permission to run: wsl --install --no-distribution")
+	res := powershell(`try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; "exit:" + $p.ExitCode } catch { "declined" }`)
+	m.logLine("Elevated install: " + res)
+	switch {
+	case res == "declined":
+		return errors.New("WSL 2 is missing parts that need administrator permission, and the Windows prompt was declined. Press Set up again and choose Yes")
+	case res == "exit:0":
+		return errors.New("WSL 2's Windows features are now installed. Restart Windows, then press Set up again (the Ubuntu download is kept)")
+	}
+	return fmt.Errorf("WSL couldn't create the builder: %s. Turning on WSL 2's features also failed (%s); check that virtualization (SVM on your Ryzen) is enabled in the BIOS", last, res)
+}
+
 func (m *Manager) runLogged(ctx context.Context, args ...string) error {
 	c := wslCmd(ctx, args...)
 	out, err := c.CombinedOutput()
@@ -143,8 +202,10 @@ func (m *Manager) setupJob(j *job) error {
 		m.emit("step", map[string]any{"label": "Creating " + builderDistro + " (Ubuntu 24.04)"})
 		home := filepath.Join(m.Dir, "builder", "distro")
 		os.MkdirAll(home, 0755)
-		if err := m.runLogged(ctx, "--import", builderDistro, home, tar, "--version", "2"); err != nil {
-			return fmt.Errorf("WSL couldn't create the builder (%v). If the log mentions Virtual Machine Platform or WSL 2, open PowerShell as administrator, run: wsl --install --no-distribution, restart Windows, and press Set up again", err)
+		out, err := m.runOut(ctx, "--import", builderDistro, home, tar, "--version", "2")
+		if err != nil {
+			wslListClear(ctx)
+			return m.wslMissingParts(ctx, out, err)
 		}
 		os.Remove(tar) // 340 MB we don't need any more
 		m.saveBuilderCfg(c)
