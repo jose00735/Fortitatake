@@ -273,7 +273,7 @@ function mount(main, run, opts = {}) {
     const cb = $("[data-real]", box);
     try { real.on = localStorage.getItem("ftk.realnet") !== "0"; } catch { real.on = true; }
     cb.checked = real.on;
-    cb.onchange = () => { real.on = cb.checked; try { localStorage.setItem("ftk.realnet", real.on ? "1" : "0"); } catch { /* private mode */ } if (real.on) startLive(); else { setLive("off"); paint(); } };
+    cb.onchange = () => { real.on = cb.checked; live.retryAt = 0; try { localStorage.setItem("ftk.realnet", real.on ? "1" : "0"); } catch { /* private mode */ } if (real.on) startLive(); else { setLive("off"); paint(); } };
     if (real.on) startLive();
   }).catch(() => {});
   const realCall = async (req, ms) => {
@@ -286,7 +286,7 @@ function mount(main, run, opts = {}) {
   const setLive = (st, msg) => {
     live.state = st;
     const l = $("[data-live]", el);
-    if (l) { l.textContent = { boot: "starting…", apply: "applying…", live: "live", sim: "simulator only", off: "", err: "offline" }[st] || ""; l.dataset.st = st; l.title = msg || ""; }
+    if (l) { l.textContent = { boot: "starting…", apply: "applying…", live: "live", sim: "simulator only", off: "", err: "offline (hover for why; retrying in 30 s)" }[st] || ""; l.dataset.st = st; l.title = msg || ""; }
     const was = live.shown;
     live.shown = st === "live" || st === "apply";
     if (!live.shown) for (const d of Object.keys(ui.sh)) ui.sh[d].on = false;
@@ -294,6 +294,8 @@ function mount(main, run, opts = {}) {
   };
   const liveTick = async () => {
     if (!real.on || real.busy || live.ticking) return;
+    if (live.retryAt && Date.now() < live.retryAt) return; // don't hammer a VM that won't start
+    live.retryAt = 0;
     live.ticking = true;
     try {
       real.net = real.net || new RealNet(realCall);
@@ -330,7 +332,11 @@ function mount(main, run, opts = {}) {
         sh.next = r.next;
         if (!r.alive) { sh.id = null; sh.text += "\n[shell ended]\n"; if (dev === ui.dev) paint(); }
       }
-    } catch (e) { setLive(e.unsupported ? "sim" : "err", e.message); }
+    } catch (e) {
+      setLive(e.unsupported ? "sim" : "err", e.message);
+      if (!e.unsupported) { live.retryAt = Date.now() + 30000; real.net = null; }
+      else live.retryAt = Date.now() + 5000;
+    }
     finally { live.ticking = false; }
   };
   const startLive = () => { if (!live.timer) { live.timer = setInterval(() => { if (!document.body.contains(el)) { clearInterval(live.timer); return; } if (!document.hidden) liveTick(); }, 700); liveTick(); } };

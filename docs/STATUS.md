@@ -98,6 +98,11 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.7 fixes
+
+- On Jose's PC the lab VM kept "starting…": the tuned build was compiled with `-march=native` (Zen 3 instructions), but under WHPX the VM sees QEMU's generic CPU model, so init died with an illegal instruction, QEMU exited, and the lab retried every 0.7 s. Now: the tuned x86_64 build uses `-mtune=native` (same instruction set, scheduling tuned for the CPU); a build that can't boot on any accelerator is marked `boot-failed` and the runner falls back to the next build (tuned → generic) until it's rebuilt; the lab waits 30 s before retrying a VM that wouldn't start and shows the reason on hover.
+- Stage 0 on Jose's Ryzen 9 5950X (generic build): WHPX, boot 1.2 s, 10-device lab built in 1.1 s, TCP across it in 0.2–1.4 ms, QEMU resident memory 95 MB.
+
 ### What v0.8.6 adds
 
 - With the real network live, the FortiGate console's `diagnose sniffer packet <intf> '<filter>' <verbose> <count> [a]` captures real packets in the FortiGate's namespace (tcpdump underneath) and prints them in FortiOS format (verbose 1 and 4 layouts, relative or absolute time, count, Ctrl+C, the "packets received by filter" footer). Forwarded traffic shows on both interfaces, after NAT on the way out, as on a FortiGate.
@@ -139,7 +144,7 @@
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
 - **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Not in v0.8.0 (FortiGate diagnostics: v0.8.7, planned below; then): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
+Not in v0.8.0 (FortiGate diagnostics: v0.8.8, planned below; then): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
 
 ### What v0.7.3 fixes
 
@@ -264,7 +269,7 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 
 A purpose-built Linux compiled from source on Jose's workstation by the FortiTatake PC app: minimal kernel (netns, veth, bridges, nftables, conntrack and helpers, XFRM, netem) plus musl, BusyBox and open-source protocol daemons (iproute2, nftables, tcpdump, dnsmasq, lighttpd, Dropbear, FRR, strongSwan, conntrackd), booting straight into the lab agent. Two signed builds from one source: x86_64 for Windows (QEMU with Windows Hypervisor Platform) and ARM64 for Android (QEMU shipped in the APK, emulated CPU), the Android build synced over Wi-Fi. Every lab device is a namespace; the agent compiles FortiOS config into Linux state and adds FortiOS behaviours (SD-WAN, FGCP, auth). Encryption keeps real algorithm names and negotiation with near-free maths underneath. Switches (VLAN-filtering bridges, RSTP, LLDP) and routers (FRR, vtysh console) are Linux namespaces too; no traffic inspection; the real Internet is reachable only for DNS and ICMP, through a relay in the app (not a VM network card); any link can be captured to pcap for Wireshark; On Android, stage 0 tries hardware virtualization (KVM/AVF if the phone allows it), then Linux as a native library (LKL), then the emulated CPU; each architecture gets a generic and a CPU-tuned build. FortiAnalyzer and FortiSIEM become lab devices with tiny web servers serving a product-like UI over real logs (no Fortinet artwork). Optimizations adopted: the FortiOS compiler, output formatting, grading and the FAZ/FSIEM consoles run natively in the app; a thin agent talks netlink and spawns no tools; read-only EROFS image; services start on first use; one FRR across routers as VRFs if stage 5 confirms it; memory balloon; one warm snapshot. Estimated lab engine RAM at most ~305 MB on Windows, ~370 MB on Android (VM paths) and ~135 MB on the LKL path. Stages 0–3 are v0.8.0 (stage 0 is a go/no-go spike). Decided: capstones and remaining modules follow as v0.9.0, the question overhaul as v0.10.0, then stages 4–7 as v0.11.0–v0.14.0. Blueprint: the "FortiTatake OS — Blueprint" doc (supersedes the Alpine-based one).
 
-### v0.8.7: FortiGate diagnostics from the real network
+### v0.8.8: FortiGate diagnostics from the real network
 
 Planned (Jose, Nov 2026). With Real network live, these FortiGate console commands read the kernel inside the FortiGate's namespace and print in FortiOS format; with it off (and on the phone until it runs the OS) the simulator answers as today. Done when each one, run in F1.01–F1.12 with the reference solutions, matches what the kernel did and keeps the FortiOS layout.
 

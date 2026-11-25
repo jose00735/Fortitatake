@@ -285,7 +285,9 @@ func (m *Manager) buildJob(j *job, arch, variant string) error {
 	opt := ""
 	if variant == "tuned" {
 		if arch == "x86_64" {
-			opt = "-march=native" // the build runs on the same CPU that will run it
+			// Tune scheduling for this CPU but keep the baseline instruction set: under WHPX the
+			// VM sees QEMU's CPU model, not the Ryzen, so -march=native code dies with SIGILL.
+			opt = "-mtune=native"
 		} else {
 			o, err := m.phoneTuning()
 			if err != nil {

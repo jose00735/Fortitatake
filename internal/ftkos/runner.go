@@ -139,15 +139,9 @@ func (m *Manager) Boot(ctx context.Context, memMB int) (*VM, error) {
 		return nil, errors.New("QEMU isn't installed with this copy of FortiTatake")
 	}
 	arch := hostArch()
-	build := m.pickBuild(arch)
-	if build == "" {
+	cands := m.bootCandidates(arch)
+	if len(cands) == 0 {
 		return nil, fmt.Errorf("no FortiTatake OS build for %s yet: build it first", arch)
-	}
-	pub, err := os.ReadFile(filepath.Join(m.Dir, "signing.pub"))
-	if err == nil {
-		if _, err := Verify(build, pub); err != nil {
-			return nil, fmt.Errorf("build %s failed its seal check: %v", filepath.Base(build), err)
-		}
 	}
 	accels := []string{"tcg"}
 	switch runtime.GOOS {
@@ -158,16 +152,58 @@ func (m *Manager) Boot(ctx context.Context, memMB int) (*VM, error) {
 			accels = []string{"kvm", "tcg"}
 		}
 	}
+	pub, _ := os.ReadFile(filepath.Join(m.Dir, "signing.pub"))
 	var last error
-	for _, acc := range accels {
-		vm, err := m.bootWith(ctx, qemu, arch, build, acc, memMB)
-		if err == nil {
-			return vm, nil
+	for bi, build := range cands {
+		if len(pub) > 0 {
+			if _, err := Verify(build, pub); err != nil {
+				last = fmt.Errorf("build %s failed its seal check: %v", filepath.Base(build), err)
+				continue
+			}
 		}
-		last = err
-		m.emit("vm", map[string]any{"state": "fallback", "accel": acc, "error": err.Error()})
+		for _, acc := range accels {
+			vm, err := m.bootWith(ctx, qemu, arch, build, acc, memMB)
+			if err == nil {
+				return vm, nil
+			}
+			last = err
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			m.emit("vm", map[string]any{"state": "fallback", "accel": acc, "build": filepath.Base(build), "error": err.Error()})
+		}
+		// This build doesn't boot here at all: remember that (until it's rebuilt) and use the next one.
+		if bi < len(cands)-1 {
+			os.WriteFile(filepath.Join(build, "boot-failed"), []byte(last.Error()), 0644)
+			m.emit("vm", map[string]any{"state": "build_failed", "build": filepath.Base(build), "error": last.Error()})
+		}
 	}
 	return nil, last
+}
+
+// bootCandidates: the tuned build first, then the generic one; a build that failed to boot
+// is skipped until it's rebuilt (its manifest is newer than the failure note).
+func (m *Manager) bootCandidates(arch string) []string {
+	var out []string
+	for _, v := range []string{"tuned", "generic"} {
+		d := filepath.Join(m.Dir, "builds", arch+"-"+v)
+		mf, err := os.Stat(filepath.Join(d, "manifest.json"))
+		if err != nil {
+			continue
+		}
+		if bad, err := os.Stat(filepath.Join(d, "boot-failed")); err == nil && !mf.ModTime().After(bad.ModTime()) {
+			continue
+		}
+		out = append(out, d)
+	}
+	if len(out) == 0 { // every build failed once: try them all again
+		for _, v := range []string{"tuned", "generic"} {
+			if d := filepath.Join(m.Dir, "builds", arch+"-"+v); fileExists(filepath.Join(d, "manifest.json")) {
+				out = append(out, d)
+			}
+		}
+	}
+	return out
 }
 
 func (m *Manager) bootWith(ctx context.Context, qemu, arch, build, accel string, memMB int) (*VM, error) {
