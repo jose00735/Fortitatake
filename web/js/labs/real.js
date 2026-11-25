@@ -18,19 +18,38 @@ export class RealNet {
     return `${lab.ver}|${cloud ? cloud.hosts.length : 0}|${Math.floor(lab.clock / 60000)}|${h}|${leases}`;
   }
 
+  // Bring the VM's network in line with the lab. Only what changed is redone: a policy edit
+  // reloads that FortiGate's nftables; addresses, routes or cabling rebuild the network
+  // (which also ends any open Linux shells: `generation` goes up).
   async apply(lab) {
+    while (this.busy) await this.busy;
+    let done;
+    this.busy = new Promise((r) => (done = r));
+    try { return await this.applyNow(lab); } finally { this.busy = null; done(); }
+  }
+
+  async applyNow(lab) {
     const why = unsupported(lab);
     if (why.length) throw Object.assign(new Error(`stays on the simulator: ${why.join(", ")}`), { unsupported: true });
     const k = this.stateKey(lab);
     if (k === this.key && this.c) return this.c;
     const t = Date.now();
     const c = compile(lab);
-    await this.call({ op: "topo.apply", topo: c.topo }, 30000);
-    for (const [ns, ruleset] of Object.entries(c.nft)) await this.call({ op: "ns.nft", ns, ruleset }, 15000);
-    for (const l of c.listen) await this.call({ op: "listen.start", ...l }, 10000);
+    const prev = this.c;
+    const topoSame = prev && JSON.stringify(prev.topo) === JSON.stringify(c.topo);
+    if (!topoSame) {
+      await this.call({ op: "topo.apply", topo: c.topo }, 60000);
+      this.generation = (this.generation || 0) + 1;
+    }
+    for (const [ns, ruleset] of Object.entries(c.nft)) if (!topoSame || prev.nft[ns] !== ruleset) await this.call({ op: "ns.nft", ns, ruleset }, 15000);
+    for (const l of c.listen) {
+      const old = topoSame && prev.listen.find((x) => x.ns === l.ns);
+      if (!old || JSON.stringify(old) !== JSON.stringify(l)) await this.call({ op: "listen.start", ...l }, 10000);
+    }
     this.c = c;
     this.key = k;
     this.applyMs = Date.now() - t;
+    this.lastFull = !topoSame;
     return c;
   }
 

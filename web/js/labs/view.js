@@ -106,7 +106,8 @@ function mount(main, run, opts = {}) {
   const emb = !!opts.embedded;
   const devs = run.consoleDevices();
   const firstFgt = devs.find((d) => d instanceof FortiGate) || devs[0];
-  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket" };
+  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {} };
+  const shOn = (id) => !!(ui.sh[id] && ui.sh[id].on);
   for (const d of devs) { ui.buf[d.id] = []; ui.hist[d.id] = []; }
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
   else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ${d.label || "router"}. Type help for its commands.` : `${d.id} (${d.os}) · type help`, "");
@@ -115,7 +116,7 @@ function mount(main, run, opts = {}) {
     <header class="lr-head">
       ${emb ? `<span class="tag acc">${esc(opts.label || "Lab")}</span>` : `<a href="#/labs" class="ghost btn small">← Labs</a>`}
       <div class="lr-title"><span class="tiny">${esc(def.id)} · ${esc(KIND[def.kind] || def.kind)} · ${esc(def.customer || "")}</span><b>${esc(def.title)}</b></div>
-      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<label class="small row lr-real" style="gap:6px" hidden title="Probe checks run on FortiTatake OS, a real Linux network built from this lab"><input type="checkbox" data-real> Real network</label><button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
+      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<label class="small row lr-real" style="gap:6px" hidden title="Probe checks run on FortiTatake OS, a real Linux network built from this lab"><input type="checkbox" data-real> Real network <span class="lr-live" data-live></span></label><button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
     </header>
     <nav class="lr-tabs" aria-label="Lab panels"><button data-v="ticket" class="on">Ticket</button><button data-v="net">Network</button><button data-v="term">Console</button></nav>
     <div class="lr-grid">
@@ -139,13 +140,17 @@ function mount(main, run, opts = {}) {
 
   // ----- consoles -----
   const devTabs = () => {
-    $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("");
+    const liveOn = typeof live !== "undefined" && (live.state === "live" || live.state === "apply");
+    $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${shOn(d.id) ? " $" : ""}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("") +
+      `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button>`;
     $$(".lr-devtabs [data-dev]", el).forEach((b) => (b.onclick = () => selectDev(b.dataset.dev)));
+    const sb = $(".lr-devtabs [data-shell]", el); if (sb) sb.onclick = () => { toggleShell(ui.dev); devTabs(); };
   };
   const paint = () => {
-    out.textContent = ui.buf[ui.dev].join("\n");
+    const sh = ui.sh[ui.dev];
+    out.textContent = shOn(ui.dev) ? sh.text : ui.buf[ui.dev].join("\n");
     out.scrollTop = out.scrollHeight;
-    prompt.textContent = run.prompt(ui.dev);
+    prompt.textContent = shOn(ui.dev) ? `${ui.dev} (Linux) # ` : run.prompt(ui.dev);
   };
   const print = (dev, text) => {
     const b = ui.buf[dev];
@@ -168,6 +173,7 @@ function mount(main, run, opts = {}) {
   };
   const exec = (line) => {
     const dev = ui.dev;
+    if (shOn(dev)) { shellLine(dev, line); return; }
     print(dev, run.prompt(dev) + line);
     if (line.trim() === "clear" || line.trim() === "cls") { ui.buf[dev] = []; paint(); return; }
     const r = run.exec(dev, line);
@@ -179,7 +185,7 @@ function mount(main, run, opts = {}) {
   };
   inp.addEventListener("keydown", (e) => {
     const dev = run.device(ui.dev);
-    const isFgt = dev instanceof FortiGate;
+    const isFgt = dev instanceof FortiGate && !shOn(ui.dev);
     if (e.key === "Enter") { e.preventDefault(); const v = inp.value; inp.value = ""; exec(v); }
     else if (e.key === "Tab") {
       e.preventDefault();
@@ -200,6 +206,7 @@ function mount(main, run, opts = {}) {
       inp.value = hs[ui.hi[ui.dev]] || "";
     } else if ((e.key === "c" || e.key === "C") && e.ctrlKey) {
       e.preventDefault();
+      if (shOn(ui.dev)) { const sh = ui.sh[ui.dev]; sh.text += inp.value + "^C\n"; inp.value = ""; if (sh.id) realCall({ op: "shell.signal", shell: sh.id }).catch(() => {}); paint(); return; }
       print(ui.dev, run.prompt(ui.dev) + inp.value + "^C" + run.stopCapture(ui.dev));
       inp.value = "";
       paint();
@@ -262,13 +269,67 @@ function mount(main, run, opts = {}) {
     const cb = $("[data-real]", box);
     try { real.on = localStorage.getItem("ftk.realnet") !== "0"; } catch { real.on = true; }
     cb.checked = real.on;
-    cb.onchange = () => { real.on = cb.checked; try { localStorage.setItem("ftk.realnet", real.on ? "1" : "0"); } catch { /* private mode */ } };
+    cb.onchange = () => { real.on = cb.checked; try { localStorage.setItem("ftk.realnet", real.on ? "1" : "0"); } catch { /* private mode */ } if (real.on) startLive(); else { setLive("off"); paint(); } };
+    if (real.on) startLive();
   }).catch(() => {});
   const realCall = async (req, ms) => {
     const r = await api("engine/lab/call", { method: "POST", body: req });
     if (!r.ok) throw new Error(r.err || "engine error");
     return r;
   };
+  // ----- live: the VM follows the lab, and devices get real Linux shells -----
+  const live = { state: "", timer: null, gen: 0, err: "" };
+  const setLive = (st, msg) => {
+    live.state = st;
+    const l = $("[data-live]", el);
+    if (l) { l.textContent = { boot: "starting…", apply: "applying…", live: "live", sim: "simulator only", off: "", err: "offline" }[st] || ""; l.dataset.st = st; l.title = msg || ""; }
+    const was = live.shown;
+    live.shown = st === "live" || st === "apply";
+    if (!live.shown) for (const d of Object.keys(ui.sh)) ui.sh[d].on = false;
+    if (was !== live.shown) { devTabs(); paint(); }
+  };
+  const liveTick = async () => {
+    if (!real.on || real.busy || live.ticking) return;
+    live.ticking = true;
+    try {
+      real.net = real.net || new RealNet(realCall);
+      if (real.net.stateKey(run.lab) !== real.net.key) {
+        setLive(real.net.c ? "apply" : "boot");
+        await real.net.apply(run.lab);
+        if (real.net.generation !== live.gen) { live.gen = real.net.generation; for (const sh of Object.values(ui.sh)) if (sh.id) { sh.id = null; sh.text += "\n[the lab network was rebuilt; a new shell starts with your next command]\n"; } }
+      }
+      setLive("live");
+      for (const [dev, sh] of Object.entries(ui.sh)) {
+        if (!sh.id) continue;
+        const r = await realCall({ op: "shell.read", shell: sh.id, since: sh.next });
+        if (r.data) { sh.text = (sh.text + r.data).slice(-200000); if (dev === ui.dev) paint(); else { ui.unread.add(dev); devTabs(); } }
+        sh.next = r.next;
+        if (!r.alive) { sh.id = null; sh.text += "\n[shell ended]\n"; if (dev === ui.dev) paint(); }
+      }
+    } catch (e) { setLive(e.unsupported ? "sim" : "err", e.message); }
+    finally { live.ticking = false; }
+  };
+  const startLive = () => { if (!live.timer) { live.timer = setInterval(() => { if (!document.body.contains(el)) { clearInterval(live.timer); return; } if (!document.hidden) liveTick(); }, 700); liveTick(); } };
+  const toggleShell = (dev) => {
+    const sh = ui.sh[dev] || (ui.sh[dev] = { on: false, id: null, text: "", next: 0 });
+    sh.on = !sh.on;
+    if (sh.on && !sh.text) sh.text = `Linux shell inside ${dev}, on the real lab network. Try: ip -br addr, ip route, ping -c 3 <ip>, traceroute <ip>, nslookup <name>, curl -sk https://<ip>, tcpdump -ni any -c 5\nType exit or press the button again to go back.\n\n`;
+    paint(); inp.focus();
+  };
+  const shellLine = async (dev, line) => {
+    const sh = ui.sh[dev];
+    if (line.trim() === "clear") { sh.text = ""; paint(); return; }
+    if (line.trim() === "exit") { sh.on = false; devTabs(); paint(); return; }
+    sh.text += `${dev} (Linux) # ${line}\n`;
+    if (line.trim()) { ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length; }
+    paint();
+    try {
+      if (!sh.id) { const r = await realCall({ op: "shell.open", ns: dev }); sh.id = r.shell; sh.next = 0; }
+      const w = await realCall({ op: "shell.write", shell: sh.id, data: line + "\n" });
+      if (!w.alive) { sh.id = null; sh.text += "[shell ended; press Enter to start a new one]\n"; paint(); }
+    } catch (e) { sh.text += `[FortiTatake OS: ${e.message}]\n`; paint(); }
+  };
+
   const doCheck = async () => {
     if (real.busy) return;
     const was = new Set(run.passed);

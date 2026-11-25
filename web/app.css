@@ -378,6 +378,12 @@ details summary { cursor: pointer; }
 .lr-checks li.no { background: var(--bad-soft); }
 .lr-checks li.no > b { color: var(--bad); }
 .lr-checks .tiny { color: var(--ink-2); }
+.lr-live { font-size: 11px; color: var(--ink-2); }
+.lr-live[data-st="live"] { color: var(--ok); }
+.lr-live[data-st="live"]::before { content: "● "; }
+.lr-live[data-st="err"] { color: var(--bad); }
+.lr-devtabs .lr-shellbtn { margin-left: auto; position: sticky; right: 0; background: #1b1b1b; flex: none; color: var(--term-ink); border: 1px solid rgba(255, 255, 255, .18); border-radius: 4px; margin-bottom: 4px; padding: 4px 10px; font: 600 .75rem var(--mono); }
+.lr-devtabs .lr-shellbtn.on { border-color: var(--ok); }
 .lr-eng { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
 .lr-checks .lr-dis { color: var(--warn, #9a6700); }
 .lr-main { display: grid; grid-template-rows: minmax(260px, 47%) 1fr; min-height: 0; }

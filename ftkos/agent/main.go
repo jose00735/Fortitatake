@@ -173,6 +173,16 @@ func dispatch(r req) (map[string]any, error) {
 		return listenStart(r)
 	case "listen.log":
 		return listenLog(r)
+	case "shell.open":
+		return shellOpen(r)
+	case "shell.write":
+		return shellWrite(r)
+	case "shell.read":
+		return shellRead(r)
+	case "shell.signal":
+		return shellSignal(r)
+	case "shell.close":
+		return shellClose(r)
 	case "bench":
 		return bench(r)
 	case "mem":
