@@ -448,6 +448,7 @@ details summary { cursor: pointer; }
 
 /* ---------- FortiTatake OS engine screen ---------- */
 .chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 99px; font-size: .8rem; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); }
+.chip.bad, .eg .chip.bad { border-color: var(--bad); color: var(--bad); }
 .chip.on, .eg .chip.on { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
 .chip.off, .eg .chip.off { border-color: var(--line); color: var(--ink-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ink-3) 60%, transparent); }
 .chip.dim, .eg .chip.dim { opacity: .45; }

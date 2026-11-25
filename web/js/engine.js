@@ -206,7 +206,7 @@ export async function engineView(main) {
     c.querySelectorAll("button").forEach((x) => { x.disabled = running && x.dataset.act !== "stop"; });
     const builds = status.builds || [];
     $("[data-builds]", main).innerHTML = builds.length ? `<div class="card"><h3>Builds on this device</h3><table class="kv">${builds.map((x) =>
-      `<tr><th>${esc(x.arch)} ${esc(x.variant)}</th><td>${bytes(x.bytes)} · kernel ${esc(x.kernel || "")} · ${x.seconds ? Math.round(x.seconds / 60) + " min to build" : ""} · ${esc((x.created || "").slice(0, 16).replace("T", " "))}</td></tr>`).join("")}</table></div>` : "";
+      `<tr><th>${esc(x.arch)} ${esc(x.variant)}${x.in_use ? ' <span class="chip on">labs use this</span>' : ""}${x.boot_failed ? ' <span class="chip bad" title="' + esc(x.boot_failed) + '">won\'t boot here</span>' : x.unused ? ' <span class="chip">not used</span>' : ""}</th><td>${bytes(x.bytes)} · kernel ${esc(x.kernel || "")} · ${x.seconds ? Math.round(x.seconds / 60) + " min to build" : ""} · ${esc((x.created || "").slice(0, 16).replace("T", " "))}</td><td><button class="ghost small" data-del="${esc(x.id)}">Delete</button></td></tr>`).join("")}</table></div>` : "";
     $("[data-test]", main).innerHTML = testCard(st, report);
   }
 
@@ -223,6 +223,16 @@ export async function engineView(main) {
   }
 
   main.addEventListener("click", async (ev) => {
+    const del = ev.target.closest("button[data-del]");
+    if (del) {
+      const id = del.dataset.del;
+      if (!confirm(`Delete the ${id} build from this device? Labs stop using it; you can build it again later.`)) return;
+      del.disabled = true;
+      try { await api("engine/build/delete", { method: "POST", body: { id } }); }
+      catch (e) { st.error = e.message; renderLive(); }
+      setTimeout(refreshStatus, 200);
+      return;
+    }
     const btn = ev.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;

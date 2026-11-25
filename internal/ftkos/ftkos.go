@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -286,10 +287,63 @@ func (m *Manager) Builds() []map[string]any {
 				size += int64(n)
 			}
 		}
-		out = append(out, map[string]any{"id": filepath.Base(d), "arch": mf.Arch, "variant": mf.Variant, "opt": mf.Opt,
-			"created": mf.Created, "bytes": size, "kernel": mf.Kernel, "seconds": mf.BuildInfo["seconds"]})
+		row := map[string]any{"id": filepath.Base(d), "arch": mf.Arch, "variant": mf.Variant, "opt": mf.Opt,
+			"created": mf.Created, "bytes": size, "kernel": mf.Kernel, "seconds": mf.BuildInfo["seconds"]}
+		if c := m.bootCandidates(mf.Arch); len(c) > 0 && c[0] == d && mf.Arch == hostArch() {
+			row["in_use"] = true
+		} else if mf.Arch == hostArch() {
+			row["unused"] = true
+		}
+		if bf, err := os.ReadFile(filepath.Join(d, "boot-failed")); err == nil {
+			row["boot_failed"] = strings.TrimSpace(string(bf))
+		}
+		out = append(out, row)
 	}
 	return out
+}
+
+var buildIDok = regexp.MustCompile(`^(x86_64|aarch64)-(generic|tuned)$`)
+
+// deleteBuild removes one OS build from this device (POST engine/build/delete {"id": …}).
+// The lab VM is stopped first so Windows doesn't hold its files open.
+func (m *Manager) deleteBuild(id string) error {
+	if !buildIDok.MatchString(id) {
+		return errors.New("no such build")
+	}
+	d := filepath.Join(m.Dir, "builds", id)
+	if !fileExists(d) {
+		return errors.New("no such build")
+	}
+	m.mu.Lock()
+	busy := m.job != nil && !m.job.done
+	m.mu.Unlock()
+	if busy {
+		return errors.New("a build or test is running: stop it first")
+	}
+	m.labStop()
+	var err error
+	for i := 0; i < 10; i++ { // QEMU can take a moment to let go of the files
+		if err = os.RemoveAll(d); err == nil {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if err != nil {
+		return fmt.Errorf("couldn't delete %s: %v", id, err)
+	}
+	// forget its build report too
+	rp := filepath.Join(m.Dir, "report.json")
+	if b, e := os.ReadFile(rp); e == nil {
+		var rep map[string]any
+		if json.Unmarshal(b, &rep) == nil {
+			delete(rep, "build."+id)
+			if nb, e := json.MarshalIndent(rep, "", " "); e == nil {
+				os.WriteFile(rp, nb, 0644)
+			}
+		}
+	}
+	m.emit("build_deleted", map[string]any{"id": id})
+	return nil
 }
 
 // pickBuild returns the build folder for this device's architecture, tuned first.
@@ -368,6 +422,16 @@ func (m *Manager) API(w http.ResponseWriter, r *http.Request, sub string) {
 	case sub == "stop" && post:
 		m.stopJob()
 		writeJSON(w, 200, map[string]bool{"stopping": true})
+	case sub == "build/delete" && post:
+		var in struct {
+			ID string `json:"id"`
+		}
+		json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&in)
+		if err := m.deleteBuild(in.ID); err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"deleted": in.ID})
 	case sub == "lab/call" && post:
 		m.labCall(w, r)
 	case sub == "lab/stop" && post:
