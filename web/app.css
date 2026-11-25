@@ -378,6 +378,8 @@ details summary { cursor: pointer; }
 .lr-checks li.no { background: var(--bad-soft); }
 .lr-checks li.no > b { color: var(--bad); }
 .lr-checks .tiny { color: var(--ink-2); }
+.lr-eng { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.lr-checks .lr-dis { color: var(--warn, #9a6700); }
 .lr-main { display: grid; grid-template-rows: minmax(260px, 47%) 1fr; min-height: 0; }
 .lr-topo { border-bottom: 1px solid var(--line); background: var(--surface); overflow: hidden; display: grid; place-items: center; }
 .topo { width: 100%; height: 100%; max-height: 100%; }

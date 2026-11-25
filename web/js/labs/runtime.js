@@ -13,6 +13,7 @@ import "./switch.js";
 import "./soc.js";
 import { hostRun, routerRun } from "./diag.js";
 import { runChecks } from "./grader.js";
+import { runChecksReal } from "./real.js";
 import { FortiGate } from "./fgt.js";
 import { ipToInt } from "./net.js";
 
@@ -129,6 +130,15 @@ export class LabRun {
     const p = this.current;
     this.checksRun++;
     const res = runChecks(this.lab, p.checks || [], this.answers);
+    this.results[p.id] = res;
+    if (res.length && res.every((r) => r.pass)) this.passed.add(p.id);
+    return res;
+  }
+  // the same checks, with probes sent through FortiTatake OS
+  async checkReal(real) {
+    const p = this.current;
+    this.checksRun++;
+    const res = await runChecksReal(this.lab, p.checks || [], this.answers, real);
     this.results[p.id] = res;
     if (res.length && res.every((r) => r.pass)) this.passed.add(p.id);
     return res;

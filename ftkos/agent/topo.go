@@ -54,7 +54,28 @@ type topoSpec struct {
 		Via    string `json:"via"`
 		If     string `json:"if"`
 		Metric int    `json:"metric"`
+		Type   string `json:"type"` // "" or blackhole, local
 	} `json:"routes"`
+	// 802.1Q sub-interfaces (FortiGate VLAN interfaces)
+	Vlans []struct {
+		Dev    string `json:"dev"`
+		If     string `json:"if"`
+		Parent string `json:"parent"`
+		ID     int    `json:"id"`
+		Down   bool   `json:"down"`
+	} `json:"vlans"`
+	// interfaces with no cable: loopbacks, unplugged ports
+	Dummies []struct {
+		Dev  string `json:"dev"`
+		If   string `json:"if"`
+		Down bool   `json:"down"`
+	} `json:"dummies"`
+	// proxy ARP (VIP external IPs, IP pools)
+	Proxies []struct {
+		Dev string `json:"dev"`
+		If  string `json:"if"`
+		IP  string `json:"ip"`
+	} `json:"proxies"`
 }
 
 type endpoint struct {
@@ -193,6 +214,7 @@ func listNS() []string {
 }
 
 func topoClear() (map[string]any, error) {
+	stopAllListeners()
 	stopAllServices()
 	stopAllCaptures()
 	t := time.Now()
@@ -311,11 +333,44 @@ func topoApply(r req) (map[string]any, error) {
 	for _, d := range t.Devices {
 		per[d.Name] = append([]string{"link set lo up"}, per[d.Name]...)
 	}
+	for _, v := range t.Dummies {
+		if err := checkIf(v.If); err != nil {
+			return nil, err
+		}
+		if os.Getenv("FTK_NO_DUMMY") != "" { // test hosts without the dummy driver
+			per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link add %s type veth peer name %s", v.If, "x"+strings.ReplaceAll(v.If, ".", "")[:min(len(v.If), 13)]))
+		} else {
+			per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link add %s type dummy", v.If))
+		}
+		if !v.Down {
+			per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link set %s up", v.If))
+		}
+	}
+	for _, v := range t.Vlans {
+		if err := checkIf(v.If); err != nil {
+			return nil, err
+		}
+		if v.ID < 1 || v.ID > 4094 {
+			return nil, fmt.Errorf("bad VLAN id %d on %s", v.ID, v.If)
+		}
+		per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link add link %s name %s type vlan id %d", v.Parent, v.If, v.ID))
+		if !v.Down {
+			per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link set %s up", v.If))
+		}
+	}
 	for _, a := range t.Addrs {
 		per[a.Dev] = append(per[a.Dev], fmt.Sprintf("addr add %s dev %s", a.CIDR, a.If))
 	}
 	for _, rt := range t.Routes {
 		line := "route replace " + rt.Dst
+		switch rt.Type {
+		case "blackhole":
+			per[rt.Dev] = append(per[rt.Dev], "route replace blackhole "+rt.Dst)
+			continue
+		case "local":
+			per[rt.Dev] = append(per[rt.Dev], "route replace local "+rt.Dst+" dev lo")
+			continue
+		}
 		if rt.Via != "" {
 			line += " via " + rt.Via
 		}
@@ -326,6 +381,9 @@ func topoApply(r req) (map[string]any, error) {
 			line += fmt.Sprintf(" metric %d", rt.Metric)
 		}
 		per[rt.Dev] = append(per[rt.Dev], line)
+	}
+	for _, p := range t.Proxies {
+		per[p.Dev] = append(per[p.Dev], fmt.Sprintf("neigh add proxy %s dev %s", p.IP, p.If))
 	}
 	for _, d := range t.Devices {
 		if err := ipBatch(d.Name, per[d.Name]); err != nil {
@@ -389,7 +447,13 @@ func nsNft(r req) (map[string]any, error) {
 		return nil, err
 	}
 	rules := "flush ruleset\n" + r.str("ruleset") + "\n"
-	_, e, code, err := run(15*time.Second, rules, "ip", "netns", "exec", ns, "nft", "-f", "-")
+	// a file, not stdin: the VM has no /dev/stdin
+	os.MkdirAll("/run/ftk/nft", 0755)
+	fn := filepath.Join("/run/ftk/nft", ns+".nft")
+	if err := os.WriteFile(fn, []byte(rules), 0644); err != nil {
+		return nil, err
+	}
+	_, e, code, err := run(15*time.Second, "", "ip", "netns", "exec", ns, "nft", "-f", fn)
 	if err != nil {
 		return nil, err
 	}

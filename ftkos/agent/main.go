@@ -31,7 +31,7 @@ var opLock sync.RWMutex
 
 var mutating = map[string]bool{
 	"topo.apply": true, "topo.clear": true, "ns.nft": true, "ns.link": true,
-	"service.start": true, "service.stop": true, "bench": true,
+	"service.start": true, "service.stop": true, "bench": true, "listen.start": true,
 }
 
 type req map[string]any
@@ -169,6 +169,10 @@ func dispatch(r req) (map[string]any, error) {
 		return serviceStart(r)
 	case "service.stop":
 		return serviceStop(r)
+	case "listen.start":
+		return listenStart(r)
+	case "listen.log":
+		return listenLog(r)
 	case "bench":
 		return bench(r)
 	case "mem":

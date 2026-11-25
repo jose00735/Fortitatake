@@ -39,6 +39,10 @@ type Manager struct {
 	Version string
 	ExeDir  string
 
+	labMu   sync.Mutex
+	lab     *VM
+	labUsed time.Time
+
 	mu     sync.Mutex
 	events []Event
 	seq    int
@@ -360,6 +364,11 @@ func (m *Manager) API(w http.ResponseWriter, r *http.Request, sub string) {
 	case sub == "stop" && post:
 		m.stopJob()
 		writeJSON(w, 200, map[string]bool{"stopping": true})
+	case sub == "lab/call" && post:
+		m.labCall(w, r)
+	case sub == "lab/stop" && post:
+		m.labStop()
+		writeJSON(w, 200, map[string]bool{"stopped": true})
 	case sub == "report" && !post:
 		b, err := os.ReadFile(filepath.Join(m.Dir, "report.json"))
 		if err != nil {
@@ -383,7 +392,7 @@ func (m *Manager) status() map[string]any {
 	m.mu.Unlock()
 	st := map[string]any{
 		"platform": runtime.GOOS, "arch": hostArch(), "can_build": canBuild(), "job": j, "seq": seq,
-		"builds": m.Builds(), "dir": m.Dir, "runner": m.runnerInfo(),
+		"builds": m.Builds(), "dir": m.Dir, "runner": m.runnerInfo(), "lab": m.labInfo(),
 	}
 	if canBuild() {
 		st["builder"] = m.builderInfo()
@@ -396,3 +405,6 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
 }
+
+// SealForTest signs a build folder (development tools only).
+func (m *Manager) SealForTest(dir string) error { _, err := m.seal(dir); return err }

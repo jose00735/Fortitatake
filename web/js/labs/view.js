@@ -2,6 +2,8 @@
 import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
+import { RealNet } from "./real.js";
+import { api } from "../core.js";
 import { drawTopology } from "./topo.js";
 import { FortiGate } from "./fgt.js";
 
@@ -113,7 +115,7 @@ function mount(main, run, opts = {}) {
     <header class="lr-head">
       ${emb ? `<span class="tag acc">${esc(opts.label || "Lab")}</span>` : `<a href="#/labs" class="ghost btn small">← Labs</a>`}
       <div class="lr-title"><span class="tiny">${esc(def.id)} · ${esc(KIND[def.kind] || def.kind)} · ${esc(def.customer || "")}</span><b>${esc(def.title)}</b></div>
-      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
+      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<label class="small row lr-real" style="gap:6px" hidden title="Probe checks run on FortiTatake OS, a real Linux network built from this lab"><input type="checkbox" data-real> Real network</label><button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
     </header>
     <nav class="lr-tabs" aria-label="Lab panels"><button data-v="ticket" class="on">Ticket</button><button data-v="net">Network</button><button data-v="term">Console</button></nav>
     <div class="lr-grid">
@@ -235,7 +237,7 @@ function mount(main, run, opts = {}) {
         </div>
         ${shown ? `<ol class="small lr-hints">${(p.hints || []).slice(0, shown).map((x) => `<li>${inline(x)}</li>`).join("")}</ol>` : ""}
         ${note || ""}
-        ${res ? `<ul class="lr-checks">${res.map((r) => `<li class="${r.pass ? "ok" : "no"}"><b>${r.pass ? "✓" : "✗"}</b><div><span class="small">${inline(r.text)}</span><span class="tiny">${esc(r.detail || "")}</span></div></li>`).join("")}</ul>` : `<p class="tiny">The checklist stays hidden until you press Check. It tests what the network does, not what you typed.</p>`}
+        ${res ? `<ul class="lr-checks">${res.map((r) => `<li class="${r.pass ? "ok" : "no"}"><b>${r.pass ? "✓" : "✗"}</b><div><span class="small">${inline(r.text)}${r.engine === "linux" ? ` <span class="lr-eng" title="Sent through FortiTatake OS">real network</span>` : ""}</span><span class="tiny">${esc(r.detail || "")}</span>${r.disagree ? `<span class="tiny lr-dis">The simulator predicted the opposite (${esc(r.simDetail || "")}). The real network decides; this is worth reporting.</span>` : ""}${r.engineError ? `<span class="tiny lr-dis">FortiTatake OS didn't answer (${esc(r.engineError)}), so the simulator checked this one.</span>` : ""}</div></li>`).join("")}</ul>` : `<p class="tiny">The checklist stays hidden until you press Check. It tests what the network does, not what you typed.</p>`}
         ${run.revealed[p.id] ? solutionHtml(p) : ""}
         ${run.passed.has(p.id) ? `<div class="call why md"><b>Why it works</b>${md(p.explain || "")}</div>${emb ? `<button class="primary" data-cont>Continue</button>` : run.part < run.parts.length - 1 ? `<button class="primary" data-next>Next part →</button>` : ""}` : ""}
       </section>`;
@@ -251,9 +253,33 @@ function mount(main, run, opts = {}) {
     const nx = $("[data-next]", side); if (nx) nx.onclick = () => { run.advance(); store(run, k); renderSide(); };
     const ct = $("[data-cont]", side); if (ct) ct.onclick = () => opts.finish({ passed: true, hints: run.hints[p.id] || 0, revealed: !!run.revealed[p.id], ms: run.elapsed });
   };
-  const doCheck = () => {
+  // FortiTatake OS: offered when this device has a build and QEMU; the choice is remembered
+  const real = { on: false, net: null, busy: false };
+  api("engine/status").then((st) => {
+    if (!st || !st.runner || !st.runner.qemu || !st.runner.build) return;
+    const box = $(".lr-real", el); if (!box) return;
+    box.hidden = false;
+    const cb = $("[data-real]", box);
+    try { real.on = localStorage.getItem("ftk.realnet") !== "0"; } catch { real.on = true; }
+    cb.checked = real.on;
+    cb.onchange = () => { real.on = cb.checked; try { localStorage.setItem("ftk.realnet", real.on ? "1" : "0"); } catch { /* private mode */ } };
+  }).catch(() => {});
+  const realCall = async (req, ms) => {
+    const r = await api("engine/lab/call", { method: "POST", body: req });
+    if (!r.ok) throw new Error(r.err || "engine error");
+    return r;
+  };
+  const doCheck = async () => {
+    if (real.busy) return;
     const was = new Set(run.passed);
-    const res = run.check();
+    let res;
+    if (real.on) {
+      real.busy = true;
+      const b = $("[data-check]", side); if (b) { b.disabled = true; b.textContent = "Checking on the real network…"; }
+      try { real.net = real.net || new RealNet(realCall); res = await run.checkReal(real.net); }
+      catch (e) { res = run.check(); }
+      finally { real.busy = false; }
+    } else res = run.check();
     const p = run.current;
     let note = "";
     if (run.passed.has(p.id) && !was.has(p.id)) {
