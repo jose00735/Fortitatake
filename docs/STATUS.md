@@ -100,6 +100,9 @@
 
 ### v0.8.8 changes
 
+- **Always the real network.** The "Real network" switch is gone (Jose: always as real as possible). When this device has a build and QEMU, every lab runs live on FortiTatake OS; the simulator answers only where the OS can't (no build, the phone until it runs the OS, features not compiled yet). The status next to "Real network" says which.
+- **Phone OS tab** shows only what the phone does: "Sync builds from the PC" and "Test the build" (disabled until the phone can run the OS), plus the builds it holds; no build phases.
+
 - "Build tuned for this CPU" is gone (Jose: useless). The VM sees QEMU's CPU model, not the host's, so a PC build tuned for the Ryzen gains nothing and `-march=native` broke it. PC builds are generic only; an older `x86_64-tuned` folder is ignored. Tuning stays possible for the phone build only (its CPU report is kept), not exposed in the UI.
 - **Delete a build.** Each row under "Builds on this device" has Delete (asks first). The lab VM is stopped so Windows lets go of the files, the build folder and its entry in `report.json` are removed; refused while a build or test runs. Rows are tagged "labs use this", "not used" or "won't boot here" (with the reason on hover). Works the same on the phone for builds it received.
 

@@ -118,7 +118,7 @@ function mount(main, run, opts = {}) {
     <header class="lr-head">
       ${emb ? `<span class="tag acc">${esc(opts.label || "Lab")}</span>` : `<a href="#/labs" class="ghost btn small">← Labs</a>`}
       <div class="lr-title"><span class="tiny">${esc(def.id)} · ${esc(KIND[def.kind] || def.kind)} · ${esc(def.customer || "")}</span><b>${esc(def.title)}</b></div>
-      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<label class="small row lr-real" style="gap:6px" hidden title="Probe checks run on FortiTatake OS, a real Linux network built from this lab"><input type="checkbox" data-real> Real network <span class="lr-live" data-live></span></label><button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
+      <div class="row lr-meta"><span class="kbd num" data-timer>0:00</span>${emb ? (opts.exam ? `<span class="tag">Exam mode: no hints</span>` : "") : `<label class="small row" style="gap:6px"><input type="checkbox" data-exam ${run.exam ? "checked" : ""}> Exam mode</label>`}<span class="small row lr-real" style="gap:6px" hidden title="This lab runs on FortiTatake OS: a real Linux network built from it">Real network <span class="lr-live" data-live></span></span><button class="ghost small" data-reset>Reset</button>${emb ? `<button class="ghost small" data-leave>Skip this lab</button>` : ""}</div>
     </header>
     <nav class="lr-tabs" aria-label="Lab panels"><button data-v="ticket" class="on">Ticket</button><button data-v="net">Network</button><button data-v="term">Console</button></nav>
     <div class="lr-grid">
@@ -270,11 +270,8 @@ function mount(main, run, opts = {}) {
     if (!st || !st.runner || !st.runner.qemu || !st.runner.build) return;
     const box = $(".lr-real", el); if (!box) return;
     box.hidden = false;
-    const cb = $("[data-real]", box);
-    try { real.on = localStorage.getItem("ftk.realnet") !== "0"; } catch { real.on = true; }
-    cb.checked = real.on;
-    cb.onchange = () => { real.on = cb.checked; live.retryAt = 0; try { localStorage.setItem("ftk.realnet", real.on ? "1" : "0"); } catch { /* private mode */ } if (real.on) startLive(); else { setLive("off"); paint(); } };
-    if (real.on) startLive();
+    real.on = true; // always the real network when this device can run it; the simulator is only the fallback
+    startLive();
   }).catch(() => {});
   const realCall = async (req, ms) => {
     const r = await api("engine/lab/call", { method: "POST", body: req });

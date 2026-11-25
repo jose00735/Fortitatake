@@ -11,8 +11,8 @@ android {
         applicationId = "com.jose00735.fortitatake"
         minSdk = 29
         targetSdk = 34
-        versionCode = 24
-        versionName = "0.8.7"
+        versionCode = 25
+        versionName = "0.8.8"
     }
 
     // A fixed key so every build can update the installed app (sideloaded, personal use).

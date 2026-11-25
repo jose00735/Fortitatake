@@ -165,7 +165,7 @@ export async function engineView(main) {
   let status = {}, report = null;
   main.replaceChildren(h(`<div class="wrap eg">
     <h1>FortiTatake OS</h1>
-    <p class="muted">Your own lab Linux, compiled from source on this PC and sent to your phone. Every lab device runs on a real network stack inside it.</p>
+    <p class="muted" data-intro>Your own lab Linux, compiled from source on this PC and sent to your phone. Every lab device runs on a real network stack inside it.</p>
     <div data-status></div><div data-controls class="row"></div>
     <div class="card eg-main"><div data-gauge></div><div class="eg-cols"><div data-phases></div><div data-details></div></div>
       <div data-error></div>
@@ -183,6 +183,14 @@ export async function engineView(main) {
   const cpuName = (n) => String(n || "").replace(/\(R\)|\(TM\)|CPU|@.*$|\d+-Core Processor|Processor/gi, "").replace(/\s+/g, " ").trim();
   function renderStatic() {
     const b = status.builder;
+    const phone = !status.can_build;
+    const running = status.job && !status.job.done;
+    // The phone doesn't build: no build phases, just sync and the test
+    if (phone) {
+      $("[data-intro]", main).textContent = "Your lab Linux, built on your PC and synced to this phone. Every lab device runs on a real network stack inside it.";
+      $(".eg-cols", main).hidden = true;
+      $("[data-gauge]", main).hidden = !running;
+    }
     const chips = [];
     if (status.can_build) {
       if (!b || !b.wsl) chips.push(`<span class="chip off">WSL not found</span>`);
@@ -190,7 +198,6 @@ export async function engineView(main) {
     } else chips.push(`<span class="chip">Builds arrive from your PC by sync</span>`);
     chips.push(`<span class="chip ${status.runner && status.runner.qemu ? "on" : "off"}">Runner ${status.runner && status.runner.qemu ? "installed" : "missing"}</span>`);
     $("[data-status]", main).innerHTML = `<div class="chips">${chips.join("")}</div>`;
-    const running = status.job && !status.job.done;
     const ctl = [];
     if (status.can_build) {
       if (!b || !b.ready) ctl.push(`<button class="primary" data-act="setup">Set up the builder</button>`);
@@ -199,7 +206,8 @@ export async function engineView(main) {
         ctl.push(`<button data-act="build" data-arch="aarch64" data-variant="generic">Build for the phone</button>`);
       }
     }
-    if (status.runner && status.runner.build) ctl.push(`<button data-act="test">Run the stage 0 test</button>`);
+    if (phone) ctl.push(`<button class="primary" data-act="syncnow">Sync builds from the PC</button>`);
+    if (status.runner && status.runner.build) ctl.push(`<button data-act="test"${status.runner.qemu ? "" : " disabled title=\"This copy of FortiTatake can't run the OS yet\""}>Test the build</button>`);
     if (running) ctl.push(`<button class="danger" data-act="stop">Stop</button>`);
     const c = $("[data-controls]", main);
     c.innerHTML = ctl.join("");
@@ -236,6 +244,12 @@ export async function engineView(main) {
     const btn = ev.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
+    if (act === "syncnow") {
+      btn.disabled = true; btn.textContent = "Syncing…";
+      try { await api("sync/now", { method: "POST" }); } catch (e) { st.error = "Sync: " + e.message; renderLive(); }
+      setTimeout(refreshStatus, 300);
+      return;
+    }
     const body = act === "build" ? { arch: btn.dataset.arch, variant: btn.dataset.variant } : {};
     try { await api("engine/" + act, { method: "POST", body }); } catch (e) { st.error = e.message; renderLive(); }
     setTimeout(refreshStatus, 300);
