@@ -39,6 +39,7 @@ type Spoke struct {
 	Content  ContentSource
 	Name     string
 	Platform string
+	OnOS     func(ev string, data map[string]any) // FortiTatake OS transfer progress
 
 	mu      sync.Mutex
 	syncMu  sync.Mutex // one sync at a time; a second caller waits and then runs its own
@@ -437,6 +438,8 @@ func (s *Spoke) syncOnce(cfg spokeFile) (*Result, string, error) {
 			}
 		}
 	}
+	// 4. FortiTatake OS: new signed ARM64 builds down, this phone's report up
+	s.syncOS(pinnedClient(cfg.FP, nil, 30*time.Minute), base, hdr)
 	return res, host, nil
 }
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/jose00735/fortitatake/internal/ftkos"
 	"github.com/jose00735/fortitatake/internal/ftsp"
 	"github.com/jose00735/fortitatake/internal/server"
 	"github.com/jose00735/fortitatake/internal/store"
@@ -42,6 +43,7 @@ func main() {
 	srv := server.New(st, ui, version)
 	srv.Content = server.NewContent(ui, *dir)
 	srv.Android = runtime.GOOS == "android"
+	srv.Engine = ftkos.New(*dir, engineAssets(), version)
 	r := *role
 	if r == "auto" {
 		r = "hub"
@@ -52,6 +54,7 @@ func main() {
 	switch r {
 	case "hub":
 		srv.Hub = ftsp.NewHub(st, *dir, srv.Content, version)
+		srv.Hub.OnOS = srv.Engine.Emit
 		if err := srv.Hub.Start(); err != nil {
 			log.Println("sync:", err)
 		}
@@ -61,6 +64,7 @@ func main() {
 			n = "Phone"
 		}
 		srv.Spoke = ftsp.NewSpoke(st, *dir, srv.Content, n, runtime.GOOS)
+		srv.Spoke.OnOS = srv.Engine.Emit
 		go srv.Spoke.Run()
 	}
 	url, err := srv.Listen(*port)

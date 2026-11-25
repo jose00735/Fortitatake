@@ -5,8 +5,9 @@ import { runSession } from "./session.js";
 import { home, review, library, moduleView, interview, progress, settings } from "./views.js";
 import { startPolling } from "./sync.js";
 import { labsHome, labView } from "./labs/view.js";
+import { engineView } from "./engine.js";
 
-const NAV = [["home", "Command", "home"], ["review", "Review", "cards"], ["library", "Library", "book"], ["labs", "Labs", "term"], ["interview", "Interview", "mic"], ["progress", "Progress", "chart"], ["settings", "Settings", "gear"]];
+const NAV = [["home", "Command", "home"], ["review", "Review", "cards"], ["library", "Library", "book"], ["labs", "Labs", "term"], ["engine", "OS", "chip"], ["interview", "Interview", "mic"], ["progress", "Progress", "chart"], ["settings", "Settings", "gear"]];
 let info = {};
 
 function shell() {
@@ -41,6 +42,7 @@ function route() {
     case "review": return review(main);
     case "labs": return labsHome(main, a);
     case "lab": return labView(main, a);
+    case "engine": return engineView(main);
     case "library": return library(main);
     case "module": return moduleView(main, a, b);
     case "interview": return interview(main, a);

@@ -1,0 +1,6 @@
+#!/bin/sh
+# The lab agent talks to FortiTatake over the virtio console (/dev/hvc0).
+case "$1" in
+  start) [ -c /dev/hvc0 ] && start-stop-daemon -S -b -m -p /run/ftk/agent.pid -x /usr/bin/ftk-agent -- --port /dev/hvc0 ;;
+  stop) start-stop-daemon -K -p /run/ftk/agent.pid ;;
+esac

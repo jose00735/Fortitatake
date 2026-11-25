@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jose00735/fortitatake/internal/ftkos"
 	"github.com/jose00735/fortitatake/internal/ftsp"
 	"github.com/jose00735/fortitatake/internal/store"
 )
@@ -30,6 +31,7 @@ type Server struct {
 	Hub     *ftsp.Hub   // set on the PC
 	Spoke   *ftsp.Spoke // set on the phone
 	Android bool
+	Engine  *ftkos.Manager // FortiTatake OS
 	ln      net.Listener
 }
 
@@ -111,6 +113,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case path == "events" && r.Method == http.MethodGet:
 		n, _ := strconv.Atoi(r.URL.Query().Get("since"))
 		writeJSON(w, 200, map[string]any{"events": s.Store.Since(n), "count": s.Store.Count()})
+
+	case strings.HasPrefix(path, "engine/") && s.Engine != nil:
+		s.Engine.API(w, r, strings.TrimPrefix(path, "engine/"))
 
 	case strings.HasPrefix(path, "sync"):
 		s.syncAPI(w, r, strings.TrimPrefix(strings.TrimPrefix(path, "sync"), "/"))

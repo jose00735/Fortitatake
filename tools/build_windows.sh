@@ -8,7 +8,12 @@ VER=$(grep -o 'var version = "v[^"]*"' main.go | sed 's/.*"v\(.*\)"/\1/')
 python3 tools/build_content.py >/dev/null
 python3 tools/build_labs.py
 if command -v node >/dev/null; then node tools/test_labs.mjs >/dev/null || { echo 'lab tests failed: run node tools/test_labs.mjs'; exit 1; }; fi
-mkdir -p dist
+mkdir -p dist ftkos/bin
+# FortiTatake OS: the lab agent (embedded, copied into each OS build) and the QEMU runner.
+for a in amd64:x86_64 arm64:aarch64; do
+  CGO_ENABLED=0 GOOS=linux GOARCH=${a%%:*} go build -trimpath -ldflags "-s -w" -o "ftkos/bin/ftk-agent-${a##*:}" ./ftkos/agent
+done
+[ -f dist/qemu-win/qemu-system-x86_64.exe ] || bash tools/build_qemu_win.sh
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/fortitatake.exe .
 (cd installer && makensis -V2 -DVERSION="$VER" -DDIST=../dist fortitatake.nsi)
 SETUP="FortiTatake-Setup-v$VER.exe"

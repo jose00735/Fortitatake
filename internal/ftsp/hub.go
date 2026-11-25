@@ -60,6 +60,7 @@ type Hub struct {
 	Dir     string
 	Content ContentSource
 	AppVer  string
+	OnOS    func(ev string, data map[string]any) // FortiTatake OS transfer progress
 
 	mu        sync.Mutex
 	cfg       hubFile
@@ -289,6 +290,9 @@ func (h *Hub) Handler() http.Handler {
 	mux.Handle("GET /v1/packs", h.auth(h.packs))
 	mux.Handle("GET /v1/packs/{id}/{version}", h.auth(h.packGet))
 	mux.Handle("DELETE /v1/devices/self", h.auth(h.unpairSelf))
+	mux.Handle("GET /v1/os", h.auth(h.osList))
+	mux.Handle("GET /v1/os/{id}/{file}", h.auth(h.osFile))
+	mux.Handle("POST /v1/os/report", h.auth(h.osReport))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if !IsLAN(net.ParseIP(host)) {
