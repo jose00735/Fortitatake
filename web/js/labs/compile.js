@@ -163,7 +163,9 @@ export function compile(lab) {
   const notes = [];
   for (const fg of devs.filter((d) => d instanceof FortiGate)) {
     const dev = topo.devices.find((x) => x.name === fg.id);
-    dev.sysctl = { "net.ipv4.conf.all.arp_ignore": "1", "net.ipv4.conf.all.rp_filter": "0", "net.ipv4.conf.default.rp_filter": "0" };
+    dev.sysctl = { "net.ipv4.conf.all.arp_ignore": "1", "net.ipv4.conf.all.rp_filter": "0", "net.ipv4.conf.default.rp_filter": "0",
+      // session list: byte/packet counters and FortiOS-like timers
+      "net.netfilter.nf_conntrack_acct": "1", "net.netfilter.nf_conntrack_tcp_timeout_established": "3600", "net.netfilter.nf_conntrack_udp_timeout_stream": "180" };
     const intfs = lab.fgtIntfs(fg);
     for (const i of intfs) {
       if (!IFOK.test(i.name)) { notes.push(`${fg.id}: interface name ${i.name} is too long for Linux`); continue; }

@@ -98,6 +98,15 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.9 adds (FortiGate diagnostics from the real network)
+
+With the lab live, these FortiGate commands read the kernel in the FortiGate's namespace and print in FortiOS format (the simulator still answers when the OS isn't running). No OS rebuild needed: the agent is unchanged.
+
+- **`diagnose debug flow`** in real time: the flow filter (`addr`, `saddr`, `daddr`, `proto`, `port`) becomes nftables rules that set `nftrace` in a separate `ftktrace` table; `trace start <n>` + `debug enable` run `nft monitor trace`, and each traced packet is translated (`realdiag.js` FlowTrace) into FortiOS lines: received a packet, allocate a new session / Find an existing session (original/reply), `iprope_dnat_check` matched or no-match with find DNAT, find a route (gateway from the compiled routes, egress from the trace), `__iprope_fwd_check`, Allowed by Policy-N (from the rule's conntrack mark) or Denied by forward policy check (policy N / 0), SNAT/DNAT, `iprope_in_check() check failed on policy 0, drop` for local-in. Stops after n packets or on `debug disable`; survives policy edits (the trace table is reinstalled after each nftables reload). Function names and line numbers are FortiOS-shaped; the decisions are the kernel's.
+- **`diagnose sys session list`** from `conntrack -L` with accounting on (bytes/packets per direction), FortiOS-like timeouts (TCP established 3600 s, UDP stream 180 s), `policy_id` from the conntrack mark, `orgin->sink` interfaces and gateway from the compiled routes, SNAT/DNAT hooks from the reply tuple, honours `diagnose sys session filter`. `diagnose sys session clear` flushes conntrack.
+- **`get router info routing-table all`** from `ip -j route`: what the kernel actually installed, with FortiOS codes; distance and priority come from the FortiGate's config (Linux has no such fields). `details` and `database` stay simulated (inactive routes never reach the kernel).
+- **pcap**: `diagnose sniffer packet` also writes a pcap (`tcpdump -w … --print`); afterwards "Download .pcap" appears next to Linux shell on that FortiGate's tab (Linux cooked v2, opens in Wireshark). On Android it saves to Downloads.
+
 ### v0.8.8 changes
 
 - **Always the real network.** The "Real network" switch is gone (Jose: always as real as possible). When this device has a build and QEMU, every lab runs live on FortiTatake OS; the simulator answers only where the OS can't (no build, the phone until it runs the OS, features not compiled yet). The status next to "Real network" says which.
@@ -152,7 +161,7 @@
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
 - **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Not in v0.8.0 (FortiGate diagnostics: v0.8.9, planned below; then): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
+Not in v0.8.0 (FortiGate diagnostics: done in v0.8.9; still to do): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
 
 ### What v0.7.3 fixes
 
@@ -276,25 +285,6 @@ Interview pool by stage: recruiter 17, hiring manager 40, technical 72.
 ### v0.8.0: FortiTatake OS
 
 A purpose-built Linux compiled from source on Jose's workstation by the FortiTatake PC app: minimal kernel (netns, veth, bridges, nftables, conntrack and helpers, XFRM, netem) plus musl, BusyBox and open-source protocol daemons (iproute2, nftables, tcpdump, dnsmasq, lighttpd, Dropbear, FRR, strongSwan, conntrackd), booting straight into the lab agent. Two signed builds from one source: x86_64 for Windows (QEMU with Windows Hypervisor Platform) and ARM64 for Android (QEMU shipped in the APK, emulated CPU), the Android build synced over Wi-Fi. Every lab device is a namespace; the agent compiles FortiOS config into Linux state and adds FortiOS behaviours (SD-WAN, FGCP, auth). Encryption keeps real algorithm names and negotiation with near-free maths underneath. Switches (VLAN-filtering bridges, RSTP, LLDP) and routers (FRR, vtysh console) are Linux namespaces too; no traffic inspection; the real Internet is reachable only for DNS and ICMP, through a relay in the app (not a VM network card); any link can be captured to pcap for Wireshark; On Android, stage 0 tries hardware virtualization (KVM/AVF if the phone allows it), then Linux as a native library (LKL), then the emulated CPU; each architecture gets a generic and a CPU-tuned build. FortiAnalyzer and FortiSIEM become lab devices with tiny web servers serving a product-like UI over real logs (no Fortinet artwork). Optimizations adopted: the FortiOS compiler, output formatting, grading and the FAZ/FSIEM consoles run natively in the app; a thin agent talks netlink and spawns no tools; read-only EROFS image; services start on first use; one FRR across routers as VRFs if stage 5 confirms it; memory balloon; one warm snapshot. Estimated lab engine RAM at most ~305 MB on Windows, ~370 MB on Android (VM paths) and ~135 MB on the LKL path. Stages 0–3 are v0.8.0 (stage 0 is a go/no-go spike). Decided: capstones and remaining modules follow as v0.9.0, the question overhaul as v0.10.0, then stages 4–7 as v0.11.0–v0.14.0. Blueprint: the "FortiTatake OS — Blueprint" doc (supersedes the Alpine-based one).
-
-### v0.8.9: FortiGate diagnostics from the real network
-
-Planned (Jose, Nov 2026). With Real network live, these FortiGate console commands read the kernel inside the FortiGate's namespace and print in FortiOS format; with it off (and on the phone until it runs the OS) the simulator answers as today. Done when each one, run in F1.01–F1.12 with the reference solutions, matches what the kernel did and keeps the FortiOS layout.
-
-1. **`diagnose debug flow`** (real time). `diagnose debug flow filter addr|saddr|daddr|proto|port …` becomes an nftables rule that sets `meta nftrace` on matching packets in the FortiGate's `ftk_pre` chain; `diagnose debug flow trace start <n>` / `stop` and `diagnose debug enable|disable` start and stop `nft monitor trace` there (through an agent shell or a dedicated `trace.start/stop` op) and stop after n packets. Each traced packet becomes FortiOS lines with one `trace_id` per packet:
-   - `print_pkt_detail … received a packet(proto=…, src:sport->dst:dport) … from <intf>` (ingress interface from the trace's `iif`);
-   - `init_ip_session_common … allocate a new session-<id>` for new conntrack entries, `resolve_ip_tuple_fast … Find an existing session, id-<id>, reply direction` / original direction for established ones;
-   - `iprope_dnat_check … ret-matched` when the VIP rule in `ftk_pre` fired (`find DNAT: IP-…, port-…`), `ret-no-match` otherwise;
-   - `__vf_ip_route_input_rcu … find a route: … gw-<nexthop> via <oif>` from the trace's `oif` (or `ip route get` in the namespace);
-   - `fw_forward_handler … Allowed by Policy-<id>` from the matched rule's `ct mark set <id>`, `Denied by forward policy check (policy 0)` when the chain's drop policy decided, `… denied by policy <id>` for a deny rule;
-   - `__ip_session_run_tuple … SNAT <src>-><nat>:<port>` / `DNAT …` from the conntrack reply tuple;
-   - local-in: `iprope_in_check() check failed on policy 0, drop` when `ftk_in` dropped it.
-   Function names, line numbers and session ids are cosmetic (FortiOS-shaped); the decisions are the kernel's. Where FortiOS and Linux would genuinely differ (NP offload hiding flows, RPF corner cases), the output carries a one-line note instead of pretending.
-2. **`diagnose sys session list`** (+ `session filter src|dst|sport|dport|proto|policy`, `session clear`) from `conntrack -L` in the namespace: proto, state, duration/expire, `policy_id` from the conntrack mark, `orgin->sink: org pre->post, reply pre->post`, NAT lines (`hook=post dir=org act=snat …`, `hook=pre dir=org act=dnat …`), packet/byte counters (enable nf_conntrack_acct). `diagnose sys session clear` flushes conntrack for the filter.
-3. **`get router info routing-table all|details|database`** from `ip -j route` (plus the compiler's knowledge of which static route ids and distances produced each entry; inactive routes stay from the simulator, since Linux never installs them), formatted with the FortiOS codes (`S*`, `C`, `[distance/priority]`, `via`, `is directly connected`).
-4. **pcap download**: `diagnose sniffer packet … 6` (or a button on any interface/link in the topology) records with `capture.start/stop` and offers the .pcap for Wireshark.
-
-Tests: extend `tools/test_labs_linux.mjs` to run each command after every part's solution and compare key fields (policy id, NAT address, egress interface, route next hop) against the probe results.
 
 ### v0.9.0: capstones and the last stages
 

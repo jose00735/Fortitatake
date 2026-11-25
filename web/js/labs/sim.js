@@ -433,6 +433,7 @@ export class Lab {
   trace(fg, pkt, lines) {
     if (this.quiet) return;
     const d = fg.dbg;
+    if (d.real) return; // FortiTatake OS traces the real packets (labs/realdiag.js)
     if (!d.enabled || d.flowCount <= 0) return;
     const f = d.flowFilter;
     if (f.addr && pkt.src !== f.addr && pkt.dst !== f.addr && pkt.origDst !== f.addr) return;

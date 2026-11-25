@@ -110,7 +110,13 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun saveFile(name: String, mime: String, text: String) {
+        fun saveFile(name: String, mime: String, text: String) = save(name, mime, text.toByteArray())
+
+        // binary files (packet captures) arrive as base64
+        @JavascriptInterface
+        fun saveFileBase64(name: String, mime: String, b64: String) = save(name, mime, android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
+
+        private fun save(name: String, mime: String, bytes: ByteArray) {
             try {
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name)
@@ -119,7 +125,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                     ?: throw IllegalStateException("no Downloads folder")
-                contentResolver.openOutputStream(uri)!!.use { it.write(text.toByteArray()) }
+                contentResolver.openOutputStream(uri)!!.use { it.write(bytes) }
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 contentResolver.update(uri, values, null, null)

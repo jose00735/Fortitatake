@@ -3,7 +3,7 @@ import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
 import { RealNet } from "./real.js";
-import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing } from "./realdiag.js";
+import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing, traceRules, FlowTrace, parseConntrack, formatSessions, formatRoutes, routeHelpers } from "./realdiag.js";
 import { intToIp, isIp } from "./net.js";
 import { api } from "../core.js";
 import { drawTopology } from "./topo.js";
@@ -108,7 +108,7 @@ function mount(main, run, opts = {}) {
   const emb = !!opts.embedded;
   const devs = run.consoleDevices();
   const firstFgt = devs.find((d) => d instanceof FortiGate) || devs[0];
-  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {}, cap: {} };
+  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {}, cap: {}, trace: {}, pcap: {} };
   const shOn = (id) => !!(ui.sh[id] && ui.sh[id].on);
   for (const d of devs) { ui.buf[d.id] = []; ui.hist[d.id] = []; }
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
@@ -144,9 +144,11 @@ function mount(main, run, opts = {}) {
   const devTabs = () => {
     const liveOn = typeof live !== "undefined" && (live.state === "live" || live.state === "apply");
     $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${shOn(d.id) ? " $" : ""}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("") +
-      `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button>`;
+      `<span class="lr-tools">` + (ui.pcap[ui.dev] && liveOn ? `<button class="lr-shellbtn" data-pcap title="The last diagnose sniffer packet capture on this FortiGate, for Wireshark">Download .pcap</button>` : "") +
+      `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button></span>`;
     $$(".lr-devtabs [data-dev]", el).forEach((b) => (b.onclick = () => selectDev(b.dataset.dev)));
     const sb = $(".lr-devtabs [data-shell]", el); if (sb) sb.onclick = () => { toggleShell(ui.dev); devTabs(); };
+    const pb = $(".lr-devtabs [data-pcap]", el); if (pb) pb.onclick = () => downloadPcap(ui.dev);
   };
   const paint = () => {
     const sh = ui.sh[ui.dev];
@@ -299,9 +301,11 @@ function mount(main, run, opts = {}) {
       if (real.net.stateKey(run.lab) !== real.net.key) {
         setLive(real.net.c ? "apply" : "boot");
         await real.net.apply(run.lab);
+        if (Object.keys(ui.trace).length) await retrace();
         if (real.net.generation !== live.gen) { live.gen = real.net.generation; for (const sh of Object.values(ui.sh)) if (sh.id) { sh.id = null; sh.text += "\n[the lab network was rebuilt; a new shell starts with your next command]\n"; } }
       }
       setLive("live");
+      await syncTracers();
       for (const [dev, c] of Object.entries(ui.cap)) {
         const r = await realCall({ op: "shell.read", shell: c.id, since: c.next });
         c.next = r.next;
@@ -316,7 +320,7 @@ function mount(main, run, opts = {}) {
           if (++c.n >= (c.s.count || Infinity)) { c.full = true; realCall({ op: "shell.signal", shell: c.id }).catch(() => {}); }
         }
         if (!r.alive) {
-          if (c.kind === "sniffer") print(dev, `\n${c.n} packets received by filter\n0 packets dropped by kernel`);
+          if (c.kind === "sniffer") { print(dev, `\n${c.n} packets received by filter\n0 packets dropped by kernel`); ui.pcap[dev] = true; devTabs(); }
           delete ui.cap[dev];
           realCall({ op: "shell.close", shell: c.id }).catch(() => {});
         }
@@ -343,12 +347,88 @@ function mount(main, run, opts = {}) {
     if (sh.on && !sh.text) sh.text = `Linux shell inside ${dev}, on the real lab network. Try: ip -br addr, ip route, ping -c 3 <ip>, traceroute <ip>, nslookup <name>, curl -sk https://<ip>, tcpdump -ni any -c 5\nType exit or press the button again to go back.\n\n`;
     paint(); inp.focus();
   };
+  // diagnose debug flow on the real packets: nftables tracing in the FortiGate, in FortiOS words
+  const syncTracers = async () => {
+    for (const fg of run.lab.devices.values()) {
+      if (!(fg instanceof FortiGate) || !fg.dbg || fg.kind !== "fortigate") continue;
+      fg.dbg.real = live.state === "live";
+      const want = fg.dbg.real && fg.dbg.enabled && fg.dbg.flowCount > 0;
+      const key = JSON.stringify(fg.dbg.flowFilter || {});
+      const t = ui.trace[fg.id];
+      if (t && (!want || t.key !== key) && !t.stopping) { t.stopping = true; realCall({ op: "shell.signal", shell: t.id }).catch(() => {}); }
+      if (want && !t) {
+        const rules = traceRules(fg.dbg.flowFilter || {}, intToIp);
+        const file = `/run/ftk/trace-${fg.id}.nft`;
+        const r = await realCall({ op: "shell.open", ns: fg.id });
+        const h = routeHelpers(real.net.c, fg.id);
+        const nt = { id: r.shell, next: 0, partial: "", key, file };
+        nt.ft = new FlowTrace({ ...h, onTrace: (lines) => {
+          if (fg.dbg.flowCount <= 0) return;
+          fg.dbg.flowCount--;
+          for (const l of lines) print(fg.id, l);
+          if (fg.id === ui.dev) paint(); else { ui.unread.add(fg.id); devTabs(); }
+        } });
+        ui.trace[fg.id] = nt;
+        await realCall({ op: "shell.write", shell: r.shell, data: `mkdir -p /run/ftk\ncat > ${file} <<'FTKEOF'\n${rules}FTKEOF\nnft delete table ip ftktrace 2>/dev/null; nft -f ${file} && nft monitor trace; nft delete table ip ftktrace 2>/dev/null; exit\n` });
+      }
+    }
+    for (const [dev, t] of Object.entries(ui.trace)) {
+      const r = await realCall({ op: "shell.read", shell: t.id, since: t.next });
+      t.next = r.next;
+      const lines = (t.partial + (r.data || "")).split("\n");
+      t.partial = lines.pop();
+      for (const l of lines) t.ft.feed(l);
+      if (!r.alive) { delete ui.trace[dev]; realCall({ op: "shell.close", shell: t.id }).catch(() => {}); }
+    }
+  };
+  // a FortiGate's nftables reload wipes the trace table: put it back
+  const retrace = async () => { for (const [dev, t] of Object.entries(ui.trace)) await realCall({ op: "ns.exec", ns: dev, argv: ["nft", "-f", t.file] }).catch(() => {}); };
+  const downloadPcap = async (dev) => {
+    try {
+      const r = await realCall({ op: "ns.exec", ns: dev, argv: ["base64", `/run/ftk/cap-${dev}.pcap`] });
+      const b64 = (r.stdout || "").replace(/\s+/g, "");
+      const name = `${dev}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.pcap`;
+      if (window.FTAndroid && window.FTAndroid.saveFileBase64) { window.FTAndroid.saveFileBase64(name, "application/vnd.tcpdump.pcap", b64); return; }
+      const bin = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([bin], { type: "application/vnd.tcpdump.pcap" }));
+      a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    } catch (e) { print(dev, `[FortiTatake OS: couldn't read the capture: ${e.message}]`); paint(); }
+  };
   // FortiGate commands that read the real network when it's live
   const realDiag = (dev, line) => {
     const fg = run.device(dev);
     if (!(fg instanceof FortiGate) || live.state !== "live" || fg.kind !== "fortigate") return false;
     const sn = parseSnifferCmd(line);
     const pg = /^\s*exec(?:u|ut|ute)?\s+ping\s+(\S+)\s*$/i.exec(line);
+    const sl = /^\s*diag(?:n|no|nos|nose)?\s+sys(?:t|te|tem)?\s+session\s+(list|clear)\s*$/i.exec(line);
+    const rt = /^\s*get\s+router\s+info\s+routing-table(?:\s+all)?\s*$/i.exec(line);
+    if (sl || rt) {
+      print(dev, run.prompt(dev) + line);
+      run.exec(dev, line); // history for the checks; the output below comes from the kernel
+      run.drain();
+      ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
+      paint();
+      const h = routeHelpers(real.net.c, dev);
+      (async () => {
+        try {
+          if (sl && sl[1].toLowerCase() === "clear") { await realCall({ op: "ns.exec", ns: dev, argv: ["conntrack", "-F"] }); }
+          else if (sl) {
+            const r = await realCall({ op: "ns.exec", ns: dev, argv: ["conntrack", "-L", "-o", "id"] });
+            const f = (fg.dbg && fg.dbg.sessFilter) || {};
+            print(dev, formatSessions(parseConntrack(r.stdout || ""), { ...h, age: (x) => Math.max(1, (x.proto === 6 ? 3600 : x.proto === 17 ? 180 : 30) - x.expire) }, f));
+          } else {
+            const r = await realCall({ op: "ns.exec", ns: dev, argv: ["ip", "-j", "route", "show"] });
+            const { active } = run.lab.fgtRoutes(fg);
+            const sim = active.map((x) => ({ k: `${intToIp(x.dst.ip)}/${x.dst.len}`, type: x.type, distance: x.distance, priority: x.priority, metric: x.metric }));
+            print(dev, formatRoutes(JSON.parse(r.stdout || "[]"), sim));
+          }
+        } catch (e) { print(dev, `[FortiTatake OS: ${e.message}]`); }
+        paint();
+      })();
+      return true;
+    }
     if (!sn && !pg) return false;
     if (ui.cap[dev]) { print(dev, run.prompt(dev) + line); print(dev, "A capture or ping is still running here: press Ctrl+C first."); paint(); return true; }
     print(dev, run.prompt(dev) + line);
@@ -362,7 +442,8 @@ function mount(main, run, opts = {}) {
       const f = safeFilter(sn.filter);
       if (f === null) { print(dev, "Invalid filter."); paint(); return true; }
       print(dev, snifferHeader(sn));
-      cmd = `tcpdump -Z root -l -n -S -tt -i any ${f ? `'${f}'` : ""} 2>/dev/null; exit`;
+      // --print with -w: FortiOS-style lines now, and a .pcap to download afterwards
+      cmd = `mkdir -p /run/ftk; tcpdump -Z root -l -n -S -tt -i any -U -w /run/ftk/cap-${dev}.pcap --print ${f ? `'${f}'` : ""} 2>/dev/null; exit`;
       cap = { kind: "sniffer", s: sn, n: 0 };
     } else {
       let dst = pg[1];
