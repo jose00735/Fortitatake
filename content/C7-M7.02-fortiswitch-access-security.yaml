@@ -3,6 +3,7 @@ title: "FortiSwitch access security: 802.1X, MAB, DHCP snooping and friends"
 stage: S7
 stage_title: "S7 · FortiSwitch (FortiSwitch Administrator)"
 order: 162
+quality: 2
 est_sessions: 1
 objectives:
   - Configure port security with 802.1X and MAB and choose VLAN outcomes
@@ -90,10 +91,10 @@ quiz:
     pretest: true
     stem: "A user's home router on a desk port starts handing out addresses. Which feature stops it?"
     options:
-      - {id: a, text: "DHCP snooping with untrusted access ports", correct: true}
-      - {id: b, text: "Storm control", why_wrong: "Rate-limits floods, not DHCP offers."}
-      - {id: c, text: "LLDP-MED", why_wrong: "Discovery."}
-      - {id: d, text: "Root guard", why_wrong: "STP."}
+      - {id: a, text: "DHCP snooping, with access ports untrusted", correct: true}
+      - {id: b, text: "Storm control on broadcast traffic per port", trap: near-miss, why_wrong: "Rate-limits floods, not DHCP offers."}
+      - {id: c, text: "Dynamic ARP inspection on the user VLAN", trap: near-miss, why_wrong: "DAI checks ARP against bindings; it doesn't stop rogue offers."}
+      - {id: d, text: "Root guard on the desk-facing ports", trap: misconception, why_wrong: "Root guard concerns STP, not DHCP."}
     explanation: "Offers from untrusted ports are dropped."
     source: "FortiSwitchOS 8.0.2 Admin Guide p. 288"
   - id: M7.02.q02
@@ -107,20 +108,21 @@ quiz:
     tier: 2
     stem: "A printer can't do 802.1X. How does it get onto a secured port?"
     options:
-      - {id: a, text: "MAB", correct: true}
-      - {id: b, text: "EAP-TLS", why_wrong: "Needs a supplicant."}
-      - {id: c, text: "Sticky MAC only", why_wrong: "Doesn't authenticate."}
-      - {id: d, text: "Disable security on that switch", why_wrong: "Opens every port."}
+      - {id: a, text: "MAC authentication bypass", correct: true}
+      - {id: b, text: "EAP-TLS with a certificate", trap: near-miss, why_wrong: "Needs a supplicant, which the printer lacks."}
+      - {id: c, text: "Sticky MAC on its access port", trap: near-miss, why_wrong: "Limits MACs but doesn't authenticate against policy."}
+      - {id: d, text: "A guest VLAN for all printers", trap: misconception, why_wrong: "Puts printers in an Internet-only network away from their users."}
     explanation: "MAB uses the MAC as identity (pair with a restricted VLAN)."
   - id: M7.02.q04
     type: multi
     tier: 3
-    stem: "Enabling DHCP snooping broke DHCP for everyone. Likely causes? Select all that apply."
+    format: "first-step"
+    stem: "Enabling DHCP snooping broke DHCP for everyone. What do you check first? Select all that apply."
     options:
-      - {id: a, text: "The uplink toward the DHCP server isn't trusted", correct: true}
-      - {id: b, text: "Option 82 inserted and the server rejects it", correct: true}
-      - {id: c, text: "Storm control is disabled", why_wrong: "Unrelated."}
-      - {id: d, text: "LLDP is enabled", why_wrong: "Unrelated."}
+      - {id: a, text: "The uplink toward the DHCP server is trusted", correct: true}
+      - {id: b, text: "The server accepts option 82 from the switch", correct: true}
+      - {id: c, text: "Storm control thresholds on the access ports", trap: irrelevant, why_wrong: "Rate limits don't single out DHCP once snooping is on."}
+      - {id: d, text: "DAI being enabled on the same VLANs as well", trap: near-miss, why_wrong: "DAI can break ARP, but DHCP failing everywhere points to trust or option 82."}
     explanation: "Trust the uplink; check option 82 handling on the server."
   - id: M7.02.q05
     type: text

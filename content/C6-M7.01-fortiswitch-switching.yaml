@@ -3,6 +3,7 @@ title: "Switching on FortiSwitch: VLANs, LAG, MCLAG and STP protection"
 stage: S7
 stage_title: "S7 · FortiSwitch (FortiSwitch Administrator)"
 order: 160
+quality: 2
 est_sessions: 1
 objectives:
   - Explain native, allowed and untagged VLANs on a switch port and predict frame handling
@@ -94,10 +95,10 @@ quiz:
     pretest: true
     stem: "A port's native VLAN is 60. A PC sends untagged frames. Which VLAN are they in?"
     options:
-      - {id: a, text: "60", correct: true}
-      - {id: b, text: "1", why_wrong: "Only if native were 1."}
-      - {id: c, text: "Dropped", why_wrong: "Untagged frames go to the native VLAN."}
-      - {id: d, text: "All allowed VLANs", why_wrong: "Untagged frames belong to one VLAN."}
+      - {id: a, text: "VLAN 60", correct: true}
+      - {id: b, text: "VLAN 1", trap: near-miss, why_wrong: "Only if the native VLAN were 1, the usual default."}
+      - {id: c, text: "Dropped", trap: misconception, why_wrong: "Untagged frames go to the native VLAN."}
+      - {id: d, text: "All VLANs", trap: misconception, why_wrong: "An untagged frame belongs to one VLAN."}
     explanation: "Native VLAN = untagged ingress."
     source: "FortiSwitchOS 8.0.2 Admin Guide p. 370"
   - id: M7.01.q02
@@ -105,10 +106,10 @@ quiz:
     tier: 2
     stem: "Someone plugs a small switch into a user port protected by BPDU guard. What happens?"
     options:
-      - {id: a, text: "The port shuts down when it receives a BPDU", correct: true}
-      - {id: b, text: "The new switch becomes root", why_wrong: "BPDU guard prevents it."}
-      - {id: c, text: "Nothing, BPDUs are forwarded", why_wrong: "They're not forwarded."}
-      - {id: d, text: "The port moves to the native VLAN", why_wrong: "It goes down."}
+      - {id: a, text: "The interface is shut down on receipt", correct: true}
+      - {id: b, text: "The new switch becomes root of the tree", trap: misconception, why_wrong: "BPDU guard stops it before it can take part."}
+      - {id: c, text: "The port blocks BPDUs but keeps passing data", trap: near-miss, why_wrong: "That's closer to BPDU filter; guard disables the port."}
+      - {id: d, text: "The port stays up and a log is raised for it", trap: near-miss, why_wrong: "A log is written, but the port also goes down."}
     explanation: "Edge ports shouldn't see BPDUs."
     source: "FortiSwitchOS 8.0.2 Admin Guide p. 276"
   - id: M7.01.q03
@@ -116,10 +117,11 @@ quiz:
     tier: 2
     stem: "Which are true about MCLAG? Select all that apply."
     options:
-      - {id: a, text: "Two switches appear as one LAG peer", correct: true}
-      - {id: b, text: "Failover doesn't depend on STP reconvergence", correct: true}
-      - {id: c, text: "It needs an inter-chassis link", correct: true}
-      - {id: d, text: "It doubles the speed of a single TCP flow", why_wrong: "Flows are hashed."}
+      - {id: a, text: "Two switches look like one LAG peer", correct: true}
+      - {id: b, text: "Failover doesn't wait on STP to converge", correct: true}
+      - {id: c, text: "It needs an inter-chassis link, ICL", correct: true}
+      - {id: d, text: "It doubles one TCP flow's top speed", trap: misconception, why_wrong: "Flows are hashed onto one member link."}
+      - {id: e, text: "It needs stacking cables between peers", trap: near-miss, why_wrong: "The ICL is ordinary ports, not a stacking interconnect."}
     explanation: "Node-level redundancy without blocked links."
     source: "FortiSwitchOS 8.0.2 Admin Guide p. 174"
   - id: M7.01.q04
@@ -128,9 +130,9 @@ quiz:
     stem: "A port keeps going up and down because of a damaged cable and STP recalculates constantly. Which feature stops it?"
     options:
       - {id: a, text: "Flap guard", correct: true}
-      - {id: b, text: "Root guard", why_wrong: "About STP root."}
-      - {id: c, text: "Storm control", why_wrong: "About traffic rates."}
-      - {id: d, text: "LLDP-MED", why_wrong: "Discovery protocol."}
+      - {id: b, text: "Root guard", trap: near-miss, why_wrong: "Root guard protects the STP root, not against a flapping link."}
+      - {id: c, text: "Loop guard", trap: near-miss, why_wrong: "Loop guard reacts to missing BPDUs, not link flaps."}
+      - {id: d, text: "Storm control", trap: misconception, why_wrong: "Storm control limits traffic rates, not link state."}
     explanation: "Flap guard shuts a flapping port."
     source: "FortiSwitchOS 8.0.2 Admin Guide p. 285"
   - id: M7.01.q05

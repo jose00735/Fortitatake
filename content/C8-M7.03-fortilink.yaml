@@ -3,6 +3,7 @@ title: "FortiLink: managing FortiSwitch from the FortiGate"
 stage: S7
 stage_title: "S7 · FortiSwitch (FortiSwitch Administrator)"
 order: 164
+quality: 2
 est_sessions: 1
 objectives:
   - Set up a FortiLink interface and authorize FortiSwitch units
@@ -95,20 +96,20 @@ quiz:
     pretest: true
     stem: "A new FortiSwitch shows as Discovered on FortiLink. What must you do before it passes user traffic?"
     options:
-      - {id: a, text: "Authorize it (fsw-wan1-admin enable)", correct: true}
-      - {id: b, text: "Reboot it", why_wrong: "Discovery already happened."}
-      - {id: c, text: "Create a policy to its management IP", why_wrong: "Not about user traffic."}
-      - {id: d, text: "Upgrade the FortiGate", why_wrong: "Unrelated."}
+      - {id: a, text: "Authorize it on the FortiGate", correct: true}
+      - {id: b, text: "Reboot it to finish discovery first", trap: misconception, why_wrong: "Discovery already happened; authorization is explicit."}
+      - {id: c, text: "Upgrade its firmware to match", trap: near-miss, why_wrong: "Often recommended, but traffic waits on authorization."}
+      - {id: d, text: "Assign it to a FortiLink VDOM", trap: near-miss, why_wrong: "VDOM placement doesn't replace authorizing the switch."}
     explanation: "Authorization is explicit."
   - id: M7.03.q02
     type: single
     tier: 2
     stem: "A scanner on a managed switch port gets 10.255.1.37 instead of a scanner VLAN address. Cause?"
     options:
-      - {id: a, text: "The port's native VLAN isn't set, so it's in the FortiLink native VLAN", correct: true}
-      - {id: b, text: "The scanner VLAN's DHCP scope is full", why_wrong: "It would get no address."}
-      - {id: c, text: "The switch isn't authorized", why_wrong: "Then it would get nothing."}
-      - {id: d, text: "A missing policy", why_wrong: "Policies don't choose addresses."}
+      - {id: a, text: "The port's native VLAN isn't set, so it sits in the FortiLink VLAN", correct: true}
+      - {id: b, text: "The scanner VLAN's DHCP scope is full, so another DHCP server answered", trap: near-miss, why_wrong: "A full scope gives no address, not one from 10.255.1.0."}
+      - {id: c, text: "The switch isn't authorized, so ports fall back to a default VLAN", trap: near-miss, why_wrong: "An unauthorized switch passes no user traffic at all."}
+      - {id: d, text: "A firewall policy is missing between the scanner VLAN and DHCP", trap: misconception, why_wrong: "Policies don't decide which subnet a client gets."}
     explanation: "10.255.1.x is the FortiLink subnet."
   - id: M7.03.q03
     type: multi
@@ -116,9 +117,10 @@ quiz:
     stem: "Which are configured on the FortiGate in FortiLink mode? Select all that apply."
     options:
       - {id: a, text: "Switch port native VLANs", correct: true}
-      - {id: b, text: "VLAN gateway IPs", correct: true}
-      - {id: c, text: "Policies between VLANs", correct: true}
-      - {id: d, text: "Nothing: the switch keeps its own config", why_wrong: "The FortiGate pushes it."}
+      - {id: b, text: "VLAN gateway IP addresses", correct: true}
+      - {id: c, text: "Policies between the VLANs", correct: true}
+      - {id: d, text: "Nothing: switches keep theirs", trap: misconception, why_wrong: "In FortiLink mode the FortiGate pushes the config."}
+      - {id: e, text: "The switches' local admin GUI", trap: near-miss, why_wrong: "Managed switches are configured from the FortiGate, not their GUI."}
     explanation: "Central management is the point."
   - id: M7.03.q04
     type: text

@@ -3,6 +3,7 @@ title: "Identity and access: directories, AAA, federation and MFA"
 stage: S3
 stage_title: "S3 · Security, crypto, identity and the threat landscape"
 order: 142
+quality: 2
 est_sessions: 1
 objectives:
   - Tell authentication, authorization and accounting apart and map them to RADIUS, TACACS+ and LDAP
@@ -160,9 +161,9 @@ quiz:
     stem: "Which protocol lets you authorize each CLI command a network admin runs?"
     options:
       - {id: a, text: "TACACS+", correct: true}
-      - {id: b, text: "RADIUS", why_wrong: "RADIUS combines authn and authz in one exchange, not per command."}
-      - {id: c, text: "LDAP", why_wrong: "A directory protocol."}
-      - {id: d, text: "SAML", why_wrong: "Web SSO."}
+      - {id: b, text: "RADIUS", trap: near-miss, why_wrong: "RADIUS combines authentication and authorization in one exchange, not per command."}
+      - {id: c, text: "LDAPS", trap: misconception, why_wrong: "A directory protocol; it doesn't authorize commands."}
+      - {id: d, text: "Kerberos", trap: misconception, why_wrong: "Authenticates users; command authorization isn't part of it."}
     explanation: "TACACS+ separates AAA and supports command authorization."
   - id: M3.04.q02
     type: single
@@ -170,20 +171,21 @@ quiz:
     pretest: true
     stem: "In SAML SP-initiated login, where does the user type the password?"
     options:
-      - {id: a, text: "At the IdP", correct: true}
-      - {id: b, text: "At the SP", why_wrong: "The SP never sees it."}
-      - {id: c, text: "In the assertion", why_wrong: "The assertion carries identity, not the password."}
-      - {id: d, text: "On the FortiGate captive portal form", why_wrong: "The portal redirects to the IdP."}
+      - {id: a, text: "At the IdP's sign-in page", correct: true}
+      - {id: b, text: "At the SP, which relays it", trap: misconception, why_wrong: "The SP never sees the password."}
+      - {id: c, text: "Inside the signed assertion", trap: near-miss, why_wrong: "The assertion carries identity and attributes, not the password."}
+      - {id: d, text: "On the FortiGate portal form", trap: near-miss, why_wrong: "The portal redirects to the IdP for the password."}
     explanation: "The SP redirects to the IdP, which authenticates and returns a signed assertion."
   - id: M3.04.q03
     type: multi
     tier: 2
     stem: "Which MFA methods are phishing-resistant? Select all that apply."
     options:
-      - {id: a, text: "FIDO2 security key", correct: true}
-      - {id: b, text: "Passkey", correct: true}
-      - {id: c, text: "TOTP code", why_wrong: "Can be relayed by a fake page."}
-      - {id: d, text: "SMS code", why_wrong: "Can be intercepted or relayed."}
+      - {id: a, text: "A FIDO2 security key", correct: true}
+      - {id: b, text: "A synced passkey", correct: true}
+      - {id: c, text: "A TOTP app code", trap: near-miss, why_wrong: "A fake page can relay the code in real time."}
+      - {id: d, text: "An SMS one-time code", trap: misconception, why_wrong: "Can be intercepted or relayed."}
+      - {id: e, text: "A push with number match", trap: near-miss, why_wrong: "Number matching stops fatigue attacks, but a proxy page can still relay the session."}
     explanation: "Origin-bound or key-bound methods resist phishing."
   - id: M3.04.q04
     type: single
@@ -191,9 +193,9 @@ quiz:
     stem: "In 802.1X, the laptop is the…"
     options:
       - {id: a, text: "Supplicant", correct: true}
-      - {id: b, text: "Authenticator", why_wrong: "That's the switch or AP."}
-      - {id: c, text: "Authentication server", why_wrong: "That's RADIUS."}
-      - {id: d, text: "Relay agent", why_wrong: "A DHCP term."}
+      - {id: b, text: "Authenticator", trap: near-miss, why_wrong: "That's the switch or AP."}
+      - {id: c, text: "Auth server", trap: near-miss, why_wrong: "That role belongs to the RADIUS server."}
+      - {id: d, text: "Relay agent", trap: misconception, why_wrong: "A DHCP term, not an 802.1X role."}
     explanation: "Supplicant ↔ authenticator (EAPOL) ↔ RADIUS server."
   - id: M3.04.q05
     type: order
@@ -206,10 +208,10 @@ quiz:
     tier: 2
     stem: "A user is disabled in Entra ID but still exists in an app's local user list. What solves this class of problem?"
     options:
-      - {id: a, text: "SCIM provisioning", correct: true}
-      - {id: b, text: "Longer SAML assertion lifetime", why_wrong: "Makes it worse."}
-      - {id: c, text: "RADIUS accounting", why_wrong: "Records usage, doesn't deprovision."}
-      - {id: d, text: "LDAP anonymous bind", why_wrong: "Unrelated, and usually refused."}
+      - {id: a, text: "SCIM provisioning from the IdP", correct: true}
+      - {id: b, text: "A shorter SAML session lifetime", trap: near-miss, why_wrong: "Limits how long a session lasts, but the local account stays."}
+      - {id: c, text: "RADIUS accounting for the app", trap: misconception, why_wrong: "Records usage; it doesn't deprovision accounts."}
+      - {id: d, text: "A nightly LDAP sync to the app", trap: near-miss, why_wrong: "Works for LDAP-capable apps, but Entra ID SaaS apps use SCIM."}
     explanation: "SCIM pushes joins, changes and removals from the IdP to the SP."
   - id: M3.04.q07
     type: text
@@ -222,12 +224,23 @@ quiz:
     tier: 3
     stem: "Why does Fortinet suggest RADSEC for RADIUS?"
     options:
-      - {id: a, text: "Classic RADIUS only protects the password attribute; RADSEC wraps everything in TLS", correct: true}
-      - {id: b, text: "RADIUS can't carry group attributes", why_wrong: "VSAs carry them."}
-      - {id: c, text: "RADSEC is faster over UDP", why_wrong: "It runs over TLS/TCP."}
-      - {id: d, text: "NPS requires it", why_wrong: "Not a requirement."}
+      - {id: a, text: "Classic RADIUS protects the password alone; RADSEC wraps it all in TLS", correct: true}
+      - {id: b, text: "RADIUS can't carry group attributes, which RADSEC then adds through VSAs", trap: misconception, why_wrong: "Vendor-specific attributes already carry groups in RADIUS."}
+      - {id: c, text: "RADSEC is faster, because it runs over UDP with fewer retransmissions", trap: near-miss, why_wrong: "RADSEC runs over TLS on TCP, for security, not speed."}
+      - {id: d, text: "RADSEC adds server failover, which plain RADIUS doesn't offer at all today", trap: near-miss, why_wrong: "RADIUS already supports several servers; RADSEC is about protecting the exchange."}
     explanation: "Confidentiality and integrity for the whole exchange."
     source: "FortiOS 8.0.2 Admin Guide pp. 3905, 3987"
+  - id: M3.04.q09
+    type: single
+    tier: 3
+    format: first-step
+    stem: "Users intermittently get 'assertion not yet valid' errors signing in to an SP through SAML. What do you check first?"
+    options:
+      - {id: a, text: "Clock sync between the IdP and the SP, as assertions carry validity times", correct: true}
+      - {id: b, text: "The IdP's signing certificate, which may be close to its expiry date", trap: near-miss, why_wrong: "An expired cert fails every login with a signature error, not intermittently on time."}
+      - {id: c, text: "A longer assertion lifetime on the IdP so that the late arrivals still pass", trap: near-miss, why_wrong: "'Not yet valid' means the assertion looks early; lifetime doesn't fix skew."}
+      - {id: d, text: "Switching to IdP-initiated login so the SP stops checking the times", trap: misconception, why_wrong: "The SP validates times in both flows."}
+    explanation: "NotBefore/NotOnOrAfter are checked against the SP's clock; skew makes fresh assertions look early or expired."
 
 labs:
   - id: M3.04.lab1
