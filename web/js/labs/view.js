@@ -4,8 +4,10 @@ import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
 import { RealNet } from "./real.js";
 import { RealLogs } from "./reallog.js";
+import { realHostCmd, realRouterCmd } from "./realcli.js";
+import { parseRemoteCmd, connectError, connectedLines, passPrompt, closedLine, ServerSession } from "./remote.js";
 import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing, traceRules, FlowTrace, parseConntrack, formatSessions, formatRoutes, routeHelpers } from "./realdiag.js";
-import { intToIp, isIp } from "./net.js";
+import { intToIp, ipToInt, isIp } from "./net.js";
 import { api } from "../core.js";
 import { drawTopology } from "./topo.js";
 import { FortiGate } from "./fgt.js";
@@ -109,9 +111,15 @@ function mount(main, run, opts = {}) {
   const emb = !!opts.embedded;
   const devs = run.consoleDevices();
   const firstFgt = devs.find((d) => d instanceof FortiGate) || devs[0];
-  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {}, cap: {}, trace: {}, pcap: {} };
+  const ui = { dev: firstFgt.id, buf: {}, hist: {}, hi: {}, unread: new Set(), view: "ticket", sh: {}, cap: {}, trace: {}, pcap: {}, rem: {}, known: new Set(), hub: {} };
   const shOn = (id) => !!(ui.sh[id] && ui.sh[id].on);
   for (const d of devs) { ui.buf[d.id] = []; ui.hist[d.id] = []; }
+  // what a real console shows when it opens
+  for (const d of devs) {
+    if (d.os === "windows" && (d.kind === "host" || d.kind === "server")) ui.buf[d.id].push("Microsoft Windows [Version 10.0.19045.6466]", "(c) Microsoft Corporation. All rights reserved.", "");
+    else if (d.kind === "host" || d.kind === "server") ui.buf[d.id].push(`Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.8.0-48-generic x86_64)`, "");
+    else if (d.kind === "router") ui.buf[d.id].push("", `User Access Verification`, "", `${d.id} line 0 is now available`, "");
+  }
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
   else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ${d.label || "router"}. Type help for its commands.` : `${d.id} (${d.os}) · type help`, "");
 
@@ -155,7 +163,10 @@ function mount(main, run, opts = {}) {
     const sh = ui.sh[ui.dev];
     out.textContent = shOn(ui.dev) ? sh.text : ui.buf[ui.dev].join("\n");
     out.scrollTop = out.scrollHeight;
-    prompt.textContent = shOn(ui.dev) ? `${ui.dev} (Linux) # ` : run.prompt(ui.dev);
+    const rs = ui.rem[ui.dev];
+    prompt.textContent = rs ? rs.pending : shOn(ui.dev) ? `${ui.dev} (Linux) # ` : run.prompt(ui.dev);
+    const masked = !!rs && (rs.stage === "pass" || /password: ?$/i.test(rs.pending));
+    if (inp.type !== (masked ? "password" : "text")) inp.type = masked ? "password" : "text";
   };
   const print = (dev, text) => {
     const b = ui.buf[dev];
@@ -178,8 +189,11 @@ function mount(main, run, opts = {}) {
   };
   const exec = (line) => {
     const dev = ui.dev;
+    if (ui.rem[dev]) { remLine(dev, line); return; }
     if (shOn(dev)) { shellLine(dev, line); return; }
+    if (remoteCmd(dev, line)) return;
     if (realDiag(dev, line)) return;
+    if (realDevCmd(dev, line)) return;
     print(dev, run.prompt(dev) + line);
     if (line.trim() === "clear" || line.trim() === "cls") { ui.buf[dev] = []; paint(); return; }
     const r = run.exec(dev, line);
@@ -191,7 +205,7 @@ function mount(main, run, opts = {}) {
   };
   inp.addEventListener("keydown", (e) => {
     const dev = run.device(ui.dev);
-    const isFgt = dev instanceof FortiGate && !shOn(ui.dev);
+    const isFgt = dev instanceof FortiGate && !shOn(ui.dev) && !ui.rem[ui.dev];
     if (e.key === "Enter") { e.preventDefault(); const v = inp.value; inp.value = ""; exec(v); }
     else if (e.key === "Tab") {
       e.preventDefault();
@@ -212,6 +226,7 @@ function mount(main, run, opts = {}) {
       inp.value = hs[ui.hi[ui.dev]] || "";
     } else if ((e.key === "c" || e.key === "C") && e.ctrlKey) {
       e.preventDefault();
+      if (ui.rem[ui.dev]) { const rs = ui.rem[ui.dev]; print(ui.dev, rs.pending + (rs.stage === "pass" ? "" : inp.value) + "^C"); inp.value = ""; if (rs.stage !== "open") { rs.pending = ""; remEnd(ui.dev, true); } paint(); return; }
       if (ui.cap[ui.dev]) { const c = ui.cap[ui.dev]; print(ui.dev, inp.value + "^C"); inp.value = ""; c.stopping = true; realCall({ op: "shell.signal", shell: c.id }).catch(() => {}); paint(); return; }
       if (shOn(ui.dev)) { const sh = ui.sh[ui.dev]; sh.text += inp.value + "^C\n"; inp.value = ""; if (sh.id) realCall({ op: "shell.signal", shell: sh.id }).catch(() => {}); paint(); return; }
       print(ui.dev, run.prompt(ui.dev) + inp.value + "^C" + run.stopCapture(ui.dev));
@@ -292,6 +307,7 @@ function mount(main, run, opts = {}) {
     live.shown = st === "live" || st === "apply";
     if (!live.shown && run.lab.realLog) { run.lab.realLog.stop(); run.lab.realLog = null; }
     if (!live.shown) for (const d of Object.keys(ui.sh)) ui.sh[d].on = false;
+    if (!live.shown) for (const [d, rs] of Object.entries(ui.rem)) if (rs.session) remEnd(d);
     if (was !== live.shown) { devTabs(); paint(); }
   };
   const liveTick = async () => {
@@ -312,9 +328,13 @@ function mount(main, run, opts = {}) {
           // traces and captures were running in the old namespaces
           for (const [d, t] of Object.entries(ui.trace)) { realCall({ op: "shell.close", shell: t.id }).catch(() => {}); delete ui.trace[d]; }
           for (const [d, cp] of Object.entries(ui.cap)) { realCall({ op: "shell.close", shell: cp.id }).catch(() => {}); delete ui.cap[d]; print(d, "[the lab network was rebuilt; run the command again]"); }
+          for (const [d, rs] of Object.entries(ui.rem)) if (rs.session) remEnd(d);
+          for (const k of Object.keys(ui.hub)) if (ui.hub[k] instanceof ServerSession) delete ui.hub[k];
         }
       }
       setLive("live");
+      // sessions that arrive from a Linux shell (busybox telnet), or any open one
+      if (Date.now() - (live.conAt || 0) > 1500) { live.conAt = Date.now(); await remPoll(); if (Object.keys(ui.hub).some((x) => ui.hub[x] instanceof ServerSession)) remFast(); }
       await syncTracers();
       // SecOps: logs from the kernel, shipped over the lab network, collected where they arrive
       if (!run.lab.realLog) run.lab.realLog = new RealLogs(run.lab, realCall);
@@ -408,6 +428,187 @@ function mount(main, run, opts = {}) {
       a.download = name; document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     } catch (e) { print(dev, `[FortiTatake OS: couldn't read the capture: ${e.message}]`); paint(); }
+  };
+  // ----- SSH and Telnet between lab devices -----
+  const REALCMD = /^(ping|tracert|traceroute|tr|pathping|arp|route|netstat|ss|uname|ip|sh|show)\b/i;
+  const localUser = (d) => (d.spec && d.spec.user) || (d.os === "windows" ? "User" : "admin");
+  // the prompt a remote user gets on a device
+  const remotePrompt = (devId, user) => {
+    const d = run.device(devId);
+    if (d.kind === "host" || d.kind === "server") return d.os === "windows" ? `C:\\Users\\${user}>` : `${user}@${d.hostname.toLowerCase()}:~$ `;
+    return run.prompt(devId);
+  };
+  // a command typed in a remote session, answered by the device it arrived at
+  const remoteAnswer = async (devId, line) => {
+    const d = run.device(devId);
+    if (live.state === "live" && ["host", "server", "router"].includes(d.kind) && REALCMD.test(line.trim())) {
+      try { const o = d.kind === "router" ? await realRouterCmd(realCall, run.lab, d, line) : await realHostCmd(realCall, run.lab, d, line); if (o !== null) { run.log.push({ dev: devId, line }); return o; } } catch (e) { /* the simulator answers */ }
+    }
+    const o = run.exec(devId, line);
+    pump();
+    return o;
+  };
+  const remData = (dev, text) => {
+    const rs = ui.rem[dev];
+    if (!rs) return;
+    const parts = (rs.pending + String(text).replace(/\r/g, "")).split("\n");
+    rs.pending = parts.pop();
+    if (parts.length) print(dev, parts.join("\n"));
+    if (dev === ui.dev) paint(); else { ui.unread.add(dev); devTabs(); }
+  };
+  const remEnd = (dev, quiet) => {
+    const rs = ui.rem[dev];
+    if (!rs) return;
+    delete ui.rem[dev];
+    if (rs.session) realCall({ op: "remote.close", session: rs.session }).catch(() => {});
+    if (rs.pending) print(dev, rs.pending);
+    if (!quiet) print(dev, closedLine(run.device(dev), rs));
+    if (dev === ui.dev) paint(); else { ui.unread.add(dev); devTabs(); }
+  };
+  const remConnected = (dev, rs, info) => {
+    const d = run.device(dev);
+    const L = connectedLines(d, rs, info || {}, ui.known.has(`${dev}>${rs.dst}`));
+    if (L.length) print(dev, L.join("\n"));
+    ui.known.add(`${dev}>${rs.dst}`);
+    if (rs.proto === "ssh") { rs.stage = "pass"; rs.pending = passPrompt(d, rs); rs.tries = 0; }
+    else { rs.stage = "open"; if (rs.server) rs.server.start(); }
+    if (dev === ui.dev) paint();
+  };
+  const remoteCmd = (dev, line) => {
+    const d = run.device(dev);
+    if (!d || d.kind === "cloud") return false;
+    const r = parseRemoteCmd(d, line, localUser(d).toLowerCase());
+    if (!r) return false;
+    print(dev, run.prompt(dev) + line);
+    run.log.push({ dev, line });
+    ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
+    if (r.error) { print(dev, r.error); paint(); return true; }
+    let dst = r.host;
+    if (!isIp(dst)) {
+      const ip = run.lab.lookupName(dst);
+      if (!ip) {
+        print(dev, d.kind === "router" ? "% Unknown command or computer name, or unable to find computer address" : r.proto === "ssh" ? `ssh: Could not resolve hostname ${dst}: ${d.os === "windows" ? "No such host is known." : "Name or service not known"}` : d.os === "windows" ? `Connecting To ${dst}...Could not open connection to the host, on port ${r.port}: Connect failed` : `telnet: could not resolve ${dst}/${r.port}: Name or service not known`);
+        paint(); return true;
+      }
+      dst = intToIp(ip);
+    }
+    const rs = { ...r, dst, stage: "connecting", pending: "" };
+    ui.rem[dev] = rs;
+    paint();
+    if (live.state === "live") {
+      (async () => {
+        try {
+          const o = await realCall({ op: "remote.open", ns: dev, dst, port: r.port, proto: r.proto, user: r.user }, 15000);
+          if (ui.rem[dev] !== rs) { if (o.session) realCall({ op: "remote.close", session: o.session }).catch(() => {}); return; }
+          if (o.error) { delete ui.rem[dev]; print(dev, connectError(d, rs, o.error)); paint(); return; }
+          rs.session = o.session;
+          remConnected(dev, rs, o.info);
+          remFast();
+        } catch (e) {
+          // an OS build from before v0.8.12 has no remote.* ops: the session runs in the simulator
+          if (/unknown op/i.test(e.message) && ui.rem[dev] === rs) { if (!ui.oldOs) { ui.oldOs = true; print(dev, "[FortiTatake OS: this build is older than v0.8.12, so SSH and Telnet run in the simulator. Rebuild the OS to carry them on the real network.]"); } simOpen(dev, d, r, rs, dst); return; }
+          delete ui.rem[dev]; print(dev, `[FortiTatake OS: ${e.message}]`); paint();
+        }
+      })();
+      return true;
+    }
+    simOpen(dev, d, r, rs, dst);
+    return true;
+  };
+  // simulator: a TCP probe decides whether the port answers, then the session runs in the app
+  const simOpen = (dev, d, r, rs, dst) => {
+    const req = { dst: ipToInt(dst), proto: 6, dport: r.port };
+    if (d.kind === "router") { const i = d.ifaces.find((x) => x.prefix && (ipToInt(dst) >>> (32 - x.prefix.len)) === (x.prefix.ip >>> (32 - x.prefix.len))) || d.ifaces.find((x) => x.prefix); if (i) req.src = i.prefix.ip; }
+    const res = run.lab.probe(dev, req);
+    pump();
+    if (!res.ok) {
+      delete ui.rem[dev];
+      const why = res.drop && res.drop.refused ? "refused" : res.drop && /route/i.test(res.drop.reason || "") ? "no route" : "timeout";
+      setTimeout(() => { print(dev, connectError(d, rs, why)); paint(); }, why === "timeout" ? 1500 : 150);
+      return true;
+    }
+    const target = run.device(res.reached);
+    if (!target || target.kind === "cloud") { delete ui.rem[dev]; print(dev, r.proto === "ssh" ? "kex_exchange_identification: Connection closed by remote host" : "Connection closed by foreign host."); paint(); return true; }
+    rs.server = new ServerSession({ dev: target, proto: r.proto, user: r.user, from: res.seenSrc !== undefined ? intToIp(res.seenSrc) : "", prompt: (u) => remotePrompt(target.id, u), answer: (l) => remoteAnswer(target.id, l), write: (t) => remData(dev, t), close: () => setTimeout(() => remEnd(dev), 0) });
+    const fp = "SHA256:" + btoa(String.fromCharCode(...Array.from(target.id + dst, (c) => c.charCodeAt(0) & 255).concat(Array(32).fill(0)).slice(0, 32))).replace(/=+$/, "");
+    setTimeout(() => ui.rem[dev] === rs && remConnected(dev, rs, { server: { windows: "SSH-2.0-OpenSSH_for_Windows_9.5", linux: "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5", ios: "SSH-2.0-Cisco-1.25", fortios: "SSH-2.0-FortiSSH_7.4" }[rs.server.kind], kex: "curve25519-sha256", hostkey: "ssh-ed25519", cipher: "chacha20-poly1305@openssh.com", fingerprint: fp }), 120);
+    return true;
+  };
+  const remLine = (dev, line) => {
+    const rs = ui.rem[dev];
+    if (rs.stage === "connecting") return;
+    if (line.trim() === "~.") { print(dev, rs.pending + line); rs.pending = ""; remEnd(dev); return; }
+    const masked = rs.stage === "pass" || /password: ?$/i.test(rs.pending);
+    print(dev, rs.pending + (masked ? "" : line));
+    rs.pending = "";
+    if (!masked && line.trim()) { ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length; }
+    if (rs.stage === "pass") {
+      if (!line) {
+        const d = run.device(dev);
+        if (++rs.tries >= 3) { print(dev, d.kind === "router" ? "% Authentication failed." : `${rs.user}@${rs.host}: Permission denied (publickey,password,keyboard-interactive).`); rs.pending = ""; remEnd(dev, true); paint(); return; }
+        print(dev, d.kind === "router" ? "% Authentication failed." : "Permission denied, please try again.");
+        rs.pending = passPrompt(d, rs); paint(); return;
+      }
+      rs.stage = "open";
+      if (rs.server) { rs.server.start(); paint(); return; }
+    }
+    paint();
+    if (rs.server) { rs.server.line(line); return; }
+    realCall({ op: "remote.send", session: rs.session, line }).then((w) => { if (!w.alive) remEnd(dev); }).catch(() => remEnd(dev));
+  };
+  // client sessions are read and arriving sessions answered every 250 ms while any is open
+  const remPoll = async () => {
+    if (ui.hub.busy || live.state !== "live") return;
+    ui.hub.busy = true;
+    try {
+      for (const [dev, rs] of Object.entries(ui.rem)) {
+        if (!rs.session) continue;
+        const r = await realCall({ op: "remote.read", session: rs.session }).catch(() => ({ alive: false, data: "" }));
+        if (ui.rem[dev] !== rs) continue;
+        if (r.data) remData(dev, r.data);
+        if (!r.alive) remEnd(dev);
+      }
+      const p = await realCall({ op: "console.poll" }).catch(() => ({ events: [] }));
+      for (const ev of p.events || []) {
+        if (ev.kind === "open") {
+          const d = run.device(ev.ns);
+          if (!d) { realCall({ op: "console.reply", sid: ev.sid, close: "1" }).catch(() => {}); continue; }
+          const s = new ServerSession({ dev: d, proto: ev.proto, user: ev.user || "", from: ev.from, prompt: (u) => remotePrompt(d.id, u), answer: (l) => remoteAnswer(d.id, l),
+            write: (t) => realCall({ op: "console.reply", sid: ev.sid, text: t }).catch(() => {}), close: () => { realCall({ op: "console.reply", sid: ev.sid, close: "1" }).catch(() => {}); delete ui.hub[ev.sid]; } });
+          ui.hub[ev.sid] = s;
+          s.start();
+        } else if (ev.kind === "line" && ui.hub[ev.sid]) ui.hub[ev.sid].line(ev.line);
+        else if (ev.kind === "close") delete ui.hub[ev.sid];
+      }
+    } finally { ui.hub.busy = false; }
+  };
+  const remFast = () => {
+    if (ui.hub.timer) return;
+    ui.hub.timer = setInterval(() => {
+      const active = Object.values(ui.rem).some((x) => x.session) || Object.keys(ui.hub).some((k) => ui.hub[k] instanceof ServerSession);
+      if (!document.body.contains(el) || !active) { clearInterval(ui.hub.timer); ui.hub.timer = null; return; }
+      remPoll();
+    }, 250);
+  };
+
+  // PCs, servers and ISP routers: troubleshooting commands answered from the real network
+  const realDevCmd = (dev, line) => {
+    const d = run.device(dev);
+    if (live.state !== "live" || !d || !["host", "server", "router"].includes(d.kind) || !line.trim() || /^(cls|clear)$/i.test(line.trim())) return false;
+    if (!REALCMD.test(line.trim())) return false;
+    const simOut = run.exec(dev, line); // history and checks; also the answer if the OS can't give one
+    run.drain();
+    print(dev, run.prompt(dev) + line);
+    ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
+    paint();
+    (async () => {
+      let out = null;
+      try { out = d.kind === "router" ? await realRouterCmd(realCall, run.lab, d, line) : await realHostCmd(realCall, run.lab, d, line); }
+      catch (e) { out = null; }
+      print(dev, out !== null ? out : simOut);
+      if (dev === ui.dev) paint(); else { ui.unread.add(dev); devTabs(); }
+    })();
+    return true;
   };
   // FortiGate commands that read the real network when it's live
   const realDiag = (dev, line) => {

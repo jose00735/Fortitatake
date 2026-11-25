@@ -106,6 +106,8 @@ func listenStart(r req) (map[string]any, error) {
 		pf, _ := m["port"].(float64)
 		port := int(pf)
 		keep, _ := m["keep"].(bool)
+		mode, _ := m["mode"].(string)     // "ssh" or "telnet": a remote console bridged to FortiTatake
+		banner, _ := m["banner"].(string) // the SSH version string the device announces
 		if ip == "" {
 			ip = "0.0.0.0"
 		}
@@ -123,7 +125,19 @@ func listenStart(r req) (map[string]any, error) {
 				n.mu.Lock()
 				n.closers = append(n.closers, l)
 				n.mu.Unlock()
-				go serveTCP(n, l, port, keep)
+				if mode == "ssh" || mode == "telnet" {
+					go func() {
+						for {
+							c, err := l.Accept()
+							if err != nil {
+								return
+							}
+							go serveRemote(n, ns, c, port, mode, banner)
+						}
+					}()
+				} else {
+					go serveTCP(n, l, port, keep)
+				}
 			case "udp":
 				c, err := net.ListenPacket("udp4", addr)
 				if err != nil {
@@ -243,7 +257,7 @@ func dnsAnswer(n *nsListen, q []byte) []byte {
 	n.mu.Unlock()
 	out := append([]byte{}, q[:qend]...)
 	out[2] = 0x81 | (q[2] & 0x01) // response, recursion desired echoed
-	out[3] = 0x80                // recursion available
+	out[3] = 0x80                 // recursion available
 	binary.BigEndian.PutUint16(out[6:], 0)
 	binary.BigEndian.PutUint16(out[8:], 0)
 	binary.BigEndian.PutUint16(out[10:], 0)

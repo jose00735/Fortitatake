@@ -22,6 +22,8 @@ var labOps = map[string]time.Duration{
 	"capture.start": 10 * time.Second, "capture.stop": 20 * time.Second,
 	"shell.open": 10 * time.Second, "shell.write": 5 * time.Second, "shell.read": 5 * time.Second,
 	"shell.signal": 5 * time.Second, "shell.close": 5 * time.Second, "send": 8 * time.Second,
+	"console.poll": 5 * time.Second, "console.reply": 5 * time.Second,
+	"remote.open": 15 * time.Second, "remote.send": 5 * time.Second, "remote.read": 5 * time.Second, "remote.close": 5 * time.Second,
 }
 
 func (m *Manager) labVM() (*VM, error) {

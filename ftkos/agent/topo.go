@@ -215,6 +215,7 @@ func listNS() []string {
 
 func topoClear() (map[string]any, error) {
 	stopAllShells()
+	stopAllRemote()
 	stopAllSenders()
 	stopAllListeners()
 	stopAllServices()

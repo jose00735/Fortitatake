@@ -112,7 +112,8 @@ export class LabRun {
     if (d.kind === "fortiswitch") return `${d.id} # `;
     if (d.kind === "fortisiem") return `FortiSIEM ${d.id}> `;
     if (d.kind === "fortiedr") return `FortiEDR ${d.id}> `;
-    return d.os === "windows" ? `C:\\Users\\${d.hostname.toLowerCase()}> ` : `${d.hostname.toLowerCase()}@lab:~$ `;
+    const user = (d.spec && d.spec.user) || (d.os === "windows" ? "User" : "admin");
+    return d.os === "windows" ? `C:\\Users\\${user}>` : `${user}@${d.hostname.toLowerCase()}:~$ `;
   }
   // async output (debug flow, sniffer) collected per FortiGate since last call
   drain() {

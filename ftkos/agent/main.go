@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.8.0"
+const agentVersion = "0.8.12"
 
 var started = time.Now()
 
@@ -185,6 +185,18 @@ func dispatch(r req) (map[string]any, error) {
 		return shellSignal(r)
 	case "shell.close":
 		return shellClose(r)
+	case "console.poll":
+		return consolePoll(r)
+	case "console.reply":
+		return consoleReply(r)
+	case "remote.open":
+		return remoteOpen(r)
+	case "remote.send":
+		return remoteSend(r)
+	case "remote.read":
+		return remoteRead(r)
+	case "remote.close":
+		return remoteClose(r)
 	case "bench":
 		return bench(r)
 	case "mem":

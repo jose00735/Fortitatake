@@ -312,8 +312,8 @@ export function hostRun(lab, h, line) {
   const c = t[0].toLowerCase();
   const win = h.os === "windows";
   if (c === "help" || c === "?") return win
-    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, nslookup <name>, curl [-k] [-I] <url>, tnc <host> -port <n>, login <user> <password>, forticlient connect|status|disconnect, cls"
-    : "Commands: ip a, ip route, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, login <user> <password>, clear";
+    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, pathping <host>, nslookup <name>, arp -a, route print, netstat -ano, curl [-k] [-I] <url>, tnc <host> -port <n>, ssh <user>@<host>, telnet <host> [port], ver, systeminfo, hostname, login <user> <password>, forticlient connect|status|disconnect, cls"
+    : "Commands: ip a, ip route, ip neigh, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, ss -tuln, uname [-a], cat /etc/resolv.conf, ssh <user>@<host>, telnet <host> [port], hostname, login <user> <password>, clear";
   if (c === "ipconfig" || (c === "ip" && t[1] && "address".startsWith(t[1])) || c === "ifconfig") {
     if (t[1] && t[1].toLowerCase() === "/renew") { const ok = lab.renew(h); if (!ok) return "An error occurred while renewing interface Ethernet0 : unable to contact your DHCP server. Request has timed out."; }
     if (t[1] && t[1].toLowerCase() === "/release") { h.lease = null; return "Ethernet adapter Ethernet0:\n\n   Media State . . . . . . . . . . . : Media disconnected"; }
@@ -360,6 +360,18 @@ export function hostRun(lab, h, line) {
   if (c === "forticlient" || c === "fortivpn") return lab.forticlient ? lab.forticlient(h, t.slice(1)) : "FortiClient is not installed.";
   if (c === "ss" || c === "netstat") return [...h.services].filter((s) => s.startsWith("tcp/")).map((s) => `LISTEN 0 511 0.0.0.0:${s.slice(4)} 0.0.0.0:*`).join("\n") || "(no listening ports)";
   if (c === "hostname") return h.hostname;
+  // ---- the everyday troubleshooting commands (the live lab answers these from the real network) ----
+  const a = h.addr(), gw = h.gateway();
+  if (win && c === "ver") return "\nMicrosoft Windows [Version 10.0.19045.6466]";
+  if (win && c === "systeminfo") return [`Host Name:                 ${h.hostname.toUpperCase()}`, `OS Name:                   Microsoft Windows 10 Pro`, `OS Version:                10.0.19045 N/A Build 19045`, `OS Manufacturer:           Microsoft Corporation`, `System Type:               x64-based PC`, `Domain:                    ${h.spec && h.spec.domain ? h.spec.domain : "WORKGROUP"}`, `Network Card(s):           1 NIC(s) Installed.`, `                           [01]: Intel(R) 82574L Gigabit Network Connection`, `                                 Connection Name: Ethernet0`, `                                 DHCP Enabled:    ${h.dhcp ? "Yes" : "No"}`, `                                 IP address(es)`, `                                 [01]: ${a ? intToIp(a.ip) : "0.0.0.0"}`].join("\n");
+  if (win && c === "arp" && /^-a$/i.test(t[1] || "")) return a ? `\nInterface: ${intToIp(a.ip)} --- 0x5\n  Internet Address      Physical Address      Type\n${gw ? `  ${pad(intToIp(gw), 22)}${pad(mac("gw" + h.id).replace(/:/g, "-"), 22)}dynamic\n` : ""}  ${pad("255.255.255.255", 22)}${pad("ff-ff-ff-ff-ff-ff", 22)}static` : "No ARP Entries Found.";
+  if (win && c === "route" && /^print$/i.test(t[1] || "")) return `IPv4 Route Table\n===========================================================================\nActive Routes:\nNetwork Destination        Netmask          Gateway       Interface  Metric\n${gw ? `          0.0.0.0          0.0.0.0${intToIp(gw).padStart(17)}${intToIp(a.ip).padStart(16)}     25\n` : ""}${a ? `${intToIp(a.ip & (a.len ? (0xffffffff << (32 - a.len)) >>> 0 : 0)).padStart(17)}${maskStr(a.len).padStart(17)}          On-link${intToIp(a.ip).padStart(16)}    281\n` : ""}===========================================================================`;
+  if (win && c === "netstat") return `\nActive Connections\n\n  Proto  Local Address          Foreign Address        State           PID\n` + [...h.services].filter((x) => x.startsWith("tcp/")).map((x) => `  TCP    ${pad("0.0.0.0:" + x.slice(4), 23)}${pad("0.0.0.0:0", 23)}LISTENING       ${4 + Number(x.slice(4)) % 900}`).join("\n");
+  if (win && c === "pathping") { const tgt = t.slice(1).find((x) => !x.startsWith("-")); if (!tgt) return "Usage: pathping [-n] target_name"; const r = lab.resolve(h.id, tgt); if (r.err) return `Unable to resolve target system name ${tgt}.`; return traceroute(lab, h.id, r.ip, tgt, "windows").replace("Trace complete.", "Computing statistics for 25 seconds...\nTrace complete."); }
+  if (!win && c === "uname") { const k = "6.8.0-48-generic"; return t[1] === "-a" ? `Linux ${h.hostname.toLowerCase()} ${k} #48-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep 27 14:04:52 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux` : t[1] === "-r" ? k : "Linux"; }
+  if (!win && c === "ip" && t[1] && "neighbour".startsWith(t[1])) return gw ? `${intToIp(gw)} dev eth0 lladdr ${mac("gw" + h.id)} REACHABLE` : "";
+  if (!win && c === "cat" && t[1] === "/etc/resolv.conf") return `nameserver ${h.dns ? intToIp(h.dns) : gw ? intToIp(gw) : "127.0.0.53"}\noptions edns0 trust-ad`;
+  if (win && c === "uname") return `'uname' is not recognized as an internal or external command,\noperable program or batch file.`;
   return win ? `'${t[0]}' is not recognized as an internal or external command,\noperable program or batch file. Type help for the commands this lab PC knows.` : `bash: ${t[0]}: command not found (type help)`;
 }
 
@@ -435,7 +447,24 @@ function hostCurl(lab, h, args) {
 export function routerRun(lab, r, line) {
   const t = line.trim().toLowerCase();
   if (!t) return "";
-  if (t === "help" || t === "?") return `Commands: show ip interface brief, show ip route, ping <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}`;
+  if (t === "help" || t === "?") return `Commands: show ip interface brief, show ip route, show interfaces, show arp, show running-config, show version, show access-lists, show logging, show clock, ping <ip>, traceroute <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}, ssh -l <user> <ip>, telnet <ip>`;
+  const w = t.split(/\s+/);
+  const is = (f) => { const fw = f.split(" "); return fw.length === w.length && fw.every((x, i) => x.startsWith(w[i])); };
+  if (is("show running-config")) {
+    const L = ["Building configuration...", "", "Current configuration : 2114 bytes", "!", "version 17.9", "service timestamps log datetime msec", "!", `hostname ${r.id}`, "!", "ip domain name isp.lab", "!", "username noc privilege 15 secret 9 $9$ftk$lab", "!"];
+    for (const i of r.ifaces) L.push(`interface ${i.name}`, i.prefix ? ` ip address ${intToIp(i.prefix.ip)} ${maskStr(i.prefix.len)}` : " no ip address", ...(r.dropPrivate && /inet|internet|up/i.test(i.name) ? [" ip access-group ISP-BOGON-FILTER out"] : []), i.up === false ? " shutdown" : " no shutdown", "!");
+    for (const x of r.routes) L.push(`ip route ${intToIp(x.dst.ip)} ${maskStr(x.dst.len)} ${x.via ? intToIp(x.via) : "Null0"}`);
+    if (r.dropPrivate) L.push("!", "ip access-list extended ISP-BOGON-FILTER", " 10 deny ip 10.0.0.0 0.255.255.255 any", " 20 deny ip 172.16.0.0 0.15.255.255 any", " 30 deny ip 192.168.0.0 0.0.255.255 any", " 40 deny ip 100.64.0.0 0.63.255.255 any", " 1000 permit ip any any");
+    L.push("!", "line vty 0 4", " login local", " transport input ssh telnet", "!", "end");
+    return L.join("\n");
+  }
+  if (is("show logging")) return `Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)\n    Console logging: level debugging\n    Buffer logging:  level debugging, ${r.ifaces.length * 2} messages logged\n\nLog Buffer (8192 bytes):\n` + r.ifaces.map((i) => `*Nov 24 07:00:0${r.ifaces.indexOf(i)}.112: %LINK-3-UPDOWN: Interface ${i.name}, changed state to ${i.up === false ? "down" : "up"}\n*Nov 24 07:00:0${r.ifaces.indexOf(i)}.115: %LINEPROTO-5-UPDOWN: Line protocol on Interface ${i.name}, changed state to ${i.up === false ? "down" : "up"}`).join("\n");
+  if (is("show clock")) return `*${new Date(lab.clock - 5 * 3600000).toISOString().slice(11, 23)} COT ${new Date(lab.clock).toDateString()}`;
+  if (is("show version")) return `Cisco IOS XE Software, Version 17.09.05a\nCisco IOS Software [Cupertino], Virtual XE Software (X86_64_LINUX_IOSD-UNIVERSALK9-M), Version 17.9.5a, RELEASE SOFTWARE (fc3)\n\n${r.id} uptime is 12 weeks, 4 days, 3 hours, 10 minutes\nSystem image file is "bootflash:packages.conf"\n\ncisco C8000V (VXE) processor (revision VXE) with 1984096K/3075K bytes of memory.\n${r.ifaces.length} Gigabit Ethernet interfaces\n\nConfiguration register is 0x2102`;
+  if (is("show arp") || is("show ip arp")) return `Protocol  Address          Age (min)  Hardware Addr   Type   Interface\n` + r.ifaces.filter((i) => i.prefix).map((i) => `Internet  ${pad(intToIp(i.prefix.ip), 17)}-          ${pad(mac(r.id + i.name).replace(/:/g, "").replace(/(.{4})(?!$)/g, "$1."), 16)}ARPA   ${i.name}`).join("\n");
+  if (is("show interfaces")) return r.ifaces.map((i) => `${i.name} is ${i.up === false ? "administratively down" : "up"}, line protocol is ${i.up === false ? "down" : "up"}\n  Internet address is ${i.prefix ? prefixStr(i.prefix) : "unassigned"}\n  MTU 1500 bytes, BW 1000000 Kbit/sec`).join("\n");
+  if (is("show access-lists") || is("show ip access-lists")) return r.dropPrivate ? `Extended IP access list ISP-BOGON-FILTER\n    10 deny ip 10.0.0.0 0.255.255.255 any\n    20 deny ip 172.16.0.0 0.15.255.255 any\n    30 deny ip 192.168.0.0 0.0.255.255 any\n    40 deny ip 100.64.0.0 0.63.255.255 any\n    1000 permit ip any any` : "";
+  if (/^tr(a(c(e(r(o(u(te?)?)?)?)?)?)?)? \S+/.test(t)) { const ip = ipToInt(w[1]); if (ip === null) return "% Unrecognized host or address, or protocol not running."; return traceroute(lab, r.id, ip, w[1], "ios"); }
   if (t.startsWith("show ip int")) return r.ifaces.map((i) => `${pad(i.name, 16)}${pad(i.prefix ? intToIp(i.prefix.ip) + "/" + i.prefix.len : "unassigned", 20)}${i.up ? "up" : "down"}`).join("\n");
   if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] via ${x.via ? intToIp(x.via) : "Internet uplink"}`)).concat(lab.routerDynamic(r).map((x) => `${x.type.padEnd(5)}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}`)).join("\n");
   { const d = lab.routerShow && lab.routerShow(r, t); if (d !== null && d !== undefined) return d; }

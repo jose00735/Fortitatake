@@ -98,6 +98,15 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.12 adds (SSH and Telnet between lab devices, troubleshooting commands)
+
+- **Consoles that look like the real thing.** Windows PCs open like CMD (`Microsoft Windows [Version 10.0.19045.6466]`, prompt `C:\Users\<user>>`), Linux servers like Ubuntu 24.04, ISP routers like a Cisco IOS XE vty.
+- **Windows troubleshooting commands:** `arp -a`, `route print`, `netstat -ano`, `pathping`, `ver`, `systeminfo`; `uname` answers the way CMD does. **Linux:** `uname [-a|-r]`, `ip neigh`, `ip route`, `ss`, `cat /etc/resolv.conf`. On the real network ping, tracert/traceroute, arp, route, netstat/ss and uname come from the device's namespace.
+- **ISP routers (IOS style, abbreviations work):** `show ip interface brief`, `show ip route`, `show interfaces`, `show arp`, `show running-config`, `show version`, `show access-lists`, `show logging`, `show clock`, `ping`, `traceroute`.
+- **SSH and Telnet.** PCs, servers and ISP routers listen on TCP 22 and 23 (a lab can turn this off with `remote: false`); FortiGates on their admin SSH port and Telnet when allowaccess permits. Clients: `ssh [-v] [-p port] [user@]host`, `telnet host [port]` on PCs and servers, `ssh -l user ip` / `telnet ip` on routers, `execute ssh user@host` / `execute telnet host` on FortiGates. `~.` or Ctrl+C before login ends a session.
+- **The SSH is deliberately weak.** On the wire it is real: TCP between the namespaces, a version exchange (`SSH-2.0-OpenSSH_9.6p1 Ubuntu…`, `SSH-2.0-Cisco-1.25`, …), binary-packet KEXINIT offering curve25519-sha256, ssh-ed25519, chacha20-poly1305 and AES-GCM, an ECDH exchange and NEWKEYS; `ssh -v` shows the negotiation. After that the payload is XORed with a SHA-256 counter stream keyed only by the two public values sent in the clear, so anyone with the pcap can decrypt it, and it costs nothing on a phone. Telnet is plain text. Tested in the VM: commands never appear in an SSH pcap and do appear in a Telnet one.
+- **Agent ops** `remote.open/send/read/close` (client side) and `console.poll/reply` (server side); listener binds take `mode: ssh|telnet` and `banner`. FortiTatake answers each session with the device's CLI. **The OS must be rebuilt**; an older build falls back to simulated sessions.
+
 ### What v0.8.11 adds (SecOps on real protocols, IPsec on the real network)
 
 Needs an OS rebuild on the PC (and a new phone build): the agent gained log collectors and a sender.
@@ -179,7 +188,7 @@ With the lab live, these FortiGate commands read the kernel in the FortiGate's n
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
 - **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Still to do after v0.8.11: the DNS/ICMP relay to the real Internet; dial-up IPsec, SD-WAN, VDOMs and HA on the real network; testing the phone runtime on the Xiaomi 17T.
+Still to do after v0.8.12: the DNS/ICMP relay to the real Internet; SSH hops (a session from inside a session); dial-up IPsec, SD-WAN, VDOMs and HA on the real network; testing the phone runtime on the Xiaomi 17T.
 
 ### What v0.7.3 fixes
 

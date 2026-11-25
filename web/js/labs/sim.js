@@ -22,6 +22,8 @@ class Host {
     this.port = nic.port || "eth0";
     this.services = new Set((spec.services || []).map((s) => String(s).toLowerCase()));
     if (spec.icmp !== false) this.services.add("icmp");
+    // remote consoles: OpenSSH Server and Telnet, unless the lab turns them off
+    if (spec.remote !== false) { this.services.add("tcp/22"); this.services.add("tcp/23"); }
     this.lease = null;
     this.history = [];
     this.hostname = spec.hostname || spec.id;
@@ -801,7 +803,7 @@ export class Lab {
     if (fwd.localAnswer) answers = true;
     else if (target instanceof Host) answers = target.listens(got.proto, got.dport);
     else if (target instanceof Cloud) { const h = target.hosts.find((x) => x.ip === got.dst); answers = !!h && (got.proto === ICMP ? h.services.has("icmp") : h.services.has(`${PNAME[got.proto]}/${got.dport}`)); }
-    else if (target instanceof Router) answers = got.proto === ICMP;
+    else if (target instanceof Router) answers = got.proto === ICMP || (got.proto === TCP && (got.dport === 22 || got.dport === 23)); // vty lines: SSH and Telnet
     out.reached = target.id;
     out.seenSrc = got.src;
     out.seenDst = got.dst;

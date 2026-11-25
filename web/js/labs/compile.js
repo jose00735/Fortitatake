@@ -7,6 +7,9 @@
 import { FortiGate } from "./fgt.js";
 import { ipToInt, intToIp, parsePrefix, prefixStr, network, isPrivate } from "./net.js";
 
+// what each kind of device announces in the SSH version exchange
+const SSH_BANNER = { windows: "SSH-2.0-OpenSSH_for_Windows_9.5", linux: "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5", ios: "SSH-2.0-Cisco-1.25", fortios: "SSH-2.0-FortiSSH_7.4" };
+
 export const FABRIC = "FTK-FABRIC";
 const NSOK = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 const IFOK = /^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$/;
@@ -106,6 +109,8 @@ export function compile(lab) {
     const binds = [];
     for (const s of h.services) { const m = s.match(/^(tcp|udp)\/(\d+)$/); if (m) binds.push({ proto: m[1], port: Number(m[2]) }); }
     for (const b of COLLECT[h.kind] || []) { const x = binds.find((y) => y.proto === b.proto && y.port === b.port); if (x) Object.assign(x, b); else binds.push(b); }
+    // SSH and Telnet consoles, answered by FortiTatake (agent console.* ops)
+    for (const b of binds) if (b.proto === "tcp" && (b.port === 22 || b.port === 23) && !b.keep) Object.assign(b, { mode: b.port === 22 ? "ssh" : "telnet" }, b.port === 22 ? { banner: SSH_BANNER[h.os] || SSH_BANNER.linux } : {});
     listen.push({ ns: h.id, binds });
     if (!h.services.has("icmp")) nft[h.id] = "table ip ftk {\n chain ftk_in { type filter hook input priority 0; policy accept;\n  icmp type echo-request drop\n }\n}";
   }
@@ -163,6 +168,8 @@ export function compile(lab) {
       const dst = x.dst.len === 0 ? "default" : prefixStr(x.dst);
       if (x.gw && !r.routes.some((y) => y.dst && prefixStr(y.dst) === prefixStr(x.dst))) topo.routes.push({ dev: r.id, dst, via: intToIp(x.gw) });
     }
+    // vty lines: SSH and Telnet into the router's IOS-style CLI
+    listen.push({ ns: r.id, binds: [{ proto: "tcp", port: 22, mode: "ssh", banner: SSH_BANNER.ios }, { proto: "tcp", port: 23, mode: "telnet" }] });
     // ISPs don't carry private addresses across the Internet
     if (r.dropPrivate && upIf) nft[r.id] = `table ip ftk {\n chain ftk_fwd { type filter hook forward priority 0; policy accept;\n  oifname "${upIf}" ip saddr ${PRIVATE} drop\n  oifname "${upIf}" ip daddr ${PRIVATE} drop\n }\n}`;
   }
@@ -213,7 +220,7 @@ export function compile(lab) {
     // VIP and IP-pool addresses the FortiGate answers ARP for: extra /32s on the interface
     for (const p of out.proxies) if (!topo.addrs.some((a) => a.dev === p.dev && a.cidr === p.cidr)) topo.addrs.push({ dev: p.dev, if: p.if, cidr: p.cidr });
     const ap = adminPorts(fg);
-    listen.push({ ns: fg.id, binds: [...new Set([ap.https[1], 80, ap.ssh[1], 23])].map((port) => ({ proto: "tcp", port })).concat(out.dns ? [{ proto: "udp", port: 53 }] : []), names: out.dns ? Object.fromEntries([...lab.names].map(([n, ip]) => [n, intToIp(ip)])) : undefined });
+    listen.push({ ns: fg.id, binds: [...new Set([ap.https[1], 80, ap.ssh[1], 23])].map((port) => ({ proto: "tcp", port, ...(port === ap.ssh[1] ? { mode: "ssh", banner: SSH_BANNER.fortios } : port === 23 && port !== ap.https[1] ? { mode: "telnet" } : {}) })).concat(out.dns ? [{ proto: "udp", port: 53 }] : []), names: out.dns ? Object.fromEntries([...lab.names].map(([n, ip]) => [n, intToIp(ip)])) : undefined });
   }
   return { topo, nft, listen, where, notes, extra, ver: lab.ver };
 }
