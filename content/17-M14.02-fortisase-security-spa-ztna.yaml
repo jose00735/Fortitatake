@@ -194,7 +194,7 @@ quiz:
     options:
       - {id: a, text: "The two /1 prefixes pull the PoP's internet-bound traffic into the SPA tunnel", correct: true}
       - {id: b, text: "The 10.0.0.0/8 prefix overlaps the IPAM pool and breaks agent address assignment", trap: near-miss, why_wrong: "Overlap is a real risk, but 100.65.0.0/16 (default pool) isn't inside 10/8; the /1s explain the internet loss."}
-      - {id: c, text: "The hub selection method must be BGP MED when a hub advertises more than two prefixes", trap: misconception, why_wrong: "No such rule; the selection method is independent of the number of prefixes."}
+      - {id: c, text: "The hub selection method needs to be BGP MED when a hub advertises more than two prefixes", trap: misconception, why_wrong: "No such rule; the selection method is independent of the number of prefixes."}
       - {id: d, text: "The hub's ASN differs from FortiSASE's ASN, so eBGP routes take over the default route", trap: near-miss, why_wrong: "Different ASNs are supported (eBGP); what matters is which prefixes are advertised."}
     explanation: "0.0.0.0/1 + 128.0.0.0/1 together cover the whole internet and beat the PoP's default route. Advertise only the private prefixes meant for SPA."
   - id: M14.02.q03
@@ -204,7 +204,7 @@ quiz:
     options:
       - {id: a, text: "Hub health and priority, with a health-check IP behind each hub", correct: true}
       - {id: b, text: "BGP MED, with the priorities typed into each service connection", trap: near-miss, why_wrong: "With BGP MED, user-defined priorities are ignored; the hubs' MED decides."}
-      - {id: c, text: "BGP on loopback, because it is the design that supports failover", trap: misconception, why_wrong: "Failover works with either routing design; selection is a separate setting."}
+      - {id: c, text: "BGP on loopback, because it is the design that supports failover", trap: near-miss, why_wrong: "Failover works with either routing design; selection is a separate setting."}
       - {id: d, text: "Endpoint-to-endpoint traffic, so the PoPs learn the hub priority", trap: irrelevant, why_wrong: "That toggle allows agent-to-agent traffic through the hub; it has nothing to do with hub preference."}
     explanation: "Hub health and priority: the PoP picks the highest-priority hub whose health check is up."
   - id: M14.02.q04
@@ -215,7 +215,7 @@ quiz:
       - {id: a, text: "Agent-based ZTNA through a FortiGate gateway, with a posture tag in the ZTNA policy", correct: true}
       - {id: b, text: "An SPA policy to the hub that allows the finance subnet for the Finance user group", trap: near-miss, why_wrong: "Controls who reaches the network, not the device posture per app."}
       - {id: c, text: "A web-filter profile on the SIA policy that blocks the app for non-domain users", trap: misconception, why_wrong: "The app is private; SIA web filtering doesn't evaluate device posture."}
-      - {id: d, text: "An endpoint profile with split tunnel that sends only domain-joined laptops in", trap: near-miss, why_wrong: "Split tunnel steers traffic; it doesn't check posture or authorize per app."}
+      - {id: d, text: "An endpoint profile with split tunnel that sends domain-joined laptops into the tunnel", trap: near-miss, why_wrong: "Split tunnel steers traffic; it doesn't check posture or authorize per app."}
     explanation: "ZTNA checks identity (client certificate) and posture tags per session at the FortiGate gateway."
   - id: M14.02.q05
     type: output
@@ -255,23 +255,24 @@ quiz:
       - {id: a, text: "Use the instance's dedicated egress IPs and give those to the partner for their list", correct: true}
       - {id: b, text: "Route that portal through the SPA hub so the users exit from the data centre address", trap: near-miss, why_wrong: "Works as a workaround but hairpins internet traffic through the DC; dedicated egress IPs exist for this."}
       - {id: c, text: "Use a split-tunnel rule so the users reach the portal from their home connections", trap: near-miss, why_wrong: "Home IPs are unpredictable and the traffic loses inspection."}
-      - {id: d, text: "Ask the partner to allow the published FortiSASE address ranges of every PoP worldwide", trap: misconception, why_wrong: "Shared ranges would allow other tenants too; that defeats the partner's control."}
+      - {id: d, text: "Ask the partner to allow the published FortiSASE address ranges of the PoPs worldwide", trap: misconception, why_wrong: "Shared ranges would allow other tenants too; that defeats the partner's control."}
     explanation: "Dedicated egress IPs per PoP make the source predictable and unique to the customer."
   - id: M14.02.q08
     type: single
     tier: 4
     stem: "A 40-port legacy ERP client in the DC must reach 900 employees from day one; contractors need one internal web app with posture checks. Which split is best?"
     options:
-      - {id: a, text: "SPA through the DC hub for the ERP, and ZTNA with posture tags for the contractors' app", correct: true}
+      - {id: a, text: "Network-level SPA for the legacy system, and per-app ZTNA with tags for the outside users", correct: true}
       - {id: b, text: "ZTNA for both, defining each ERP port as its own private application in FortiSASE", trap: near-miss, why_wrong: "Possible but heavy for a 40-port legacy client; SPA fits network-style access for employees."}
       - {id: c, text: "SPA for both, with a policy that limits contractors to the web app's address and port", trap: near-miss, why_wrong: "Controls the path but not device posture for contractors."}
       - {id: d, text: "SIA with dedicated egress IPs for both, publishing the ERP and the web app on the internet", trap: misconception, why_wrong: "Exposes private apps to the internet; the opposite of the goal."}
     explanation: "Match the path to the app: network access for the legacy ERP, per-app posture-checked access for contractors."
   - id: M14.02.q09
-    type: text
+    type: numeric
     tier: 3
     stem: "What is the maximum number of FortiGate hubs FortiSASE SPA supports?"
-    accept: ["12", "twelve"]
+    answer: 12
+    tolerance: 0
     explanation: "Up to 12 hubs."
 
 labs:

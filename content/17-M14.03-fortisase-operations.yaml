@@ -1,0 +1,297 @@
+id: M14.03
+title: "Operating FortiSASE: SOC logging, troubleshooting remote users and migration projects"
+stage: S14
+stage_title: "S14 · FortiSASE (consultant level)"
+order: 16.3
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Send FortiSASE logs to FortiAnalyzer, syslog or CEF over public or private (SPA) paths, reliably
+  - Troubleshoot remote users with Digital Experience Monitoring, endpoint views and PoP packet capture
+  - Recognise the break-fix patterns that recur in SASE rollouts and their root causes
+  - Run a migration to FortiSASE (from VPN, from on-prem EMS, from another SSE) with waves and success criteria
+sources:
+  - "FortiSASE 7.4 Administration Guide: Operations — DEM, endpoints, connected users, logs and log forwarding (pp. 72–111, 260–275)"
+  - "FortiSASE 7.4 Administration Guide: FAQs — EMS shift, subscriptions (pp. 962–978)"
+  - "Earlier modules: M14.01 (onboarding, SSL-to-IPsec), M14.02 (policies, SPA, ZTNA), M13.01 (log sources)"
+
+units:
+  - id: M14.03.u1
+    title: "Getting SASE logs into the SOC"
+    tier: 3
+    est_min: 14
+    body: |
+      Remote users are invisible to the SOC unless FortiSASE's logs reach it. Log forwarding sends them to up to
+      **two external servers**, each one of:
+
+      - **FortiAnalyzer** (the usual choice for a Fortinet SOC),
+      - **Syslog**, or **CEF** for third-party SIEMs.
+
+      Design decisions per server:
+
+      | Decision | Options | Guidance |
+      |---|---|---|
+      | Path | Public (over the Internet) or **private through SPA** to an on-prem collector | Private keeps logs off the Internet and needs SPA working first |
+      | Transport | UDP or **reliable** (TCP) | Reliable for anything compliance-relevant; TLS for syslog needs reliable mode and the remote CA imported |
+      | Frequency | Real time, every minute, every 5 minutes | Real time for detection use cases |
+      | Filters | Log types and severities | Traffic logs dominate volume; size the collector |
+
+      On the FortiAnalyzer side, the PoPs show up as devices that must be **authorized** before logs are stored —
+      the step most often forgotten in projects.
+
+      Inside the portal, log views and downloads exist (downloads are capped, for example 100,000 entries per
+      export), but a SOC needs the stream, not exports.
+
+      :::recall
+      Q: How many external log servers can FortiSASE forward to?
+      A: Two (FortiAnalyzer, syslog or CEF each).
+      :::
+
+      :::why
+      Q: Why do logs sometimes not appear in FortiAnalyzer even though forwarding is configured correctly?
+      A: The PoPs must be authorized as devices on FortiAnalyzer; until then their logs aren't stored.
+      :::
+  - id: M14.03.u2
+    title: "Troubleshooting remote users"
+    tier: 4
+    est_min: 16
+    body: |
+      Remote-user tickets are rarely "the firewall". Work from the user outwards:
+
+      1. **Endpoint view**: is FortiClient connected, which endpoint profile, which PoP, tunnel up? Endpoint details
+         show interfaces, installed software and FortiClient version.
+      2. **Digital Experience Monitoring (DEM)**: with the DEM agent online, run a **trace job** from the endpoint
+         to a SaaS app to see RTT and loss per hop, and the PoP-to-SaaS health metrics. Ping/ICMP must not be blocked
+         by policy or application control for traces to work.
+      3. **Policy and logs**: which policy matched (ID in the log), which profile blocked what.
+      4. **Packet capture on the PoP** for agent and agentless users when you need packets.
+
+      **Patterns that recur (and their causes):**
+
+      | Symptom | Usual cause |
+      |---|---|
+      | IPsec agents fail SSO after the transition | IdP lacks the new SP values (port 11443) |
+      | Users authenticate but hit implicit deny | Groups match the legacy SSO source, not the IPsec one |
+      | One SaaS locks everyone out after a change | Dedicated egress IPs changed; conditional access lists the old ones |
+      | Agentless users loop at login | PAC file sends the IdP through the proxy; exclude it |
+      | Private app unreachable for everyone after a hub change | A /1 or default route advertised; or hub health check failing |
+      | Policy change not applied to some users | SSL agents apply changes after reconnecting |
+      | Internal app breaks on certain ports | The port is reserved at the PoP (e.g. 8008–8020 web-filter ports) |
+
+      :::recall
+      Q: What must be true for a DEM trace job to run?
+      A: The DEM agent is installed and online, and policy/application control doesn't block ICMP.
+      :::
+
+      :::why
+      Q: Why start with the endpoint view instead of the policy list?
+      A: Most remote-user problems are client state (profile, tunnel, PoP, posture); the policy only matters once traffic arrives.
+      :::
+  - id: M14.03.u3
+    title: "Migration projects"
+    tier: 4
+    est_min: 16
+    body: |
+      **Common starting points and what changes:**
+
+      - **From FortiGate SSL VPN.** Users move to the agent; private apps move to SPA (the old VPN FortiGate often
+        becomes the SPA hub) or ZTNA; internet traffic is now inspected at the PoP. Keep the old VPN as a fallback
+        until the last wave.
+      - **From on-prem EMS or FortiClient Cloud.** FortiSASE uses its own EMS; old configuration isn't preserved, so
+        profiles are rebuilt, then endpoints are moved in waves with the invitation code.
+      - **From another SSE (for example Netskope or Zscaler).** Map concepts, not menus: steering configuration →
+        endpoint profiles and split tunnel; real-time protection policies → FortiSASE policies with profile groups;
+        private access publishers → FortiGate SPA hubs or ZTNA gateways; client rollout by MDM → FortiClient
+        packages by MDM. Run both clients side by side only for testing; two steering agents on one laptop fight.
+      - **Licensing changes.** Moving between FortiFlex and other licence forms can mean a new instance; do it before
+        the full deployment, not after.
+
+      **A wave plan that works:** pilot (IT, 20–50 users, varied OS) → early adopters by department → bulk waves
+      by region or business unit → stragglers and exceptions. Each wave has entry criteria (devices compliant,
+      users told), exit criteria (login success rate, top-10 apps work, ticket rate under a threshold) and a
+      rollback.
+
+      :::recall
+      Q: Name three exit criteria for a SASE wave.
+      A: Login success rate, top apps working, ticket rate under a threshold (and logs arriving at the SOC).
+      :::
+
+      :::why
+      Q: Why avoid running two SSE agents in production on the same laptop?
+      A: Both try to steer the same traffic; the result is broken connectivity and confusing troubleshooting.
+      :::
+
+cards:
+  - {id: M14.03.c01, unit: M14.03.u1, tier: 2, front: "FortiSASE log forwarding targets", back: "Up to two servers: FortiAnalyzer, syslog or CEF."}
+  - {id: M14.03.c02, unit: M14.03.u1, tier: 3, front: "Private log forwarding", back: "To an on-prem collector through SPA."}
+  - {id: M14.03.c03, unit: M14.03.u1, tier: 3, front: "TLS for syslog forwarding needs", back: "Reliable (TCP) transport and the remote CA imported."}
+  - {id: M14.03.c04, unit: M14.03.u1, tier: 3, front: "Forgotten FortiAnalyzer step", back: "Authorize the PoPs as devices before their logs are stored."}
+  - {id: M14.03.c05, unit: M14.03.u2, tier: 3, front: "DEM trace job", back: "RTT and loss per hop from an endpoint to a SaaS app; needs the DEM agent online and ICMP allowed."}
+  - {id: M14.03.c06, unit: M14.03.u2, tier: 3, front: "Remote-user troubleshooting order", back: "Endpoint view, DEM, policy and logs, PoP packet capture."}
+  - {id: M14.03.c07, unit: M14.03.u2, tier: 4, front: "Agentless login loop", back: "PAC sends the IdP through the proxy: exclude it."}
+  - {id: M14.03.c08, unit: M14.03.u2, tier: 4, front: "SaaS lockout after a change", back: "Dedicated egress IPs changed; update conditional access."}
+  - {id: M14.03.c09, unit: M14.03.u3, tier: 3, front: "From SSL VPN to FortiSASE", back: "Agent for users, SPA hub or ZTNA for private apps, keep VPN as fallback until the last wave."}
+  - {id: M14.03.c10, unit: M14.03.u3, tier: 4, front: "Netskope concepts → FortiSASE", back: "Steering → endpoint profiles/split tunnel; RTP policies → policies + profiles; publishers → SPA hubs/ZTNA gateways."}
+  - {id: M14.03.c11, unit: M14.03.u3, tier: 3, front: "Wave exit criteria", back: "Login success, top apps work, ticket rate under threshold, logs at the SOC."}
+
+quiz:
+  - id: M14.03.q01
+    type: single
+    tier: 3
+    pretest: true
+    stem: "FortiSASE forwards logs to the on-prem FortiAnalyzer over SPA. Forwarding shows no errors, but FortiAnalyzer has no FortiSASE logs. What do you check first?"
+    options:
+      - {id: a, text: "Whether the PoPs are authorized as devices in the FortiAnalyzer's device list", correct: true}
+      - {id: b, text: "Whether the forwarding frequency is set to real time instead of 5-minute intervals", trap: near-miss, why_wrong: "Would delay logs by minutes, not stop them entirely."}
+      - {id: c, text: "Whether TLS is enabled, since FortiAnalyzer refuses logs from PoPs without TLS", trap: misconception, why_wrong: "Invented requirement; unauthorized devices are the usual cause."}
+      - {id: d, text: "Whether the FortiAnalyzer's ADOM for FortiSASE has enough disk quota left over", trap: near-miss, why_wrong: "Quota issues show as storage warnings after logs arrive, not as no logs from day one."}
+    explanation: "Logs from unauthorized devices aren't stored. Authorize the PoPs, then verify arrival."
+  - id: M14.03.q02
+    type: single
+    tier: 3
+    stem: "Compliance requires encrypted, guaranteed delivery of SASE logs to a third-party SIEM over syslog. Which setting combination?"
+    options:
+      - {id: a, text: "Reliable transport with TLS enabled and the SIEM's CA imported into FortiSASE", correct: true}
+      - {id: b, text: "UDP transport with TLS enabled, so the logs are encrypted with less overhead", trap: near-miss, why_wrong: "TLS for syslog needs reliable (TCP) transport; UDP gives neither guarantee."}
+      - {id: c, text: "CEF format over UDP through SPA, since the private path makes encryption needless", trap: near-miss, why_wrong: "SPA encrypts the path to the hub, but UDP still loses logs and the hub-to-SIEM hop is open."}
+      - {id: d, text: "Reliable transport with no TLS, as TCP delivery is already encrypted end to end", trap: misconception, why_wrong: "TCP gives delivery guarantees, not encryption."}
+    explanation: "Guaranteed delivery = reliable (TCP); encryption = TLS, which needs reliable mode and the remote CA."
+  - id: M14.03.q03
+    type: output
+    tier: 4
+    format: first-step
+    output: |
+      Ticket #4471  "Teams calls choppy since Monday"   users: 37, all in Medellín
+      Endpoint view (sample): FortiClient connected · profile Default IPsec · PoP: Bogotá · tunnel up
+      DEM trace to teams.microsoft.com from MED-LT-22:
+        hop 1  192.168.1.1     2 ms   loss 0%
+        hop 2  ISP-MED edge   38 ms   loss 14%
+        hop 3  PoP Bogotá     41 ms   loss 13%
+        hop 4  SaaS edge      46 ms   loss 13%
+    stem: "What is the best first conclusion and action?"
+    options:
+      - {id: a, text: "Loss starts at the users' ISP before the PoP; raise it with the ISP and consider split tunnel for Teams", correct: true}
+      - {id: b, text: "The Bogotá PoP is congested; open a support case asking Fortinet to move these users to another nearby PoP", trap: near-miss, why_wrong: "Loss already appears at hop 2, before traffic reaches the PoP."}
+      - {id: c, text: "SSL inspection breaks Teams media; add an exemption for Microsoft Teams in the profile group", trap: near-miss, why_wrong: "A real tuning step for Teams, but it doesn't explain packet loss on the ISP hop."}
+      - {id: d, text: "The IPsec profile is broken; move the 37 users back to the SSL profile until it is fixed", trap: misconception, why_wrong: "Tunnel is up and loss is upstream; switching tunnel types changes nothing on the ISP path."}
+    explanation: "DEM shows where loss begins. Here it's the access ISP in Medellín; the fix is with the ISP, and real-time media can bypass the PoP with an application-based split tunnel."
+  - id: M14.03.q04
+    type: multi
+    tier: 4
+    stem: "Agentless proxy users loop back to the login page every time. Which are likely causes or fixes? Select all that apply."
+    options:
+      - {id: a, text: "The PAC file proxies the identity provider; exclude its domains", correct: true}
+      - {id: b, text: "Third-party cookies or redirects for the IdP blocked by browser policy", correct: true}
+      - {id: c, text: "The IPsec endpoint profile is disabled for those users", trap: near-miss, why_wrong: "Agentless users don't use endpoint profiles or tunnels."}
+      - {id: d, text: "The FortiSASE CA is missing, so deep inspection breaks the IdP session", correct: true}
+      - {id: e, text: "The users exceed the max concurrent IPsec clients value", trap: irrelevant, why_wrong: "That setting applies to IPsec agents, not proxy users."}
+    explanation: "Proxy-mode login loops come from the IdP being proxied/inspected or browser blocking the redirects; agent settings don't apply."
+  - id: M14.03.q05
+    type: order
+    tier: 3
+    stem: "Order the waves of a 3,000-user FortiSASE rollout."
+    items: ["Pilot: IT, 20–50 users, mixed OS and locations", "Early adopters by department, with champions", "Bulk waves by region or business unit", "Stragglers, exceptions and unmanaged devices", "Decommission the old VPN"]
+    explanation: "Small and expert first, then the bulk, then the hard cases, then remove the fallback."
+  - id: M14.03.q06
+    type: single
+    tier: 4
+    stem: "A Netskope customer moves to FortiSASE. Their Netskope steering sends M365 directly and everything else to the cloud. How do you reproduce this?"
+    options:
+      - {id: a, text: "An application-based split tunnel in the endpoint profile for M365 on Windows laptops", correct: true}
+      - {id: b, text: "A policy with action Accept and no security profiles for M365, so the PoP doesn't inspect it", trap: near-miss, why_wrong: "Traffic still travels through the PoP; steering decides whether it goes there at all."}
+      - {id: c, text: "A PAC file exception for M365 domains pushed to the managed laptops by MDM", trap: near-miss, why_wrong: "PAC files steer proxy users, not agent tunnels."}
+      - {id: d, text: "An SPA route for the M365 address ranges through the customer's DC hub", trap: misconception, why_wrong: "SPA is for private apps; hairpinning SaaS through the DC is the opposite of direct."}
+    explanation: "Netskope steering exceptions map to FortiSASE endpoint-profile split tunnel (application-based on Windows)."
+  - id: M14.03.q07
+    type: numeric
+    tier: 2
+    stem: "How many external log servers can FortiSASE forward logs to at the same time?"
+    answer: 2
+    tolerance: 0
+    explanation: "Two, each FortiAnalyzer, syslog or CEF."
+
+labs:
+  - id: M14.03.lab1
+    title: Wave plan with criteria
+    goal: "Write entry and exit criteria for a FortiSASE wave."
+    worked:
+      config: |
+        # Wave 2 - Finance and HR (420 users), week 5
+        # Entry:  FortiClient 7.4 deployed by MDM; posture tags green on >= 95%; users notified 5 days before;
+        #         helpdesk briefed with the top-10 known issues
+        # Go-live: profile 'Default IPsec' assigned to the wave groups at 07:00
+        # Exit (after 5 working days):
+        #   - login success >= 98%
+        #   - ERP, payroll SaaS, Teams and file shares work for >= 99% of tickets-free users
+        #   - SASE-related tickets < 3% of users
+        #   - logs from the wave visible in FortiAnalyzer (SOC confirms)
+        # Rollback: unassign the profile; users fall back to the old VPN profile
+    faded:
+      template: |
+        # Exit: login success >= {{98}}%
+        # Exit: logs visible in {{FortiAnalyzer}}
+        # Rollback: {{unassign}} the profile
+    solo:
+      prompt: "Write four exit criteria, one per line: login, apps, tickets, logs."
+      required: ["login", "app", "ticket", "log"]
+      solution: |
+        login success rate
+        top apps working
+        ticket rate under threshold
+        logs at the SOC
+      notes: "Plus the rollback."
+
+scenarios:
+  - id: M14.03.sc1
+    kind: situation
+    tier: 4
+    title: "Monday morning, 400 users can't reach the ERP"
+    situation: |
+      Over the weekend the network team added a second DC hub for SPA and switched hub selection to BGP MED. Monday
+      08:00: 400 remote users can't reach the ERP; internet works. The CIO is on the phone.
+    ask: "How do you handle the next hour?"
+    right_thinking:
+      - "Change-correlated outage: suspect the weekend change first"
+      - "Check what the PoPs learned: prefixes, MED, which hub is preferred; is the ERP subnet advertised by the right hub?"
+      - "Check the new hub: health, BGP sessions, firewall policies allowing agent ranges"
+      - "Fast restore: revert hub selection or the new hub's advertisements, then investigate"
+      - "Update the CIO with facts and a time"
+    what: "Restore first by reverting the change, then root cause."
+    why: "With 400 users down and a clear change, rollback is faster than diagnosis."
+    how: ["Suspect the change", "Check routes/MED/policies", "Revert", "Communicate", "Root cause after"]
+    model_answer: |
+      "Internet works and only the private app broke right after a hub and routing change, so I start there. I check
+      what the PoPs now prefer for the ERP subnet — with BGP MED, the new hub may be winning but not allowing the
+      agent ranges in its policies, or not reaching the ERP at all. If I can't confirm in ten minutes, we revert to
+      health-and-priority with the original hub preferred, which restores service, and the CIO gets an update with
+      the next check-in time. The root cause and a tested re-cutover come after."
+    best_way: "Correlate with the change, restore by reverting, then find the cause."
+    rubric: ["change correlation", "specific checks", "restore first", "communication"]
+
+interview:
+  - id: M14.03.t01
+    stage: technical
+    question: "A remote user says 'the VPN is slow'. They're on FortiSASE. How do you troubleshoot?"
+    testing: "Structured remote-user troubleshooting"
+    framework: "Endpoint → DEM → policy/logs → PoP capture"
+    model_answer: |
+      "From the user outwards. Endpoint view first: is FortiClient connected, which profile and which PoP. Then a DEM
+      trace to the app that feels slow, which shows RTT and loss per hop — very often it's the home ISP before the
+      PoP. If it's after the PoP, I look at the policy and profiles applied to that traffic in the logs, and if
+      needed a packet capture on the PoP. For real-time apps like Teams, an application-based split tunnel can be
+      the right fix."
+    best_way: "Endpoint, DEM per hop, then policy and capture — fix where the loss starts."
+    target: "0:45"
+  - id: M14.03.t02
+    stage: hm
+    question: "How would you run a migration from another SSE vendor to FortiSASE?"
+    testing: "Migration leadership, honest use of Netskope background"
+    framework: "Concept map → waves with criteria → coexistence rules → SOC visibility"
+    model_answer: |
+      "I'd map concepts, not menus: steering becomes endpoint profiles and split tunnel, real-time policies become
+      FortiSASE policies with profile groups, and private access publishers become FortiGate SPA hubs or ZTNA. I
+      know the Netskope side well from running deployments there. Then waves with entry and exit criteria —
+      login success, top apps, ticket rate, logs at the SOC — and a rollback per wave. And one rule: never two
+      steering agents on the same production laptop."
+    best_way: "Map concepts, migrate in measured waves, keep the SOC seeing everything."
+    target: "0:50"
