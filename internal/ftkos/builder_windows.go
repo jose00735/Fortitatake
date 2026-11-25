@@ -99,12 +99,29 @@ func (m *Manager) builderInfo() map[string]any {
 	return infoLast
 }
 
+// wslPath turns a Windows folder into its path inside the builder (C:\x\y -> /mnt/c/x/y).
+// wslpath first; if it fails (fresh imported distros sometimes lack it), the path is worked
+// out directly and checked; if neither works, the log gets what WSL said and how drives mount.
 func (m *Manager) wslPath(ctx context.Context, distro, win string) (string, error) {
-	out, err := wslCmd(ctx, "-d", distro, "-u", "root", "--", "wslpath", "-u", win).Output()
-	if err != nil {
-		return "", fmt.Errorf("wslpath: %v", err)
+	out, err := wslCmd(ctx, "-d", distro, "-u", "root", "--", "wslpath", "-u", win).CombinedOutput()
+	if p := strings.TrimSpace(decodeWSL(out)); err == nil && strings.HasPrefix(p, "/") {
+		return p, nil
 	}
-	return strings.TrimSpace(string(out)), nil
+	m.logLine(fmt.Sprintf("wslpath %s failed (%v): %s", win, err, strings.TrimSpace(decodeWSL(out))))
+	if len(win) >= 3 && win[1] == ':' {
+		guess := "/mnt/" + strings.ToLower(win[:1]) + strings.ReplaceAll(win[2:], `\`, "/")
+		if wslCmd(ctx, "-d", distro, "-u", "root", "--", "test", "-d", guess).Run() == nil {
+			return guess, nil
+		}
+		m.logLine("not visible inside Linux either: " + guess)
+	}
+	diag, _ := wslCmd(ctx, "-d", distro, "-u", "root", "--", "sh", "-c", "echo mounts:; mount | grep -i -E 'drvfs|9p|/mnt' ; echo wsl.conf:; cat /etc/wsl.conf 2>&1; ls -la /mnt 2>&1").CombinedOutput()
+	for _, l := range strings.Split(decodeWSL(diag), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			m.logLine(l)
+		}
+	}
+	return "", fmt.Errorf("Linux can't see the Windows folder %s (details in the raw build log)", win)
 }
 
 // runOut is runLogged that also returns what wsl.exe said.

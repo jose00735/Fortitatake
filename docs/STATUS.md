@@ -98,6 +98,10 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.3 fixes
+
+- After the builder was created, setup stopped at `wslpath: exit status 1` on Jose's PC. The app now falls back to working out the `/mnt/<drive>/…` path itself and checking it inside Linux; if Linux still can't see the folder, the raw log shows what WSL said, how drives are mounted and the distro's `wsl.conf`.
+
 ### What v0.8.2 fixes
 
 - When `wsl --import` fails because WSL 2's Windows features (Virtual Machine Platform) are off, the app now asks Windows for administrator permission itself (one UAC prompt) and turns on Virtual Machine Platform and WSL (`wsl --install --no-distribution`) plus Windows Hypervisor Platform (so the lab VM uses WHPX instead of TCG), then asks for a restart. Seen on Jose's PC as `HCS_E_SERVICE_NOT_AVAILABLE`. Other import errors show WSL's own message instead of a generic one, and a half-registered distro is removed. The Ubuntu download is kept between attempts.
@@ -118,7 +122,7 @@
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
 - **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Not in v0.8.0 (next: v0.8.3): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, pcap download and console diagnostics from the kernel's state, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
+Not in v0.8.0 (next: v0.8.4): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, pcap download and console diagnostics from the kernel's state, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
 
 ### What v0.7.3 fixes
 
