@@ -3,6 +3,7 @@ title: "FortiManager Device Manager: adding devices, ZTP, scripts and templates"
 stage: S5
 stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
 order: 202
+quality: 2
 est_sessions: 1.5
 objectives:
   - Add existing FortiGates and model devices (zero-touch provisioning)
@@ -84,30 +85,31 @@ quiz:
     pretest: true
     stem: "Which FortiManager feature lets a new branch FortiGate get its config automatically when it first connects?"
     options:
-      - {id: a, text: "Model device (zero-touch provisioning)", correct: true}
-      - {id: b, text: "Log fetching", why_wrong: "FortiAnalyzer feature."}
-      - {id: c, text: "Revision diff", why_wrong: "History."}
-      - {id: d, text: "Policy block", why_wrong: "Policy reuse."}
+      - {id: a, text: "A model device matched by serial", correct: true}
+      - {id: b, text: "A system template on its ADOM", trap: near-miss, why_wrong: "Templates provide settings, but the model device is what links the new unit."}
+      - {id: c, text: "Retrieving its config on arrival", trap: misconception, why_wrong: "Retrieve copies the device's config into FortiManager, the other direction."}
+      - {id: d, text: "A policy block for new branches", trap: misconception, why_wrong: "Policy blocks reuse policies; they don't provision devices."}
     explanation: "Matched by serial."
   - id: M5.02.q02
     type: single
     tier: 2
     stem: "200 branches each need the same NTP and DNS settings. Best tool?"
     options:
-      - {id: a, text: "System template", correct: true}
-      - {id: b, text: "Edit each device", why_wrong: "Doesn't scale."}
-      - {id: c, text: "Policy package", why_wrong: "Policies, not system settings."}
-      - {id: d, text: "Device script directly on each FortiGate", why_wrong: "Bypasses previews and drifts."}
+      - {id: a, text: "A system template for the branches", correct: true}
+      - {id: b, text: "A policy package with the settings", trap: misconception, why_wrong: "Packages carry policies and objects, not NTP or DNS settings."}
+      - {id: c, text: "A CLI script on each device directly", trap: near-miss, why_wrong: "Works once but bypasses the database and drifts over time."}
+      - {id: d, text: "A CLI template applied on the ADOM", trap: near-miss, why_wrong: "Possible, but system templates are built for these settings with per-device variables."}
     explanation: "Templates standardize settings."
   - id: M5.02.q03
     type: multi
     tier: 2
     stem: "Where can a CLI script run? Select all that apply."
     options:
-      - {id: a, text: "Directly on the device", correct: true}
-      - {id: b, text: "On the device database", correct: true}
-      - {id: c, text: "On the ADOM database (some script types)", correct: true}
-      - {id: d, text: "On FortiAnalyzer logs", why_wrong: "No."}
+      - {id: a, text: "Directly on the remote device", correct: true}
+      - {id: b, text: "On the device database copy", correct: true}
+      - {id: c, text: "On the ADOM database, some types", correct: true}
+      - {id: d, text: "On a FortiAnalyzer log query", trap: misconception, why_wrong: "Scripts change configuration; they don't run on logs."}
+      - {id: e, text: "On FortiGuard's update server", trap: near-miss, why_wrong: "FortiManager can serve updates, but scripts don't run there."}
     explanation: "Three targets."
 
 labs:

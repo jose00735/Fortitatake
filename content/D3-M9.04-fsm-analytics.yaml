@@ -3,6 +3,7 @@ title: "FortiSIEM analytics, ML, dashboards and automation"
 stage: S9
 stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
 order: 186
+quality: 2
 est_sessions: 1
 objectives:
   - Build searches with filters, grouping and display columns to answer investigation questions
@@ -89,30 +90,31 @@ quiz:
     pretest: true
     stem: "Which search answers 'which accounts did 10.20.10.66 try?'"
     options:
-      - {id: a, text: "Failed-logon events from srcIpAddr 10.20.10.66, grouped by user", correct: true}
-      - {id: b, text: "All events grouped by srcIpAddr", why_wrong: "Doesn't list accounts."}
-      - {id: c, text: "Incidents list", why_wrong: "Summaries, not the accounts."}
-      - {id: d, text: "CMDB devices", why_wrong: "Inventory."}
+      - {id: a, text: "Failed logons with srcIpAddr 10.20.10.66, grouped by user", correct: true}
+      - {id: b, text: "All events from 10.20.10.66, grouped by their destination host", trap: near-miss, why_wrong: "Shows where it went, not which accounts it tried."}
+      - {id: c, text: "The incident list filtered on 10.20.10.66 as the source", trap: near-miss, why_wrong: "Incidents summarise rule hits; they don't list every account tried."}
+      - {id: d, text: "The CMDB record for 10.20.10.66 and its owner's details", trap: irrelevant, why_wrong: "Inventory context, not the logon activity."}
     explanation: "Filter + group by."
   - id: M9.04.q02
     type: multi
     tier: 2
     stem: "Good uses of FortiSIEM dashboards? Select all that apply."
     options:
-      - {id: a, text: "Sources that stopped sending", correct: true}
-      - {id: b, text: "Incidents by severity", correct: true}
-      - {id: c, text: "Top attacking sources", correct: true}
-      - {id: d, text: "Replacing every report with screenshots", why_wrong: "Reports are scheduled outputs."}
+      - {id: a, text: "Sources that stopped sending logs", correct: true}
+      - {id: b, text: "Incidents broken down by severity", correct: true}
+      - {id: c, text: "Top attacking source addresses", correct: true}
+      - {id: d, text: "Monthly compliance evidence packs", trap: near-miss, why_wrong: "Compliance evidence is a scheduled report, not a live dashboard."}
     explanation: "Operations visibility."
   - id: M9.04.q03
     type: single
     tier: 3
-    stem: "A first-ever 3 a.m. login for an accountant isn't caught by any rule. What catches it?"
+    format: "first-step"
+    stem: "A first-ever 3 a.m. login for an accountant isn't caught by any rule. What would you add first to catch it?"
     options:
-      - {id: a, text: "Baseline/UEBA anomaly detection", correct: true}
-      - {id: b, text: "Threat feed", why_wrong: "Not about known-bad indicators."}
-      - {id: c, text: "Port scan rule", why_wrong: "Different pattern."}
-      - {id: d, text: "Parser update", why_wrong: "Parsing isn't the issue."}
+      - {id: a, text: "UEBA or baseline anomaly detection on logon time per user", correct: true}
+      - {id: b, text: "A threat feed of known-bad IPs matched against logon sources", trap: near-miss, why_wrong: "Feeds catch known indicators; a first-ever login time is behaviour."}
+      - {id: c, text: "A rule for logons between 00:00 and 05:00 for all the accounts", trap: near-miss, why_wrong: "Static hours fire on night-shift staff; a per-user baseline doesn't."}
+      - {id: d, text: "A parser update so the logon events carry a time attribute", trap: misconception, why_wrong: "Event time is already parsed; detection logic is missing."}
     explanation: "Behavioral anomaly."
 
 labs:

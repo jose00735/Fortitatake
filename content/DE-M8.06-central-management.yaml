@@ -3,6 +3,7 @@ title: "Central management at scale: FortiManager and FortiAnalyzer together"
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 210
+quality: 2
 est_sessions: 1
 objectives:
   - Run change management through FortiManager (workspace, preview, revisions)
@@ -79,20 +80,20 @@ quiz:
     pretest: true
     stem: "Two admins changed the same policy package at once and one overwrote the other. What prevents this?"
     options:
-      - {id: a, text: "Workspace mode with locking", correct: true}
-      - {id: b, text: "More ADOMs", why_wrong: "Doesn't prevent concurrent edits in one."}
-      - {id: c, text: "Quick install", why_wrong: "Unrelated."}
-      - {id: d, text: "Log forwarding", why_wrong: "FortiAnalyzer."}
+      - {id: a, text: "Workspace mode, so an admin locks the package before editing", correct: true}
+      - {id: b, text: "One ADOM per admin, so they can't both open the same package", trap: near-miss, why_wrong: "ADOMs separate device sets; two admins on one package still collide."}
+      - {id: c, text: "Install preview before each install to spot the other change", trap: near-miss, why_wrong: "Shows what will go out, after the overwrite already happened."}
+      - {id: d, text: "Revision history, so the lost change can be restored afterward", trap: misconception, why_wrong: "Restores after the fact; it doesn't prevent concurrent edits."}
     explanation: "Lock before editing."
   - id: M8.06.q02
     type: single
     tier: 2
     stem: "How do you prove a legacy rule is safe to remove?"
     options:
-      - {id: a, text: "Zero policy hits in FortiAnalyzer over a long period", correct: true}
-      - {id: b, text: "Nobody remembers it", why_wrong: "Not evidence."}
-      - {id: c, text: "It's old", why_wrong: "Not evidence."}
-      - {id: d, text: "It's at the bottom", why_wrong: "Order isn't usage."}
+      - {id: a, text: "Zero hits on it in FortiAnalyzer logs over a long period", correct: true}
+      - {id: b, text: "Nobody in the team remembers why the rule was ever added", trap: misconception, why_wrong: "Missing memory isn't evidence the rule is unused."}
+      - {id: c, text: "Zero hits in the FortiGate's policy counter since reboot", trap: near-miss, why_wrong: "Counters reset on reboot or HA failover; long-term logs are better evidence."}
+      - {id: d, text: "A broader rule above it that seems to match the same flow", trap: near-miss, why_wrong: "Suggests shadowing, but you still confirm with hit data before deleting."}
     explanation: "Logs are evidence."
   - id: M8.06.q03
     type: order

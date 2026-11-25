@@ -3,6 +3,7 @@ title: "FortiSIEM ingestion: event types, attributes and parsers"
 stage: S9
 stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
 order: 182
+quality: 2
 est_sessions: 1
 objectives:
   - Explain how raw logs become events with an event type and normalized attributes
@@ -87,31 +88,46 @@ quiz:
     pretest: true
     stem: "What makes one FortiSIEM rule work across Windows and Linux login failures?"
     options:
-      - {id: a, text: "Normalized attributes from the parsers", correct: true}
-      - {id: b, text: "Raw log regex in the rule", why_wrong: "Rules use attributes."}
-      - {id: c, text: "Same syslog port", why_wrong: "Unrelated."}
-      - {id: d, text: "Organizations", why_wrong: "Tenancy."}
+      - {id: a, text: "Normalised attributes that the parsers extract from each log", correct: true}
+      - {id: b, text: "A raw-log regular expression written to match both formats", trap: near-miss, why_wrong: "Rules work on parsed attributes; a regex per format doesn't scale."}
+      - {id: c, text: "Sending both log types to the same syslog port and Collector", trap: misconception, why_wrong: "Transport doesn't make the events comparable; parsing does."}
+      - {id: d, text: "Putting the Windows and Linux hosts in the same Organization", trap: irrelevant, why_wrong: "Organizations are tenancy, not normalisation."}
     explanation: "Parsers normalize."
   - id: M9.02.q02
     type: multi
     tier: 2
     stem: "A new firewall's logs arrive but show as unknown events. Which could fix it? Select all that apply."
     options:
-      - {id: a, text: "Switch the device to a supported log format", correct: true}
-      - {id: b, text: "Write or adapt a parser", correct: true}
-      - {id: c, text: "Add EPS licence", why_wrong: "Not a parsing problem."}
-      - {id: d, text: "Add a Worker", why_wrong: "Capacity, not parsing."}
+      - {id: a, text: "Switch the device to a log format FortiSIEM supports", correct: true}
+      - {id: b, text: "Write or adapt a parser for the device's format", correct: true}
+      - {id: c, text: "Add EPS to the licence so the events get parsed", trap: misconception, why_wrong: "Licensing doesn't affect parsing; unknown events still arrive."}
+      - {id: d, text: "Discover the device so the CMDB lists its type", trap: near-miss, why_wrong: "Discovery helps context, but the parser decides how the logs are read."}
     explanation: "Format or parser."
   - id: M9.02.q03
     type: single
     tier: 2
     stem: "Microsoft 365 audit events typically get into FortiSIEM by…"
     options:
-      - {id: a, text: "Pulling them through the cloud API", correct: true}
-      - {id: b, text: "Syslog from Microsoft 365", why_wrong: "SaaS sources are API-based."}
-      - {id: c, text: "A Windows agent", why_wrong: "Agents run on servers you own."}
-      - {id: d, text: "SNMP traps", why_wrong: "Not for audit logs."}
+      - {id: a, text: "Pulling them from the Microsoft 365 management API", correct: true}
+      - {id: b, text: "Syslog forwarded from the Microsoft 365 tenant", trap: misconception, why_wrong: "SaaS sources are collected through their APIs, not syslog."}
+      - {id: c, text: "A Windows agent installed on the Exchange hosts", trap: near-miss, why_wrong: "Agents fit servers you run; Microsoft 365 is a cloud service."}
+      - {id: d, text: "An event hub that Azure Monitor streams the logs into", trap: near-miss, why_wrong: "Used for some Azure logs; Microsoft 365 audit events come from the management API."}
     explanation: "Cloud sources are pulled."
+  - id: M9.02.q04
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      Event Type:  Unknown_EventType
+      Reporting IP: 10.20.40.12
+      Raw Event:   <134>1 2026-11-20T09:14:03Z edge-fw01 traffic - - [meta src=10.20.10.5 dst=8.8.8.8 act=allow]
+    stem: "Logs from a newly added firewall arrive like this. What do you do first?"
+    options:
+      - {id: a, text: "Check for a parser that fits this vendor's format, then test it on the raw event", correct: true}
+      - {id: b, text: "Create a rule on the raw event text so the traffic logs still raise incidents for now", trap: near-miss, why_wrong: "Works around the gap but leaves every attribute unparsed for searches and rules."}
+      - {id: c, text: "Run discovery on the firewall so FortiSIEM learns its type and picks a parser", trap: near-miss, why_wrong: "Discovery adds CMDB context; parsing still depends on a parser that matches the format."}
+      - {id: d, text: "Raise the Collector's upload rate since the parser queue is clearly falling behind", trap: misconception, why_wrong: "Unknown_EventType means no parser matched, not a backlog."}
+    explanation: "Unknown_EventType means no parser matched the format. Find or write the parser and test it on a sample."
 
 labs:
   - id: M9.02.lab1

@@ -3,6 +3,7 @@ title: "FortiManager operations: FortiGuard, FortiSwitch Manager, HA and trouble
 stage: S5
 stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
 order: 204
+quality: 2
 est_sessions: 1
 objectives:
   - Use FortiManager as a local FortiGuard distribution server and manage firmware
@@ -81,30 +82,31 @@ quiz:
     pretest: true
     stem: "Branch FortiGates over VPN show offline in FortiManager. Likely cause?"
     options:
-      - {id: a, text: "FGFM sourced from the WAN IP instead of a tunnel-covered IP (fmg-source-ip)", correct: true}
-      - {id: b, text: "FortiManager licence", why_wrong: "Would affect all devices."}
-      - {id: c, text: "Policy package too large", why_wrong: "Install issue, not connectivity."}
-      - {id: d, text: "Log quota", why_wrong: "FortiAnalyzer."}
+      - {id: a, text: "FGFM sourced from the WAN IP, not an IP covered by the tunnel", correct: true}
+      - {id: b, text: "The FortiManager licence expired for the branches' device count", trap: misconception, why_wrong: "A licence issue would affect devices beyond the VPN branches."}
+      - {id: c, text: "The policy package is too large to install over the VPN tunnels", trap: misconception, why_wrong: "Package size is an install issue, not a connectivity status."}
+      - {id: d, text: "A firewall policy on the hub blocks TCP 541 from the WAN interface", trap: near-miss, why_wrong: "Blocking FGFM would cause it, but over VPN the source IP is the usual culprit."}
     explanation: "Source IP over tunnels."
   - id: M5.05.q02
     type: single
     tier: 2
     stem: "FortiManager fails. What happens to traffic through managed FortiGates?"
     options:
-      - {id: a, text: "Nothing; they keep running their configuration", correct: true}
-      - {id: b, text: "Traffic stops", why_wrong: "FortiGates are independent."}
-      - {id: c, text: "Policies revert", why_wrong: "No."}
-      - {id: d, text: "FortiGates reboot", why_wrong: "No."}
+      - {id: a, text: "Nothing; they keep running their config", correct: true}
+      - {id: b, text: "Traffic stops until FMG is reachable again", trap: misconception, why_wrong: "FortiGates enforce on their own; FortiManager is management only."}
+      - {id: c, text: "Policies revert to their last installed state", trap: near-miss, why_wrong: "They already run the last installed state; nothing reverts."}
+      - {id: d, text: "FortiGuard updates via FMG's FDS stop flowing", trap: near-miss, why_wrong: "True if FMG is the FDS, but traffic itself is unaffected."}
     explanation: "Management plane only."
   - id: M5.05.q03
     type: multi
     tier: 2
     stem: "Benefits of FortiManager as local FDS? Select all that apply."
     options:
-      - {id: a, text: "Updates for devices without Internet access", correct: true}
-      - {id: b, text: "Less Internet bandwidth", correct: true}
+      - {id: a, text: "Updates for devices without Internet", correct: true}
+      - {id: b, text: "Less Internet bandwidth for updates", correct: true}
       - {id: c, text: "Central control of signature versions", correct: true}
-      - {id: d, text: "Replaces FortiGuard licences", why_wrong: "Licences still apply."}
+      - {id: d, text: "No need for per-device FortiGuard licences", trap: misconception, why_wrong: "Each device still needs its own licences."}
+      - {id: e, text: "Faster signature releases than FortiGuard", trap: near-miss, why_wrong: "FMG redistributes FortiGuard's packages; it can't be ahead of them."}
     explanation: "Distribution and control."
 
 labs:

@@ -3,6 +3,7 @@ title: "FortiManager foundations: architecture, ADOMs, devices and provisioning"
 stage: S5
 stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
 order: 120
+quality: 2
 est_sessions: 1
 objectives:
   - Explain FortiManager's layers (global, ADOM and policy, device) and its two databases
@@ -129,10 +130,10 @@ quiz:
     pretest: true
     stem: Where is the full configuration of each managed FortiGate stored in FortiManager?
     options:
-      - { id: a, text: "In its device database (Device Manager layer)", correct: true }
-      - { id: b, text: "In the ADOM object database", why_wrong: "That holds shared objects and policy packages." }
-      - { id: c, text: "Only on the FortiGate", why_wrong: "FortiManager keeps a copy per device." }
-      - { id: d, text: "In the global ADOM", why_wrong: "The global ADOM holds global objects and header/footer policies." }
+      - {id: a, text: "In its device database in Device Manager", correct: true}
+      - {id: b, text: "In the ADOM database with Policy & Objects", trap: near-miss, why_wrong: "That holds shared objects and policy packages, not each device's full config."}
+      - {id: c, text: "On the FortiGate, read live at each install", trap: misconception, why_wrong: "FortiManager keeps its own copy per device and installs the diff."}
+      - {id: d, text: "In the global ADOM, shared by all devices", trap: near-miss, why_wrong: "The global ADOM holds global objects and header/footer policies."}
     explanation: One device database per FortiGate.
     source: FortiManager 7.6.8 Admin Guide p. 51
   - id: M5.01.q02
@@ -141,10 +142,10 @@ quiz:
     pretest: true
     stem: An admin changes an address object in Device Manager's device database, then installs a policy package that also defines it. Result?
     options:
-      - { id: a, text: "The policy package version overwrites the device database change", correct: true }
-      - { id: b, text: "The device database change wins", why_wrong: "Policy package changes overwrite it." }
-      - { id: c, text: "Install fails", why_wrong: "It doesn't fail; it overwrites." }
-      - { id: d, text: "Both versions are kept", why_wrong: "One object, one definition." }
+      - {id: a, text: "The package's copy wins and replaces that edit at install", correct: true}
+      - {id: b, text: "The device database edit wins, as it's the more specific layer", trap: misconception, why_wrong: "Policy package objects overwrite the device database at install."}
+      - {id: c, text: "The install stops with a conflict until an admin picks a version", trap: near-miss, why_wrong: "There's no prompt; the package version is installed."}
+      - {id: d, text: "Both definitions are kept and the FortiGate gets a renamed copy", trap: misconception, why_wrong: "One object name has one definition on the device."}
     explanation: Make shared changes in Policy & Objects.
     source: FortiManager 7.6.8 Admin Guide p. 51
   - id: M5.01.q03
@@ -152,10 +153,10 @@ quiz:
     tier: 2
     stem: An MSSP wants each customer's admins to see only their own FortiGates. What do you use?
     options:
-      - { id: a, text: "ADOMs, with admins assigned per ADOM", correct: true }
-      - { id: b, text: "Workflow mode", why_wrong: "That controls approval, not visibility." }
-      - { id: c, text: "Policy blocks", why_wrong: "They reuse policies; they don't separate admins." }
-      - { id: d, text: "Device groups only", why_wrong: "Groups organise; ADOMs restrict access." }
+      - {id: a, text: "ADOMs, with admins assigned per ADOM", correct: true}
+      - {id: b, text: "Workflow mode with approvers per customer", trap: near-miss, why_wrong: "Workflow controls approval of changes, not what admins can see."}
+      - {id: c, text: "Device groups per customer in one ADOM", trap: near-miss, why_wrong: "Groups organise devices; admins in the ADOM still see all of them."}
+      - {id: d, text: "Policy blocks shared across the customers", trap: misconception, why_wrong: "Blocks reuse policies; they don't separate administrators."}
     explanation: ADOMs separate administration.
     source: FortiManager 7.6.8 Admin Guide p. 1061
   - id: M5.01.q04
@@ -163,10 +164,10 @@ quiz:
     tier: 2
     stem: A bank requires every firewall change to be approved before install. Which workspace mode?
     options:
-      - { id: a, text: "Workflow", correct: true }
-      - { id: b, text: "Normal (workspace)", why_wrong: "Locks but no approval sessions." }
-      - { id: c, text: "Disable", why_wrong: "No control at all." }
-      - { id: d, text: "Backup ADOM mode", why_wrong: "Backup mode doesn't manage changes from FortiManager." }
+      - {id: a, text: "Workflow mode", correct: true}
+      - {id: b, text: "Normal workspace", trap: near-miss, why_wrong: "Locks objects but has no approval sessions."}
+      - {id: c, text: "Workspace disabled", trap: misconception, why_wrong: "No locking and no approval at all."}
+      - {id: d, text: "Backup ADOM mode", trap: misconception, why_wrong: "Backup mode doesn't manage changes from FortiManager."}
     explanation: Workflow sessions need approval.
     source: FortiManager 7.6.8 Admin Guide p. 1165
   - id: M5.01.q05
@@ -174,10 +175,10 @@ quiz:
     tier: 3
     stem: ZTP with DHCP option 240/241 fails on a FortiGate that a technician already logged into and set a password on. Why?
     options:
-      - { id: a, text: "Option 240/241 only works on FortiGates at factory default", correct: true }
-      - { id: b, text: "DHCP options need FortiCloud", why_wrong: "They're a separate method." }
-      - { id: c, text: "The model device is missing a firmware template", why_wrong: "Not the cause." }
-      - { id: d, text: "FGFM needs ADOMs enabled", why_wrong: "No such requirement." }
+      - {id: a, text: "The option is honoured on factory-default FortiGates alone", correct: true}
+      - {id: b, text: "DHCP options need a FortiCloud key before the device trusts them", trap: misconception, why_wrong: "FortiCloud is a separate ZTP method."}
+      - {id: c, text: "The model device lacks a firmware template matching the unit", trap: near-miss, why_wrong: "Templates affect what's installed after the link, not whether ZTP starts."}
+      - {id: d, text: "The DHCP server sends option 240 but not the serial in 241", trap: near-miss, why_wrong: "241 carries the FortiManager address, not the serial; and the unit isn't default anyway."}
     explanation: Any modification disables option 240/241 acceptance.
     source: FortiManager 7.6.8 Admin Guide p. 53
   - id: M5.01.q06
@@ -185,10 +186,10 @@ quiz:
     tier: 2
     stem: Which are ZTP methods for FortiGates with FortiManager? Select all that apply.
     options:
-      - { id: a, text: "FortiCloud / FortiDeploy", correct: true }
-      - { id: b, text: "DHCP option 240/241", correct: true }
-      - { id: c, text: "USB boot configuration", correct: true }
-      - { id: d, text: "Typing the FortiManager IP on site", why_wrong: "That's low-touch provisioning." }
+      - {id: a, text: "FortiCloud / FortiDeploy", correct: true}
+      - {id: b, text: "DHCP option 240/241", correct: true}
+      - {id: c, text: "USB boot configuration", correct: true}
+      - {id: d, text: "FMG IP typed in on site", trap: near-miss, why_wrong: "That's low-touch provisioning, not zero-touch."}
     explanation: Zero-touch needs no on-site configuration.
     source: FortiManager 7.6.8 Admin Guide pp. 52–53
   - id: M5.01.q07
@@ -196,21 +197,22 @@ quiz:
     tier: 2
     stem: You need a script that uses loops and variables and runs against the ADOM database. Which type?
     options:
-      - { id: a, text: "Jinja", correct: true }
-      - { id: b, text: "TCL", why_wrong: "TCL runs only on the remote FortiGate directly." }
-      - { id: c, text: "CLI script on the remote FortiGate", why_wrong: "Wrong target." }
-      - { id: d, text: "CLI template", why_wrong: "A template, not a script against the ADOM database." }
+      - {id: a, text: "A Jinja script", correct: true}
+      - {id: b, text: "A TCL script", trap: near-miss, why_wrong: "TCL supports loops but runs on the remote FortiGate, not the ADOM database."}
+      - {id: c, text: "A CLI script", trap: near-miss, why_wrong: "Plain CLI scripts have no loops or variables."}
+      - {id: d, text: "A CLI template", trap: misconception, why_wrong: "Templates are applied at install; they aren't scripts against the ADOM database."}
     explanation: Jinja scripts run on the ADOM database.
     source: FortiManager 7.6.8 Admin Guide p. 258
   - id: M5.01.q08
     type: single
     tier: 3
-    stem: Best practice before a model device's real FortiGate comes online?
+    format: "first-step"
+    stem: "A model device is ready; the real FortiGate arrives next week. What do you do first?"
     options:
-      - { id: a, text: "Install the policy package to the model device first, to catch errors before auto-link", correct: true }
-      - { id: b, text: "Delete the model device", why_wrong: "Then nothing auto-links." }
-      - { id: c, text: "Disable ADOMs", why_wrong: "Unrelated." }
-      - { id: d, text: "Run a TCL script on it", why_wrong: "TCL runs only on real devices." }
+      - {id: a, text: "Install the policy package to the model device to catch errors early", correct: true}
+      - {id: b, text: "Delete and re-add the model device so that it picks up new templates", trap: misconception, why_wrong: "Then nothing is pre-validated and you lose its settings."}
+      - {id: c, text: "Run a TCL script on the model device to check its interface mappings", trap: near-miss, why_wrong: "TCL runs on real devices only; the package install validates mappings."}
+      - {id: d, text: "Assign the device to its ADOM so auto-link puts it in the right place", trap: near-miss, why_wrong: "Needed, but a model device is already in an ADOM; validation is the gap."}
     explanation: Validate before the device arrives.
     source: FortiManager 7.6.8 Admin Guide p. 62
   - id: M5.01.q09
@@ -218,10 +220,10 @@ quiz:
     tier: 2
     stem: What does ADOM device mode 'Advanced' allow?
     options:
-      - { id: a, text: "VDOMs of one FortiGate in different ADOMs", correct: true }
-      - { id: b, text: "Workflow approvals", why_wrong: "That's workspace mode." }
-      - { id: c, text: "Mixing FortiGate and FortiProxy in one ADOM", why_wrong: "ADOM type decides devices." }
-      - { id: d, text: "Backup-only management", why_wrong: "That's ADOM mode Backup." }
+      - {id: a, text: "VDOMs of one FortiGate in different ADOMs", correct: true}
+      - {id: b, text: "Approval sessions before each install", trap: near-miss, why_wrong: "That is what workflow workspace mode does."}
+      - {id: c, text: "FortiGate and FortiProxy in one ADOM", trap: misconception, why_wrong: "The ADOM type decides which devices it can hold."}
+      - {id: d, text: "Backup mode management of the devices", trap: near-miss, why_wrong: "That's ADOM mode Backup, not device mode Advanced."}
     explanation: Advanced splits VDOMs.
     source: FortiManager 7.6.8 Admin Guide pp. 1061, 1066
 

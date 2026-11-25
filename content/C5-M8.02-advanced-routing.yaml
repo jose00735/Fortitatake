@@ -3,6 +3,7 @@ title: "Advanced routing on FortiGate: OSPF and BGP configuration, debugging, BF
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 156
+quality: 2
 est_sessions: 1.5
 objectives:
   - Configure OSPF on FortiOS with areas, network statements, passive interfaces, authentication and default origination
@@ -176,30 +177,32 @@ quiz:
     pretest: true
     stem: "A FortiGate should advertise the HQ LAN in OSPF without any PC forming an adjacency. You…"
     options:
-      - {id: a, text: "Include the LAN in a network statement and make port2 passive", correct: true}
-      - {id: b, text: "Redistribute connected only", why_wrong: "Works, but makes it an external E2 route."}
-      - {id: c, text: "Leave the LAN out of OSPF", why_wrong: "Then nobody learns it."}
-      - {id: d, text: "Set port2 network-type point-to-point", why_wrong: "Still sends hellos."}
+      - {id: a, text: "Include the LAN in a network statement and set port2 as passive", correct: true}
+      - {id: b, text: "Redistribute connected routes so the LAN appears as an external", trap: near-miss, why_wrong: "Works, but the LAN becomes an E2 route instead of an internal one."}
+      - {id: c, text: "Set port2 to network-type point-to-point so no DR gets elected", trap: misconception, why_wrong: "Point-to-point still sends hellos; PCs could still try to form adjacencies."}
+      - {id: d, text: "Add the LAN to a stub area so hellos stay inside the area border", trap: misconception, why_wrong: "Stub areas filter external LSAs; they don't stop hellos on an interface."}
     explanation: "Network statement + passive interface."
   - id: M8.02.q02
     type: single
     tier: 2
     stem: "iBGP between loopbacks stays Active. Both sides have the neighbor and remote-as right. Most likely missing?"
     options:
-      - {id: a, text: "update-source loopback (or IGP routes to the loopbacks)", correct: true}
-      - {id: b, text: "ebgp-enforce-multihop", why_wrong: "That's for eBGP."}
-      - {id: c, text: "next-hop-self", why_wrong: "Affects routes, not session setup."}
-      - {id: d, text: "network-import-check", why_wrong: "Affects origination."}
+      - {id: a, text: "update-source set to the loopback, or IGP routes to the loopbacks", correct: true}
+      - {id: b, text: "ebgp-enforce-multihop, since the peers are more than one hop apart", trap: near-miss, why_wrong: "That's for eBGP; iBGP peers aren't limited to one hop."}
+      - {id: c, text: "next-hop-self on both peers so the routes resolve to the loopbacks", trap: near-miss, why_wrong: "Affects routes after the session is up, not session setup."}
+      - {id: d, text: "network-import-check disabled so the loopback prefixes are announced", trap: misconception, why_wrong: "That affects origination of networks, not the session."}
     explanation: "Sessions source from the egress interface unless update-source is set."
   - id: M8.02.q03
     type: multi
     tier: 3
-    stem: "Which commands show why a BGP session isn't up? Select all that apply."
+    format: "first-step"
+    stem: "A BGP session isn't up. Which commands would you run first to see why? Select all that apply."
     options:
       - {id: a, text: "get router info bgp summary", correct: true}
       - {id: b, text: "get router info bgp neighbors <ip>", correct: true}
-      - {id: c, text: "diagnose ip router bgp all enable + diagnose debug enable", correct: true}
-      - {id: d, text: "get router info ospf database", why_wrong: "OSPF LSDB."}
+      - {id: c, text: "diagnose ip router bgp all enable", correct: true}
+      - {id: d, text: "get router info routing-table bgp", trap: near-miss, why_wrong: "Shows BGP routes installed, which there are none of while the session is down."}
+      - {id: e, text: "get router info ospf neighbor", trap: irrelevant, why_wrong: "Useful only if the loopbacks are reached over OSPF; it doesn't show BGP state."}
     explanation: "State, neighbor detail, live debug."
   - id: M8.02.q04
     type: single
@@ -207,9 +210,9 @@ quiz:
     stem: "What does BFD give a routing design?"
     options:
       - {id: a, text: "Sub-second failure detection that the routing protocol acts on", correct: true}
-      - {id: b, text: "Encryption of routing updates", why_wrong: "BFD doesn't encrypt (and FortiGate BFD has no authentication)."}
-      - {id: c, text: "Load balancing", why_wrong: "That's ECMP."}
-      - {id: d, text: "Route filtering", why_wrong: "Prefix lists and route maps."}
+      - {id: b, text: "Authentication of routing updates between the two BFD neighbours", trap: misconception, why_wrong: "BFD carries no routing updates, and FortiGate BFD has no authentication."}
+      - {id: c, text: "Faster convergence by lowering the hello timers of OSPF and BGP", trap: near-miss, why_wrong: "Faster convergence yes, but BFD replaces aggressive timers rather than lowering them."}
+      - {id: d, text: "Load balancing across equal-cost paths with per-session hashing", trap: irrelevant, why_wrong: "That is ECMP, which BFD does not provide."}
     explanation: "Fast liveness detection."
     source: "FortiOS 8.0.2 Admin Guide p. 806"
   - id: M8.02.q05

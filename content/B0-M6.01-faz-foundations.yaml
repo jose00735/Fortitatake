@@ -3,6 +3,7 @@ title: "FortiAnalyzer foundations: modes, logs, storage, forwarding and HA"
 stage: S6
 stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
 order: 130
+quality: 2
 est_sessions: 1
 objectives:
   - Choose Analyzer or Collector mode and explain Analyzer–Collector designs
@@ -133,10 +134,10 @@ quiz:
     pretest: true
     stem: Which logs can you use in FortiAnalyzer reports?
     options:
-      - { id: a, text: "Analytics logs indexed in the SQL database", correct: true }
-      - { id: b, text: "Archive logs", why_wrong: "Archive logs aren't available to reports until re-indexed." }
-      - { id: c, text: "Any log on disk", why_wrong: "Only indexed logs." }
-      - { id: d, text: "Real-time logs only", why_wrong: "Reports use indexed history." }
+      - {id: a, text: "Analytics logs indexed in the SQL database", correct: true}
+      - {id: b, text: "Archive logs compressed on the log disk", trap: near-miss, why_wrong: "Archive logs aren't available to reports until they're re-indexed."}
+      - {id: c, text: "Any log on disk, analytics or archive alike", trap: misconception, why_wrong: "Reports query the indexed Analytics logs alone."}
+      - {id: d, text: "The real-time feed from the connected devices", trap: misconception, why_wrong: "Reports read indexed history, not the live stream."}
     explanation: Reports, FortiView, Log View and incidents use Analytics.
     source: FortiAnalyzer 8.0.2 Admin Guide pp. 50–51
   - id: M6.01.q02
@@ -145,10 +146,10 @@ quiz:
     pretest: true
     stem: A FortiGate is configured to send logs but nothing appears. The FortiAnalyzer shows it under Unauthorized Devices. Fix?
     options:
-      - { id: a, text: "Authorise the device on FortiAnalyzer", correct: true }
-      - { id: b, text: "Change the FortiGate to syslog", why_wrong: "Unnecessary." }
-      - { id: c, text: "Reboot FortiAnalyzer", why_wrong: "Not needed." }
-      - { id: d, text: "Switch to Collector mode", why_wrong: "Unrelated." }
+      - {id: a, text: "Authorise the device on FortiAnalyzer", correct: true}
+      - {id: b, text: "Change the FortiGate to send syslog", trap: misconception, why_wrong: "The transport works; the device is waiting for authorisation."}
+      - {id: c, text: "Match the FortiGate's enc-algorithm level", trap: near-miss, why_wrong: "An encryption mismatch rejects logs, but this device is listed as Unauthorized."}
+      - {id: d, text: "Add the FortiGate's serial to an ADOM", trap: near-miss, why_wrong: "ADOM assignment comes with authorisation; the device must be authorised first."}
     explanation: Devices must be registered and authorised.
     source: FortiAnalyzer 8.0.2 Admin Guide pp. 48, 98
   - id: M6.01.q03
@@ -156,10 +157,10 @@ quiz:
     tier: 2
     stem: FortiGate enc-algorithm is 'low' and FortiAnalyzer is 'high'. What happens?
     options:
-      - { id: a, text: "Logs are rejected: FortiAnalyzer's level must be equal or lower than the FortiGate's", correct: true }
-      - { id: b, text: "Logs are accepted at high", why_wrong: "The levels are incompatible." }
-      - { id: c, text: "Logs are sent unencrypted", why_wrong: "OFTP logs must be encrypted." }
-      - { id: d, text: "FortiGate upgrades automatically", why_wrong: "No." }
+      - {id: a, text: "Logs are rejected: FortiAnalyzer's level must be equal or lower", correct: true}
+      - {id: b, text: "Logs are accepted, and FortiAnalyzer negotiates up to high", trap: misconception, why_wrong: "The levels are incompatible; there's no upward negotiation."}
+      - {id: c, text: "Logs fall back to unencrypted OFTP until the levels are fixed", trap: misconception, why_wrong: "OFTP logs must be encrypted; there's no plain-text fallback."}
+      - {id: d, text: "Logs are accepted at low, as the FortiGate's level must be met first", trap: near-miss, why_wrong: "The rule runs the other way: FortiAnalyzer's level must be equal or lower."}
     explanation: Match or lower on FortiAnalyzer.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 48
   - id: M6.01.q04
@@ -167,10 +168,10 @@ quiz:
     tier: 2
     stem: A customer wants a year of logs for compliance but only investigates the last month. Data policy?
     options:
-      - { id: a, text: "About 30–60 days in Analytics and 365 days in Archive", correct: true }
-      - { id: b, text: "365 days in Analytics", why_wrong: "Wasteful: indexed logs take far more space." }
-      - { id: c, text: "30 days Archive only", why_wrong: "Fails compliance." }
-      - { id: d, text: "No data policy", why_wrong: "Defaults may not match the requirement." }
+      - {id: a, text: "About 30–60 days in Analytics and 365 days in Archive", correct: true}
+      - {id: b, text: "365 days in Analytics so any month is searchable fast", trap: near-miss, why_wrong: "Works, but indexed logs take far more space than archive."}
+      - {id: c, text: "30 days in Analytics and 30 days in Archive, rolled daily", trap: misconception, why_wrong: "Fails the one-year compliance requirement."}
+      - {id: d, text: "60 days in Archive and 365 days in Analytics for reports", trap: misconception, why_wrong: "Backwards: Archive is the long-term store."}
     explanation: Analytics for investigation, Archive for retention.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 51
   - id: M6.01.q05
@@ -183,12 +184,13 @@ quiz:
   - id: M6.01.q06
     type: single
     tier: 3
-    stem: Auditors ask about an incident 8 months ago. Analytics keeps 60 days; Archive keeps 1 year. What do you do?
+    format: "first-step"
+    stem: "Auditors ask about an incident 8 months ago. Analytics keeps 60 days; Archive keeps 1 year. What do you do first?"
     options:
-      - { id: a, text: "Rebuild the database for that date range from Archive (or fetch to another FAZ), analyse, then rebuild back", correct: true }
-      - { id: b, text: "It's impossible", why_wrong: "Archive logs can be re-indexed." }
-      - { id: c, text: "Read the binary files by hand", why_wrong: "Use the supported rebuild or fetch." }
-      - { id: d, text: "Ask the FortiGate", why_wrong: "FortiGates don't keep 8 months of logs." }
+      - {id: a, text: "Rebuild the database for that range from Archive, or fetch it to another FAZ", correct: true}
+      - {id: b, text: "Tell the auditors the data has aged out of what FortiAnalyzer can search", trap: misconception, why_wrong: "Archive logs can be re-indexed for that period."}
+      - {id: c, text: "Raise Analytics retention to 365 days so that the old logs become searchable", trap: near-miss, why_wrong: "Retention applies going forward; logs already archived still need a rebuild."}
+      - {id: d, text: "Download the archive files and parse them with a script on a workstation", trap: near-miss, why_wrong: "Possible, but the supported rebuild or fetch keeps the analysis in the tool."}
     explanation: Archive enables later analysis.
     source: FortiAnalyzer 8.0.2 Admin Guide pp. 51, 585
   - id: M6.01.q07
@@ -196,10 +198,10 @@ quiz:
     tier: 2
     stem: The SOC's SIEM needs FortiGate logs in CEF in near real time. What do you configure on FortiAnalyzer?
     options:
-      - { id: a, text: "Log forwarding (forwarding mode) to a CEF server", correct: true }
-      - { id: b, text: "Aggregation mode to the SIEM", why_wrong: "Aggregation is FAZ-to-FAZ only." }
-      - { id: c, text: "Log fetching", why_wrong: "Fetching is FAZ-to-FAZ for archives." }
-      - { id: d, text: "Collector mode", why_wrong: "That forwards to an Analyzer." }
+      - {id: a, text: "Log forwarding in forwarding mode to a CEF server", correct: true}
+      - {id: b, text: "Aggregation mode pointed at the SIEM's IP address", trap: near-miss, why_wrong: "Aggregation runs between two FortiAnalyzers, not to a SIEM."}
+      - {id: c, text: "Log fetching scheduled each hour by the SIEM side", trap: near-miss, why_wrong: "Fetching moves archives between FortiAnalyzers."}
+      - {id: d, text: "Collector mode with the SIEM set as the Analyzer", trap: misconception, why_wrong: "Collector mode forwards to a FortiAnalyzer in Analyzer mode."}
     explanation: Forwarding supports syslog and CEF.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 573
   - id: M6.01.q08
@@ -207,10 +209,11 @@ quiz:
     tier: 2
     stem: Which are true about FortiAnalyzer HA? Select all that apply.
     options:
-      - { id: a, text: "Up to four units: one primary and up to three secondaries", correct: true }
-      - { id: b, text: "All units same series and same operation mode", correct: true }
-      - { id: c, text: "Active-Active can support geo-redundant designs", correct: true }
-      - { id: d, text: "Up to five units with VRRP failover", why_wrong: "That describes FortiManager HA." }
+      - {id: a, text: "Up to four units, one primary and three secondaries", correct: true}
+      - {id: b, text: "All units of one series, in the same operation mode", correct: true}
+      - {id: c, text: "Active-active can support geo-redundant designs", correct: true}
+      - {id: d, text: "Up to five units, with VRRP moving the cluster IP", trap: near-miss, why_wrong: "Five units describes FortiManager HA."}
+      - {id: e, text: "Secondaries can be a lower model of another series", trap: misconception, why_wrong: "All units must be the same series."}
     explanation: Don't mix up FAZ and FMG HA.
     source: FortiAnalyzer 8.0.2 Admin Guide pp. 667–668
   - id: M6.01.q09
@@ -218,10 +221,10 @@ quiz:
     tier: 3
     stem: Why roll log files daily?
     options:
-      - { id: a, text: "So no file spans more than 24 hours, keeping retention deletion accurate", correct: true }
-      - { id: b, text: "Required for encryption", why_wrong: "Unrelated." }
-      - { id: c, text: "To save CPU", why_wrong: "Not the reason given." }
-      - { id: d, text: "Reports only read daily files", why_wrong: "Reports read Analytics." }
+      - {id: a, text: "So no file spans more than 24 hours and retention deletes accurately", correct: true}
+      - {id: b, text: "Because log encryption with OFTP needs files closed at least daily", trap: misconception, why_wrong: "Encryption is on the transport, not tied to file rolling."}
+      - {id: c, text: "To keep each file small enough for Log Browse to open in the GUI", trap: near-miss, why_wrong: "Smaller files help, but retention accuracy is the reason given."}
+      - {id: d, text: "So the daily aggregation job can send whole files to the peer FAZ unit", trap: near-miss, why_wrong: "Aggregation has its own schedule; rolling is about accurate retention deletes."}
     explanation: FortiAnalyzer deletes whole files.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 49
 

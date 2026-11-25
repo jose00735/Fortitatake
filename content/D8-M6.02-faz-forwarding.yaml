@@ -3,6 +3,7 @@ title: "FortiAnalyzer devices, log forwarding, fetching and HA"
 stage: S6
 stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
 order: 198
+quality: 2
 est_sessions: 1
 objectives:
   - Add and authorize devices and check that logs arrive
@@ -87,10 +88,10 @@ quiz:
     pretest: true
     stem: "You need logs in a third-party SIEM within minutes. Which FortiAnalyzer mode?"
     options:
-      - {id: a, text: "Log forwarding (forwarding mode) via syslog/CEF", correct: true}
-      - {id: b, text: "Aggregation", why_wrong: "Daily, FAZ-to-FAZ only."}
-      - {id: c, text: "Log fetching", why_wrong: "Retrieves archives between FAZs."}
-      - {id: d, text: "Reports", why_wrong: "Not a log stream."}
+      - {id: a, text: "Log forwarding over syslog or CEF", correct: true}
+      - {id: b, text: "Aggregation to the SIEM each night", trap: near-miss, why_wrong: "Aggregation runs daily and only between FortiAnalyzers."}
+      - {id: c, text: "Log fetching from the SIEM's side", trap: near-miss, why_wrong: "Fetching retrieves archives between FortiAnalyzers."}
+      - {id: d, text: "A scheduled report with CSV output", trap: misconception, why_wrong: "Reports are summaries, not a log stream."}
     explanation: "Forwarding is near real time."
     source: "FortiAnalyzer 8.0.2 Admin Guide p. 573"
   - id: M6.02.q02
@@ -98,10 +99,11 @@ quiz:
     tier: 2
     stem: "Which are true of aggregation mode? Select all that apply."
     options:
-      - {id: a, text: "Only between two FortiAnalyzers", correct: true}
+      - {id: a, text: "Runs between two FortiAnalyzers", correct: true}
       - {id: b, text: "Runs at a set time each day", correct: true}
-      - {id: c, text: "Configured in the CLI", correct: true}
-      - {id: d, text: "Works with CEF servers", why_wrong: "Syslog/CEF aren't supported."}
+      - {id: c, text: "Is configured in the CLI", correct: true}
+      - {id: d, text: "Can send to CEF or syslog servers", trap: misconception, why_wrong: "Syslog and CEF go through log forwarding, not aggregation."}
+      - {id: e, text: "Streams logs in near real time", trap: near-miss, why_wrong: "That's forwarding mode; aggregation is daily."}
     explanation: "Daily FAZ-to-FAZ."
   - id: M6.02.q03
     type: single
@@ -109,9 +111,9 @@ quiz:
     stem: "An investigator needs last year's logs that live on an archive FortiAnalyzer. Feature?"
     options:
       - {id: a, text: "Log fetching", correct: true}
-      - {id: b, text: "Log forwarding", why_wrong: "For new logs."}
-      - {id: c, text: "FortiView", why_wrong: "Views local data."}
-      - {id: d, text: "HA", why_wrong: "Availability."}
+      - {id: b, text: "Log forwarding", trap: near-miss, why_wrong: "Forwarding sends new logs as they arrive, not last year's."}
+      - {id: c, text: "Aggregation mode", trap: near-miss, why_wrong: "Aggregation pushes logs daily; it doesn't pull a past range on demand."}
+      - {id: d, text: "FortiView search", trap: misconception, why_wrong: "FortiView reads local Analytics data only."}
     explanation: "Fetch, index, query."
     source: "FortiAnalyzer 8.0.2 Admin Guide p. 585"
 

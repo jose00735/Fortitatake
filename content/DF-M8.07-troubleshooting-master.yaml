@@ -3,6 +3,7 @@ title: "Troubleshooting master: packet flow, resources and sessions"
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 212
+quality: 2
 est_sessions: 1
 objectives:
   - Walk a packet through the FortiGate end to end and know where each feature acts
@@ -108,19 +109,21 @@ quiz:
     stem: "After moving traffic to a new ISP by route change, some users still go out the old ISP. Why?"
     options:
       - {id: a, text: "Existing sessions keep their old route until cleared or expired", correct: true}
-      - {id: b, text: "The new route is wrong", why_wrong: "New sessions use it."}
-      - {id: c, text: "NP offload broke routing", why_wrong: "Not the cause."}
-      - {id: d, text: "DNS cache", why_wrong: "Not about the egress ISP."}
+      - {id: b, text: "The new route has a higher distance, so the old ISP still wins", trap: near-miss, why_wrong: "Then no new sessions would move either, but most users did."}
+      - {id: c, text: "The new ISP gateway's ARP entry hasn't resolved on the FortiGate yet", trap: near-miss, why_wrong: "Then no sessions could use the new ISP, but most users already do."}
+      - {id: d, text: "Their DNS cache still resolves to the old ISP's resolver address", trap: irrelevant, why_wrong: "DNS answers don't choose the egress ISP; the session table does."}
     explanation: "Clear the relevant sessions with a filter."
   - id: M8.07.q04
     type: multi
     tier: 3
-    stem: "A FortiGate enters conserve mode every afternoon. Good first checks? Select all that apply."
+    format: "first-step"
+    stem: "A FortiGate enters conserve mode every afternoon. Which checks come first? Select all that apply."
     options:
       - {id: a, text: "Session count and its trend", correct: true}
-      - {id: b, text: "Top processes by memory", correct: true}
-      - {id: c, text: "Features vs model (proxy inspection on a small unit)", correct: true}
-      - {id: d, text: "Raise the red threshold to 95 %", why_wrong: "Hides the cause."}
+      - {id: b, text: "Top processes by memory use", correct: true}
+      - {id: c, text: "Features enabled vs the model", correct: true}
+      - {id: d, text: "Raise the red threshold to 95%", trap: misconception, why_wrong: "Hides the symptom; the cause keeps growing."}
+      - {id: e, text: "Upgrade to the newest firmware", trap: near-miss, why_wrong: "Can fix a leak, but first find out what's consuming memory."}
     explanation: "Find the consumer."
 
 labs:

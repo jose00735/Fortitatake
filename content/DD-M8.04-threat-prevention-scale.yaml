@@ -3,6 +3,7 @@ title: "Threat prevention at scale: IPS, custom signatures, overrides, offload"
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 208
+quality: 2
 est_sessions: 1
 objectives:
   - Tune IPS sensors for performance and accuracy
@@ -83,20 +84,26 @@ quiz:
     pretest: true
     stem: "A DMZ policy protects Linux web servers. Best IPS sensor?"
     options:
-      - {id: a, text: "Server-side signatures filtered to Linux and web apps", correct: true}
-      - {id: b, text: "All signatures, block", why_wrong: "Costly and noisy."}
-      - {id: c, text: "Client-side Windows signatures", why_wrong: "Wrong target."}
-      - {id: d, text: "No IPS on DMZ", why_wrong: "DMZ is exposed."}
+      - {id: a, text: "Server-side signatures filtered to Linux and the web stack", correct: true}
+      - {id: b, text: "All signatures enabled with block, to cover any risk at all", trap: misconception, why_wrong: "Costly in CPU and noisy; most signatures target assets you don't have."}
+      - {id: c, text: "Client-side signatures for Windows browsers and Office files", trap: near-miss, why_wrong: "Right idea of filtering, wrong target: servers need server-side signatures."}
+      - {id: d, text: "The default sensor in monitor mode until the logs are reviewed", trap: near-miss, why_wrong: "A fine rollout step, but an exposed DMZ needs a tuned blocking sensor."}
     explanation: "Match signatures to assets."
   - id: M8.04.q02
-    type: single
+    type: "output"
     tier: 3
-    stem: "Debug flow shows only the first packets of a session, then nothing. Why?"
+    output: |
+      id=20085 trace_id=7 msg="vd-root:0 received a packet(proto=6, 10.1.1.20:50122->10.50.0.10:443) from port2. flag [S]"
+      id=20085 trace_id=7 msg="allocate a new session-0003f1aa"
+      id=20085 trace_id=7 msg="Allowed by Policy-12: SNAT"
+      id=20085 trace_id=8 msg="vd-root:0 received a packet(proto=6, 10.50.0.10:443->10.1.1.20:50122) from port1. flag [S.]"
+      (no further trace lines; the user's download works)
+    stem: "Debug flow shows only the first packets of this session, then nothing. Why?"
     options:
-      - {id: a, text: "The session was offloaded to the NP", correct: true}
-      - {id: b, text: "The policy denied it", why_wrong: "Then no session."}
-      - {id: c, text: "Logging is off", why_wrong: "Unrelated to debug flow."}
-      - {id: d, text: "IPS blocked it", why_wrong: "You'd see a drop."}
+      - {id: a, text: "Hardware offload took over, so the CPU no longer sees the flow", correct: true}
+      - {id: b, text: "The policy denied the session after the handshake had completed", trap: misconception, why_wrong: "The trace shows Policy-12 allowed it, and the download works."}
+      - {id: c, text: "IPS dropped the session silently once it saw the server's reply", trap: near-miss, why_wrong: "An IPS drop leaves a log and breaks the download; here it works."}
+      - {id: d, text: "The trace count set with trace start ran out after two packets", trap: near-miss, why_wrong: "Possible with a tiny count, but trace_id only reached 8; offload is the usual cause."}
     explanation: "Offloaded packets bypass the CPU."
   - id: M8.04.q03
     type: multi
@@ -104,9 +111,9 @@ quiz:
     stem: "Uses of custom signatures? Select all that apply."
     options:
       - {id: a, text: "Identify an in-house application", correct: true}
-      - {id: b, text: "Block an exploit pattern before an official signature", correct: true}
-      - {id: c, text: "Replace firewall policies", why_wrong: "No."}
-      - {id: d, text: "Speed up NP offload", why_wrong: "No."}
+      - {id: b, text: "Block an exploit before FortiGuard ships one", correct: true}
+      - {id: c, text: "Tune a noisy FortiGuard signature's severity", trap: near-miss, why_wrong: "Tuning is done with sensor overrides, not custom signatures."}
+      - {id: d, text: "Speed up NP offload for known safe traffic", trap: misconception, why_wrong: "Signatures add inspection; they don't make offload faster."}
     explanation: "Detection for specific needs."
     source: "FortiOS 8.0.2 Admin Guide p. 3092"
 

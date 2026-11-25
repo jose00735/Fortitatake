@@ -3,6 +3,7 @@ title: "Security Fabric and automation"
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 206
+quality: 2
 est_sessions: 1
 objectives:
   - Build a Security Fabric with root and downstream FortiGates and connected Fortinet devices
@@ -86,10 +87,10 @@ quiz:
     pretest: true
     stem: "In a Security Fabric, which FortiGate shows the full topology?"
     options:
-      - {id: a, text: "The root", correct: true}
-      - {id: b, text: "Any downstream", why_wrong: "Root is the main view."}
-      - {id: c, text: "The HA secondary", why_wrong: "Unrelated."}
-      - {id: d, text: "FortiSwitch", why_wrong: "Not a FortiGate."}
+      - {id: a, text: "The root unit at the top of the tree", correct: true}
+      - {id: b, text: "Any downstream FortiGate in the tree", trap: near-miss, why_wrong: "Downstream units see their part; the root holds the full topology view."}
+      - {id: c, text: "The HA secondary of the root cluster", trap: misconception, why_wrong: "HA roles don't change the Fabric view; the primary acts as root."}
+      - {id: d, text: "The FortiAnalyzer the Fabric logs to", trap: near-miss, why_wrong: "FortiAnalyzer shows Fabric View from logs, but the question asks which FortiGate."}
     explanation: "Root FortiGate."
     source: "FortiOS 8.0.2 Admin Guide p. 4814"
   - id: M8.01.q02
@@ -97,20 +98,20 @@ quiz:
     tier: 2
     stem: "Valid automation actions? Select all that apply."
     options:
-      - {id: a, text: "Ban IP", correct: true}
-      - {id: b, text: "Quarantine on FortiSwitch/FortiClient", correct: true}
-      - {id: c, text: "CLI script", correct: true}
-      - {id: d, text: "Rewrite firmware", why_wrong: "Not an action."}
+      - {id: a, text: "Ban the offending source IP address", correct: true}
+      - {id: b, text: "Quarantine through FortiClient or a switch", correct: true}
+      - {id: c, text: "Run a CLI script on a FortiGate", correct: true}
+      - {id: d, text: "Roll a device back to older firmware", trap: near-miss, why_wrong: "Automation can run scripts, but firmware rollback isn't an action type."}
     explanation: "Among the documented action types."
   - id: M8.01.q03
     type: single
     tier: 2
     stem: "Cloud servers change IPs daily. How do policies keep up?"
     options:
-      - {id: a, text: "SDN connector-based dynamic addresses", correct: true}
-      - {id: b, text: "Edit addresses daily", why_wrong: "Manual, error-prone."}
-      - {id: c, text: "Allow any", why_wrong: "Insecure."}
-      - {id: d, text: "FQDN of the cloud console", why_wrong: "Not the workloads."}
+      - {id: a, text: "Dynamic addresses filled in by an SDN connector", correct: true}
+      - {id: b, text: "An address group that the cloud team edits each day", trap: misconception, why_wrong: "Manual edits lag behind and break on the day someone forgets."}
+      - {id: c, text: "FQDN addresses using the instances' public DNS names", trap: near-miss, why_wrong: "Works only if every workload has a stable name and short TTLs; the connector reads the cloud API."}
+      - {id: d, text: "A wide subnet covering the whole VPC address range", trap: near-miss, why_wrong: "Keeps up with changes but allows far more than the workloads that need access."}
     explanation: "Connectors sync dynamic objects."
 
 labs:

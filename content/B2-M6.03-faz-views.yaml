@@ -3,6 +3,7 @@ title: "FortiAnalyzer FortiView, Log View and Fabric View: investigating with lo
 stage: S6
 stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
 order: 132
+quality: 2
 est_sessions: 1
 objectives:
   - Use FortiView to go from a dashboard to a single suspicious session
@@ -110,10 +111,10 @@ quiz:
     pretest: true
     stem: FortiView shows no data for dates older than 45 days, but Archive holds a year. Why?
     options:
-      - { id: a, text: "FortiView only uses Analytics logs, and Analytics retention is shorter", correct: true }
-      - { id: b, text: "FortiView only shows 45 days by design", why_wrong: "It depends on the data policy." }
-      - { id: c, text: "The FortiGate deleted the logs", why_wrong: "FortiAnalyzer holds them." }
-      - { id: d, text: "Archive logs are encrypted", why_wrong: "Not the reason." }
+      - {id: a, text: "FortiView reads Analytics logs, and Analytics retention is shorter", correct: true}
+      - {id: b, text: "FortiView is hard-limited to 45 days of history in each release", trap: misconception, why_wrong: "The data policy decides how far back FortiView goes."}
+      - {id: c, text: "The FortiGates deleted their local copies of the older log files", trap: misconception, why_wrong: "FortiAnalyzer holds its own copies."}
+      - {id: d, text: "Archive logs are encrypted at rest until an admin unlocks the ADOM first", trap: near-miss, why_wrong: "Archive logs are compressed, not locked; they need re-indexing."}
     explanation: Data policy decides what's indexed.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 113
   - id: M6.03.q02
@@ -122,10 +123,10 @@ quiz:
     pretest: true
     stem: Where do you look at compressed log files directly?
     options:
-      - { id: a, text: "Log View > Log Browse", correct: true }
-      - { id: b, text: "FortiView", why_wrong: "Analytics only." }
-      - { id: c, text: "Reports", why_wrong: "Analytics only." }
-      - { id: d, text: "Fabric View", why_wrong: "Assets and topology." }
+      - {id: a, text: "Log View > Log Browse", correct: true}
+      - {id: b, text: "FortiView > Top Sources", trap: near-miss, why_wrong: "FortiView reads Analytics, not the compressed files."}
+      - {id: c, text: "Reports > Generated", trap: misconception, why_wrong: "Reports also read the Analytics database."}
+      - {id: d, text: "Fabric View > Assets", trap: misconception, why_wrong: "Asset and identity data, not raw log files."}
     explanation: Log Browse reads files.
     source: FortiAnalyzer 8.0.2 Admin Guide pp. 158, 179
   - id: M6.03.q03
@@ -133,10 +134,10 @@ quiz:
     tier: 2
     stem: You want one view and one report for 30 branch FortiGates without extra storage. Use…
     options:
-      - { id: a, text: "A log group", correct: true }
-      - { id: b, text: "A new ADOM", why_wrong: "ADOMs separate administration and storage policies." }
-      - { id: c, text: "Collector mode", why_wrong: "Different purpose." }
-      - { id: d, text: "Log fetching", why_wrong: "For pulling archives from another FAZ." }
+      - {id: a, text: "A log group of the 30 devices", correct: true}
+      - {id: b, text: "A new ADOM for those branches", trap: near-miss, why_wrong: "ADOMs separate administration and storage, adding policy overhead."}
+      - {id: c, text: "A device group in Device Manager", trap: near-miss, why_wrong: "Device groups organise devices but aren't a log source for views."}
+      - {id: d, text: "Log fetching into a reports ADOM", trap: misconception, why_wrong: "Fetching copies archives and uses storage."}
     explanation: Virtual, up to 100 devices.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 179
   - id: M6.03.q04
@@ -144,10 +145,11 @@ quiz:
     tier: 2
     stem: Which are FortiGate Security log types in FortiAnalyzer? Select all that apply.
     options:
-      - { id: a, text: "Intrusion Prevention", correct: true }
-      - { id: b, text: "Web Filter", correct: true }
-      - { id: c, text: "DNS", correct: true }
-      - { id: d, text: "HA", why_wrong: "HA is an Event log." }
+      - {id: a, text: "Intrusion logs", correct: true}
+      - {id: b, text: "Web Filter logs", correct: true}
+      - {id: c, text: "DNS Query logs", correct: true}
+      - {id: d, text: "HA event logs", trap: near-miss, why_wrong: "HA is an Event log, not a Security log."}
+      - {id: e, text: "VPN event logs", trap: near-miss, why_wrong: "VPN activity is logged under Event logs."}
     explanation: Security vs Event categories.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 158
   - id: M6.03.q05
@@ -159,12 +161,13 @@ quiz:
   - id: M6.03.q06
     type: single
     tier: 3
-    stem: Imported log files from an old FortiGate don't appear in Log View analytics. Most likely?
+    format: "first-step"
+    stem: "Imported log files from an old FortiGate don't appear in Log View analytics. What do you check first?"
     options:
-      - { id: a, text: "SQL start-time and rebuild-event-start-time are newer than the logs, or Analytics retention is too short", correct: true }
-      - { id: b, text: "Import isn't supported", why_wrong: "It is." }
-      - { id: c, text: "Log groups are needed", why_wrong: "Not for import." }
-      - { id: d, text: "FortiView must be disabled", why_wrong: "Unrelated." }
+      - {id: a, text: "That the SQL start-time and Analytics retention cover the imported dates", correct: true}
+      - {id: b, text: "That log import is supported for that model's older FortiOS version at all", trap: misconception, why_wrong: "Import is supported; the logs went to archive."}
+      - {id: c, text: "That the old FortiGate is in a log group with the current device", trap: near-miss, why_wrong: "Log groups combine views; they don't index imported files."}
+      - {id: d, text: "That the device is authorised again under its old serial in the ADOM", trap: near-miss, why_wrong: "Needed for the files to be accepted, but they were imported; indexing is the gap."}
     explanation: The SQL time window must include the imported dates.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 180
   - id: M6.03.q07
@@ -172,10 +175,10 @@ quiz:
     tier: 2
     stem: In an incident you need to know which user was on 10.1.20.55 and which other IPs their laptop used. Where?
     options:
-      - { id: a, text: "Fabric View > Asset Identity Center", correct: true }
-      - { id: b, text: "Reports", why_wrong: "Too slow for live investigation." }
-      - { id: c, text: "Log Browse", why_wrong: "Raw files, no mapping." }
-      - { id: d, text: "System Settings", why_wrong: "No." }
+      - {id: a, text: "Fabric View > Asset Identity Center", correct: true}
+      - {id: b, text: "A user activity report run on demand", trap: near-miss, why_wrong: "Reports are slow for live work and don't map endpoints to IPs."}
+      - {id: c, text: "Log Browse on the raw traffic files", trap: near-miss, why_wrong: "Raw files have the IP but no user-endpoint mapping."}
+      - {id: d, text: "FortiView > Threats for that address", trap: misconception, why_wrong: "Threat views list detections, not identity."}
     explanation: User-endpoint mapping lives there.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 191
 

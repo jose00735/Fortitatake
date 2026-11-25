@@ -3,6 +3,7 @@ title: "FortiEDR architecture and deployment"
 stage: S10
 stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
 order: 190
+quality: 2
 est_sessions: 1
 objectives:
   - Describe Collector, Aggregator, Core, Central Manager, Threat Hunting Repository and the cloud service
@@ -85,10 +86,10 @@ quiz:
     pretest: true
     stem: "Which port does a Collector use to reach the Aggregator by default?"
     options:
-      - {id: a, text: "8081", correct: true}
-      - {id: b, text: "443", why_wrong: "Not the Aggregator port asked at install."}
-      - {id: c, text: "514", why_wrong: "Syslog."}
-      - {id: d, text: "8000", why_wrong: "FSSO collector agent."}
+      - {id: a, text: "TCP 8081", correct: true}
+      - {id: b, text: "TCP 555", trap: near-miss, why_wrong: "555 is the Collector-to-Core port, not the Aggregator."}
+      - {id: c, text: "TCP 8443", trap: near-miss, why_wrong: "A common alternative HTTPS port, but the Aggregator listens on 8081 by default."}
+      - {id: d, text: "UDP 514", trap: misconception, why_wrong: "That's syslog, used for exporting events, not Collector registration."}
     explanation: "Aggregator port 8081."
     source: "FortiEDR 7.2.5 Admin Guide p. 28"
   - id: M10.01.q02
@@ -96,10 +97,10 @@ quiz:
     tier: 2
     stem: "All Cores become unreachable. What does a Collector do?"
     options:
-      - {id: a, text: "Switches to autonomous mode and keeps protecting", correct: true}
-      - {id: b, text: "Stops protecting until a Core returns", why_wrong: "It falls back to local analysis."}
-      - {id: c, text: "Blocks all traffic", why_wrong: "No."}
-      - {id: d, text: "Uninstalls itself", why_wrong: "No."}
+      - {id: a, text: "Keeps protecting in autonomous mode with local rules", correct: true}
+      - {id: b, text: "Stops enforcing until one of the Cores is reachable again", trap: misconception, why_wrong: "The Collector falls back to autonomous protection."}
+      - {id: c, text: "Buffers events and queues the blocks for the Core", trap: near-miss, why_wrong: "It does buffer telemetry, but it still blocks locally instead of waiting."}
+      - {id: d, text: "Isolates the device until the Cores come back up", trap: misconception, why_wrong: "Losing the Core isn't a sign of compromise; isolation would cut users off."}
     explanation: "Autonomous mode."
     source: "FortiEDR 7.2.5 Admin Guide p. 14"
   - id: M10.01.q03
@@ -107,10 +108,10 @@ quiz:
     tier: 2
     stem: "What does the Collector send to the Aggregator? Select all that apply."
     options:
-      - {id: a, text: "Registration", correct: true}
-      - {id: b, text: "Health and status", correct: true}
-      - {id: c, text: "Security events", correct: true}
-      - {id: d, text: "Compressed activity events for threat hunting", why_wrong: "Those go to the Core."}
+      - {id: a, text: "Registration with the system", correct: true}
+      - {id: b, text: "Health and status updates", correct: true}
+      - {id: c, text: "Security event reports", correct: true}
+      - {id: d, text: "Compressed activity streams", trap: near-miss, why_wrong: "Activity data for threat hunting goes to the Core."}
     explanation: "Activity data goes to the Core."
     source: "FortiEDR 7.2.5 Admin Guide p. 14"
 

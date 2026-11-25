@@ -3,6 +3,7 @@ title: "FortiAnalyzer reports, datasets and charts"
 stage: S6
 stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
 order: 200
+quality: 2
 est_sessions: 1
 objectives:
   - Explain the report building blocks: datasets, charts, macros, templates
@@ -86,10 +87,10 @@ quiz:
     pretest: true
     stem: "Which FortiAnalyzer object holds the SQL query behind a chart?"
     options:
-      - {id: a, text: "Dataset", correct: true}
-      - {id: b, text: "Macro", why_wrong: "Uses a dataset."}
-      - {id: c, text: "Template", why_wrong: "Layout."}
-      - {id: d, text: "Event handler", why_wrong: "Alerts."}
+      - {id: a, text: "The chart's dataset", correct: true}
+      - {id: b, text: "The macro it uses", trap: near-miss, why_wrong: "A macro is built on a dataset; it isn't the query."}
+      - {id: c, text: "The report template", trap: misconception, why_wrong: "Templates hold layout, not queries."}
+      - {id: d, text: "The output profile", trap: misconception, why_wrong: "Output profiles handle delivery, such as email."}
     explanation: "Datasets are the queries."
     source: "FortiAnalyzer 8.0.2 Admin Guide p. 465"
   - id: M6.05.q02
@@ -98,15 +99,16 @@ quiz:
     stem: "A web filter report is empty. Possible causes? Select all that apply."
     options:
       - {id: a, text: "Report run in the wrong ADOM", correct: true}
-      - {id: b, text: "Policies don't log web filter events", correct: true}
-      - {id: c, text: "Time range with no data", correct: true}
-      - {id: d, text: "Too many macros", why_wrong: "Doesn't empty a report."}
+      - {id: b, text: "Policies not logging web filter", correct: true}
+      - {id: c, text: "Time range that holds no data", correct: true}
+      - {id: d, text: "Too many macros in the layout", trap: misconception, why_wrong: "Macro count doesn't empty a report."}
+      - {id: e, text: "Report language set to Spanish", trap: near-miss, why_wrong: "Language changes labels, not the data returned."}
     explanation: "Scope and data."
   - id: M6.05.q03
     type: text
     tier: 2
     stem: "Dataset variable that applies the report's time range and device filters?"
-    accept: ["$filter", "filter"]
+    accept: ["$filter", "filter", "~\\$filter"]
     explanation: "$filter."
 
 labs:

@@ -3,6 +3,7 @@ title: "FortiManager SD-WAN and VPN Manager, FortiGuard, firmware and HA"
 stage: S5
 stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
 order: 124
+quality: 2
 est_sessions: 1
 objectives:
   - Use the SD-WAN overlay orchestration wizard and know what it does and doesn't configure
@@ -120,10 +121,10 @@ quiz:
     pretest: true
     stem: After running the SD-WAN overlay wizard, what else is required for traffic steering?
     options:
-      - { id: a, text: "An SD-WAN template with members, zones, health checks and rules", correct: true }
-      - { id: b, text: "Nothing; the overlay includes SD-WAN rules", why_wrong: "The guide states it provides no SD-WAN intelligence." }
-      - { id: c, text: "A VPN Manager community", why_wrong: "The overlay already builds the tunnels." }
-      - { id: d, text: "A firmware template", why_wrong: "Unrelated to steering." }
+      - {id: a, text: "An SD-WAN template with members, zones, health checks and rules", correct: true}
+      - {id: b, text: "Nothing more, since the overlay template also writes SD-WAN rules", trap: misconception, why_wrong: "The overlay builds tunnels and BGP; it provides no steering logic."}
+      - {id: c, text: "A VPN Manager community linking the hubs and the branches together", trap: near-miss, why_wrong: "The overlay template already builds the tunnels."}
+      - {id: d, text: "A BGP template that sets communities for the preferred hub per region", trap: near-miss, why_wrong: "BGP is part of the overlay; steering still needs SD-WAN members and rules."}
     explanation: Overlay = tunnels and BGP; SD-WAN template = intelligence.
     source: FortiManager 7.6.8 Admin Guide p. 584
   - id: M5.04.q02
@@ -132,10 +133,10 @@ quiz:
     pretest: true
     stem: What's the default overlay address space used by the overlay template?
     options:
-      - { id: a, text: "10.10.0.0/16", correct: true }
-      - { id: b, text: "172.16.0.0/16", why_wrong: "That's the loopback default." }
-      - { id: c, text: "192.168.0.0/16", why_wrong: "Not the default." }
-      - { id: d, text: "100.64.0.0/10", why_wrong: "Not the default." }
+      - {id: a, text: "10.10.0.0/16", correct: true}
+      - {id: b, text: "172.16.0.0/16", trap: near-miss, why_wrong: "That is the default for the loopbacks."}
+      - {id: c, text: "192.168.0.0/16", trap: misconception, why_wrong: "A common LAN range, not the overlay default."}
+      - {id: d, text: "100.64.0.0/10", trap: misconception, why_wrong: "Shared address space, not the overlay default."}
     explanation: Check overlaps with the customer's plan.
     source: FortiManager 7.6.8 Admin Guide p. 586
   - id: M5.04.q03
@@ -150,10 +151,10 @@ quiz:
     tier: 2
     stem: You created a VPN community but nothing appears on the FortiGates. Most likely missing step?
     options:
-      - { id: a, text: "Policies using the VPN and a policy package install to the targets", correct: true }
-      - { id: b, text: "A reboot of each FortiGate", why_wrong: "Not required." }
-      - { id: c, text: "Enabling ADOMs", why_wrong: "Central VPN works with ADOMs disabled too." }
-      - { id: d, text: "A local FDS", why_wrong: "Unrelated." }
+      - {id: a, text: "Policies using the VPN, then a package install to the targets", correct: true}
+      - {id: b, text: "A reboot of each FortiGate so the new phase 1 settings load", trap: misconception, why_wrong: "No reboot is needed for VPN configuration."}
+      - {id: c, text: "Enabling ADOMs, as central VPN needs at least one ADOM set up", trap: misconception, why_wrong: "Central VPN works with ADOMs disabled too."}
+      - {id: d, text: "A Quick Install of each device database to push out the community", trap: near-miss, why_wrong: "VPN Manager settings go out with the policy package install."}
     explanation: VPN settings are installed with the policy package.
     source: FortiManager 7.6.8 Admin Guide p. 709
   - id: M5.04.q05
@@ -161,10 +162,10 @@ quiz:
     tier: 2
     stem: Branch FortiGates in a factory network have no internet access but need IPS updates. Best option?
     options:
-      - { id: a, text: "FortiManager as a local FDS", correct: true }
-      - { id: b, text: "Manual signature uploads forever", why_wrong: "Not scalable." }
-      - { id: c, text: "Disable IPS", why_wrong: "Removes protection." }
-      - { id: d, text: "FortiAnalyzer", why_wrong: "Logs, not updates." }
+      - {id: a, text: "FortiManager acting as a local FDS", correct: true}
+      - {id: b, text: "Manual signature uploads per device", trap: near-miss, why_wrong: "Works for a few units, but doesn't scale or stay current."}
+      - {id: c, text: "A proxy allowing FortiGuard traffic", trap: near-miss, why_wrong: "Valid if policy allows Internet access through it; the factory has none."}
+      - {id: d, text: "FortiAnalyzer sharing its threat DB", trap: misconception, why_wrong: "FortiAnalyzer handles logs, not signature updates."}
     explanation: Local FDS serves updates.
     source: FortiManager 7.6.8 Admin Guide p. 913
   - id: M5.04.q06
@@ -172,10 +173,11 @@ quiz:
     tier: 2
     stem: Which are true about FortiManager HA? Select all that apply.
     options:
-      - { id: a, text: "Up to five units: one primary and up to four backups", correct: true }
-      - { id: b, text: "FortiAnalyzer features must be disabled first", correct: true }
-      - { id: c, text: "Units can be in different locations", correct: true }
-      - { id: d, text: "Managed FortiGates load-balance across all units for configuration pushes", why_wrong: "Devices work with the primary for management." }
+      - {id: a, text: "Up to five units: one primary, four backups", correct: true}
+      - {id: b, text: "FortiAnalyzer features must be off first", correct: true}
+      - {id: c, text: "Units can sit in different locations", correct: true}
+      - {id: d, text: "FortiGates load-balance across all units", trap: misconception, why_wrong: "Devices work with the primary for management."}
+      - {id: e, text: "Backups can accept config changes from admins", trap: near-miss, why_wrong: "Backups are read-only copies; changes happen on the primary."}
     explanation: Same series, primary for management.
     source: FortiManager 7.6.8 Admin Guide p. 1217
   - id: M5.04.q07
@@ -183,10 +185,10 @@ quiz:
     tier: 3
     stem: Which port do FortiManager HA heartbeats use?
     options:
-      - { id: a, text: "TCP 5199", correct: true }
-      - { id: b, text: "TCP/UDP 703", why_wrong: "That's FortiGate FGCP." }
-      - { id: c, text: "UDP 5353", why_wrong: "mDNS." }
-      - { id: d, text: "TCP 443", why_wrong: "Not for heartbeats." }
+      - {id: a, text: "TCP 5199", correct: true}
+      - {id: b, text: "TCP/UDP 703", trap: near-miss, why_wrong: "703 is FortiGate FGCP heartbeat, not FortiManager HA."}
+      - {id: c, text: "TCP 541", trap: near-miss, why_wrong: "541 is FGFM between FortiGates and FortiManager."}
+      - {id: d, text: "UDP 5353", trap: misconception, why_wrong: "That is mDNS, not FortiManager HA."}
     explanation: TCP 5199.
     source: FortiManager 7.6.8 Admin Guide p. 1219
   - id: M5.04.q08
@@ -194,12 +196,23 @@ quiz:
     tier: 3
     stem: Each branch in an overlay template needs a unique value of which variable?
     options:
-      - { id: a, text: "branch_id", correct: true }
-      - { id: b, text: "hostname only", why_wrong: "The template uses the branch_id metadata variable." }
-      - { id: c, text: "AS number", why_wrong: "The region shares an AS by default." }
-      - { id: d, text: "Loopback mask", why_wrong: "Not the unique key." }
+      - {id: a, text: "The numeric branch_id", correct: true}
+      - {id: b, text: "The device hostname", trap: near-miss, why_wrong: "Hostnames should differ, but the template keys on branch_id."}
+      - {id: c, text: "The region's BGP AS number", trap: near-miss, why_wrong: "A region shares one AS by default."}
+      - {id: d, text: "The loopback subnet mask", trap: misconception, why_wrong: "The mask is shared; it isn't the unique key."}
     explanation: Unique branch_id, auto-assignable.
     source: FortiManager 7.6.8 Admin Guide p. 585
+  - id: M5.04.q09
+    type: single
+    tier: 3
+    format: first-step
+    stem: "Before running the SD-WAN overlay template for 40 branches, what do you check first?"
+    options:
+      - {id: a, text: "That the default overlay and loopback ranges don't overlap the customer's plan", correct: true}
+      - {id: b, text: "That each branch has a unique hostname, as the template keys tunnels on names", trap: near-miss, why_wrong: "Hostnames should be unique, but the template keys on branch_id."}
+      - {id: c, text: "That the hubs run the newest firmware, as the template needs the current releases", trap: near-miss, why_wrong: "Version support matters, but an address overlap breaks routing on day one."}
+      - {id: d, text: "That VPN Manager communities exist for each branch before the template runs", trap: misconception, why_wrong: "The overlay template builds the tunnels itself."}
+    explanation: "The defaults (10.10.0.0/16 overlay, 172.16.0.0/16 loopbacks) often collide with real addressing; check before generating 40 configs."
 
 labs:
   - id: M5.04.lab1

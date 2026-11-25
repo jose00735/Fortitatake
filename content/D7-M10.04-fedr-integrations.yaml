@@ -3,6 +3,7 @@ title: "FortiEDR communication control, playbooks and Fabric integration"
 stage: S10
 stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
 order: 196
+quality: 2
 est_sessions: 1
 objectives:
   - Use communication control to manage which applications may talk to the network
@@ -87,31 +88,42 @@ quiz:
     pretest: true
     stem: "You want unapproved remote-access tools unable to connect out from endpoints. Which feature?"
     options:
-      - {id: a, text: "Communication control", correct: true}
-      - {id: b, text: "Device Control", why_wrong: "USB/external devices."}
-      - {id: c, text: "Playbooks", why_wrong: "Automated response, not app allow-listing."}
-      - {id: d, text: "Exceptions", why_wrong: "The opposite."}
+      - {id: a, text: "Communication control policies for those applications", correct: true}
+      - {id: b, text: "Device Control rules on the endpoints' external ports", trap: irrelevant, why_wrong: "Device Control governs USB and external devices, not network access."}
+      - {id: c, text: "A playbook that kills the tools' processes when seen", trap: near-miss, why_wrong: "Playbooks respond to classified events; they don't govern which apps may connect."}
+      - {id: d, text: "Application control on the FortiGate at the perimeter", trap: near-miss, why_wrong: "Helps on-site, but laptops off the network still connect; the EDR control travels with them."}
     explanation: "Communication control governs applications' network access."
   - id: M10.04.q02
     type: multi
     tier: 2
     stem: "Reasonable automatic actions for a Malicious classification on user laptops? Select all that apply."
     options:
-      - {id: a, text: "Isolate the device", correct: true}
-      - {id: b, text: "Terminate the process and delete the file", correct: true}
-      - {id: c, text: "Notify the SOC", correct: true}
-      - {id: d, text: "Disable FortiEDR on the device", why_wrong: "Never."}
+      - {id: a, text: "Isolate the device from the network", correct: true}
+      - {id: b, text: "Terminate the process, remove the file", correct: true}
+      - {id: c, text: "Notify the SOC with the event details", correct: true}
+      - {id: d, text: "Reimage the laptop without approval", trap: near-miss, why_wrong: "Destroys evidence and is too drastic to run without a human decision."}
     explanation: "Contain, clean, tell."
   - id: M10.04.q03
     type: single
     tier: 3
     stem: "An MSSP wants each customer's admins to see only their own endpoints. FortiEDR feature?"
     options:
-      - {id: a, text: "Multi-tenancy with organizations", correct: true}
-      - {id: b, text: "Collector groups", why_wrong: "Grouping inside one organization."}
-      - {id: c, text: "Exceptions", why_wrong: "Unrelated."}
-      - {id: d, text: "Separate Aggregator ports", why_wrong: "Not how tenancy works."}
+      - {id: a, text: "Multi-tenancy with one organization per customer", correct: true}
+      - {id: b, text: "Collector groups per customer in one organization", trap: near-miss, why_wrong: "Groups organise devices but admins would still see every customer."}
+      - {id: c, text: "Separate admin roles with restricted permissions", trap: near-miss, why_wrong: "Roles limit actions, not which endpoints are visible."}
+      - {id: d, text: "A separate Aggregator port assigned per customer", trap: misconception, why_wrong: "Ports don't create tenancy; organizations do."}
     explanation: "Organizations."
+  - id: M10.04.q04
+    type: single
+    tier: 3
+    format: first-step
+    stem: "The customer wants FortiEDR to isolate laptops automatically through a playbook. What do you set up first?"
+    options:
+      - {id: a, text: "Run the playbook in notify-only for a while and review which events it would act on", correct: true}
+      - {id: b, text: "Turn on isolation for all Malicious classifications on all groups from day one", trap: near-miss, why_wrong: "Untested automation will isolate users on false positives."}
+      - {id: c, text: "Exclude executives' laptops from the playbook so that they aren't interrupted", trap: misconception, why_wrong: "High-value targets need protection most; handle them with a fast approval path instead."}
+      - {id: d, text: "Write the release procedure for isolated devices before the playbook ever goes live", trap: near-miss, why_wrong: "Needed, but you first need to know what the playbook would hit."}
+    explanation: "Prove the trigger on real events first, then enforce with a release path and an approval route for sensitive users."
 
 labs:
   - id: M10.04.lab1

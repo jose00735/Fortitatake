@@ -3,6 +3,7 @@ title: "FortiSIEM architecture, licensing and the CMDB"
 stage: S9
 stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
 order: 180
+quality: 2
 est_sessions: 1
 objectives:
   - Describe Supervisor, Worker, Collector and Manager roles and when you add each
@@ -106,10 +107,10 @@ quiz:
     pretest: true
     stem: "Which is NOT a FortiSIEM licence dimension?"
     options:
-      - {id: a, text: "Storage capacity", correct: true}
-      - {id: b, text: "Number of devices", why_wrong: "It is."}
-      - {id: c, text: "EPS", why_wrong: "It is."}
-      - {id: d, text: "Number of agents", why_wrong: "It is."}
+      - {id: a, text: "Raw storage capacity of the event database", correct: true}
+      - {id: b, text: "Number of devices reporting into the CMDB", trap: near-miss, why_wrong: "Devices are a licence dimension; storage is what you size, not license."}
+      - {id: c, text: "Events per second across the whole cluster", trap: misconception, why_wrong: "EPS is one of the core licence dimensions."}
+      - {id: d, text: "Number of Windows and Linux agents in use", trap: near-miss, why_wrong: "Agents are licensed separately from devices."}
     explanation: "Storage isn't licensed."
     source: "FortiSIEM 7.6.1 User Guide p. 367"
   - id: M9.01.q02
@@ -117,10 +118,10 @@ quiz:
     tier: 2
     stem: "Branch devices sit behind NAT, far from the data center. Best design?"
     options:
-      - {id: a, text: "A Collector per branch sending to Workers over HTTPS", correct: true}
-      - {id: b, text: "Open syslog from every branch device to the Supervisor across the Internet", why_wrong: "Unencrypted, unreliable, many firewall holes."}
-      - {id: c, text: "More Workers in the data center", why_wrong: "Doesn't solve collection."}
-      - {id: d, text: "A Manager per branch", why_wrong: "Manager is for multiple instances."}
+      - {id: a, text: "A Collector per branch, uploading to the Workers over HTTPS", correct: true}
+      - {id: b, text: "Syslog from each branch device sent straight to the Supervisor", trap: misconception, why_wrong: "Unencrypted UDP across the Internet, with many firewall holes and no buffering."}
+      - {id: c, text: "Extra Workers in the data centre to absorb the branch load", trap: near-miss, why_wrong: "Workers add processing, not collection behind NAT at the branches."}
+      - {id: d, text: "A FortiSIEM Manager at each branch to run local analytics", trap: near-miss, why_wrong: "The Manager oversees several FortiSIEM instances; it isn't a branch collector."}
     explanation: "Collectors are for distributed collection."
   - id: M9.01.q03
     type: multi
@@ -129,14 +130,15 @@ quiz:
     options:
       - {id: a, text: "Through the Collector it reports to", correct: true}
       - {id: b, text: "By IP ranges defined for the Organization", correct: true}
-      - {id: c, text: "By its hostname prefix", why_wrong: "Not a documented method."}
-      - {id: d, text: "By EPS", why_wrong: "Unrelated."}
+      - {id: c, text: "By a hostname prefix set per Organization", trap: near-miss, why_wrong: "Not a documented assignment method, though names often follow a pattern."}
+      - {id: d, text: "By the EPS share agreed with each tenant", trap: misconception, why_wrong: "EPS can be split per Organization, but it doesn't assign devices."}
     explanation: "Collector or IP range."
     source: "FortiSIEM 7.6.1 User Guide p. 368"
   - id: M9.01.q04
-    type: text
+    type: "numeric"
     tier: 2
-    stem: "Over how many minutes does FortiSIEM measure EPS for licensing?"
+    answer: 3
+    stem: "Over how many minutes does FortiSIEM measure EPS for licensing? (whole number)"
     accept: ["3", "three"]
     explanation: "Events over 3 minutes divided by 180."
 

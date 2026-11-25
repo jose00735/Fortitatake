@@ -3,6 +3,7 @@ title: "FortiAnalyzer incidents, alerts, automation and reports"
 stage: S6
 stage_title: "S6 · FortiAnalyzer (FortiAnalyzer Analyst)"
 order: 134
+quality: 2
 est_sessions: 1
 objectives:
   - Explain basic and correlation alert handlers, data selectors and notification profiles
@@ -124,10 +125,10 @@ quiz:
     pretest: true
     stem: You want an alert only when a host gets an IPS hit FOLLOWED_BY a connection to a known botnet IP. Which handler type?
     options:
-      - { id: a, text: "Correlation alert handler", correct: true }
-      - { id: b, text: "Basic alert handler", why_wrong: "Basic rules are ORed; no sequence." }
-      - { id: c, text: "Notification profile", why_wrong: "That defines who's notified, not the logic." }
-      - { id: d, text: "Data selector", why_wrong: "That selects data, not sequences." }
+      - {id: a, text: "A correlation handler with a sequence", correct: true}
+      - {id: b, text: "A basic handler with two rules", trap: near-miss, why_wrong: "Basic rules are ORed; they can't express FOLLOWED_BY."}
+      - {id: c, text: "A notification profile on the IPS", trap: misconception, why_wrong: "Profiles define who's notified, not the detection logic."}
+      - {id: d, text: "A playbook triggered by IPS events", trap: near-miss, why_wrong: "Playbooks respond to incidents; the sequence logic lives in a correlation handler."}
     explanation: Sequences need correlation.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 254
   - id: M6.04.q02
@@ -136,10 +137,10 @@ quiz:
     pretest: true
     stem: What's the quickest way to build a custom alert handler?
     options:
-      - { id: a, text: "Clone a predefined handler and customise it", correct: true }
-      - { id: b, text: "Write SQL", why_wrong: "Handlers aren't written in SQL." }
-      - { id: c, text: "Edit a report", why_wrong: "Different module." }
-      - { id: d, text: "Import a FortiGate policy", why_wrong: "Unrelated." }
+      - {id: a, text: "Clone a predefined handler and adjust it", correct: true}
+      - {id: b, text: "Write a SQL dataset and attach it to rules", trap: misconception, why_wrong: "Handlers aren't written in SQL; datasets feed reports."}
+      - {id: c, text: "Import the handler from a FortiGate policy", trap: misconception, why_wrong: "FortiGate policies don't contain alert handlers."}
+      - {id: d, text: "Start a blank handler and add each filter", trap: near-miss, why_wrong: "Works, but slower than cloning a close match."}
     explanation: Clone and adjust.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 255
   - id: M6.04.q03
@@ -147,10 +148,10 @@ quiz:
     tier: 2
     stem: Alerts with the same target and critical severity are automatically grouped into incidents. Which setting changes the threshold to high?
     options:
-      - { id: a, text: "set min-severity-to-raise-incident-by-grouping high (config system log alert)", correct: true }
-      - { id: b, text: "set enc-algorithm high", why_wrong: "Log encryption." }
-      - { id: c, text: "auto-cache enable", why_wrong: "Reports." }
-      - { id: d, text: "set workspace-mode workflow", why_wrong: "FortiManager." }
+      - {id: a, text: "set min-severity-to-raise-incident-by-grouping high", correct: true}
+      - {id: b, text: "set severity high in the alert handler's grouping rule", trap: near-miss, why_wrong: "That changes the handler's alert severity, not the incident grouping threshold."}
+      - {id: c, text: "set auto-incident enable in the event handler settings", trap: misconception, why_wrong: "Not the setting that controls the grouping severity threshold."}
+      - {id: d, text: "set enc-algorithm high under the system log settings", trap: irrelevant, why_wrong: "That sets log transport encryption."}
     explanation: Grouping threshold setting.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 224
   - id: M6.04.q04
@@ -158,10 +159,11 @@ quiz:
     tier: 2
     stem: A scheduled report shows No Data. Plausible causes? Select all that apply.
     options:
-      - { id: a, text: "The time range is beyond Analytics retention", correct: true }
-      - { id: b, text: "You're in the wrong ADOM", correct: true }
-      - { id: c, text: "The FortiGate doesn't log that type (policy logging off)", correct: true }
-      - { id: d, text: "The report has too many charts", why_wrong: "That affects speed, not data." }
+      - {id: a, text: "Time range beyond Analytics retention", correct: true}
+      - {id: b, text: "Report run in the wrong ADOM", correct: true}
+      - {id: c, text: "Policies with that logging turned off", correct: true}
+      - {id: d, text: "Too many charts in the report layout", trap: misconception, why_wrong: "Chart count affects speed, not whether data appears."}
+      - {id: e, text: "Auto-cache disabled for the report", trap: near-miss, why_wrong: "Caching speeds up reports; without it they still show data."}
     explanation: Use Report Guidance to check.
     source: FortiAnalyzer 8.0.2 Admin Guide pp. 465–466
   - id: M6.04.q05
@@ -174,22 +176,23 @@ quiz:
   - id: M6.04.q06
     type: single
     tier: 3
+    format: "first-step"
     stem: A customer wants automatic quarantine of any host flagged by an alert handler from day one. Best advice?
     options:
-      - { id: a, text: "Tune the handler and run notify-only first, then add containment with an approval step", correct: true }
-      - { id: b, text: "Enable it immediately", why_wrong: "Noisy handlers can quarantine production users." }
-      - { id: c, text: "Never automate", why_wrong: "Automation saves time and money when tuned." }
-      - { id: d, text: "Use reports instead", why_wrong: "Reports don't respond." }
+      - {id: a, text: "Run the handler notify-only to tune it, then add containment with approval", correct: true}
+      - {id: b, text: "Enable quarantine now, with a runbook for releasing wrongly flagged hosts", trap: near-miss, why_wrong: "A release runbook helps, but an untuned handler will still quarantine users."}
+      - {id: c, text: "Keep containment manual for good, since automated responses are risky", trap: misconception, why_wrong: "Tuned automation saves time; the issue is trust in the handler."}
+      - {id: d, text: "Quarantine servers automatically, and the laptops after an analyst's review", trap: near-miss, why_wrong: "Backwards: servers are where a false positive hurts most."}
     explanation: Earn trust in the handler first.
   - id: M6.04.q07
     type: single
     tier: 2
     stem: Which connectors are available by default for playbooks?
     options:
-      - { id: a, text: "Local, FortiGuard and VirusTotal", correct: true }
-      - { id: b, text: "ServiceNow, Slack, Teams", why_wrong: "Those appear once created." }
-      - { id: c, text: "Only FortiOS", why_wrong: "More are available." }
-      - { id: d, text: "None without FortiSOAR", why_wrong: "FortiAnalyzer has its own playbooks." }
+      - {id: a, text: "Local, FortiGuard and VirusTotal", correct: true}
+      - {id: b, text: "ServiceNow, Slack and Microsoft Teams", trap: near-miss, why_wrong: "Those appear once you create them; they aren't defaults."}
+      - {id: c, text: "FortiOS connectors to managed devices", trap: near-miss, why_wrong: "FortiOS connectors exist, but the defaults are Local, FortiGuard and VirusTotal."}
+      - {id: d, text: "Nothing until FortiSOAR is connected", trap: misconception, why_wrong: "FortiAnalyzer has its own playbooks and connectors."}
     explanation: Defaults used by default playbooks.
     source: FortiAnalyzer 8.0.2 Admin Guide p. 400
 

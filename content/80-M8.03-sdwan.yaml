@@ -3,6 +3,7 @@ title: "SD-WAN: members, health checks, rules and troubleshooting"
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 90
+quality: 2
 est_sessions: 1
 objectives:
   - Name the SD-WAN building blocks and how traffic flows through them
@@ -169,10 +170,10 @@ quiz:
     pretest: true
     stem: What happens to traffic that matches no SD-WAN rule?
     options:
-      - { id: a, text: "The implicit rule: ECMP across members using load-balance-mode", correct: true }
-      - { id: b, text: "It is dropped", why_wrong: "The implicit rule forwards it." }
-      - { id: c, text: "It always uses the first member", why_wrong: "Only if it's the only valid ECMP path." }
-      - { id: d, text: "It goes to the policy route table", why_wrong: "Policy routes are checked before SD-WAN rules, not after." }
+      - {id: a, text: "The implicit rule spreads it with the load-balance mode", correct: true}
+      - {id: b, text: "The implicit rule drops it, as SD-WAN is a default-deny", trap: misconception, why_wrong: "The implicit rule forwards traffic; policies decide allow or deny."}
+      - {id: c, text: "It takes the first member that is listed in the SD-WAN zone", trap: near-miss, why_wrong: "Only when that member is the one valid ECMP path; otherwise the load-balance mode decides."}
+      - {id: d, text: "It falls back to policy routes checked after SD-WAN", trap: near-miss, why_wrong: "Policy routes are checked before SD-WAN rules, not after."}
     explanation: Implicit rule, default source-ip-based.
     source: FortiOS 8.0.2 Admin Guide p. 1269
   - id: M8.03.q02
@@ -181,10 +182,10 @@ quiz:
     pretest: true
     stem: In a firewall policy for internet traffic over SD-WAN, what do you select as the destination interface?
     options:
-      - { id: a, text: "The SD-WAN zone (e.g. virtual-wan-link or Underlay)", correct: true }
-      - { id: b, text: "Each member in a separate policy", why_wrong: "Policies reference zones; rules choose members." }
-      - { id: c, text: "Any", why_wrong: "Too broad and not how SD-WAN is designed." }
-      - { id: d, text: "The health-check server", why_wrong: "That's not an interface." }
+      - {id: a, text: "The SD-WAN zone, such as virtual-wan-link", correct: true}
+      - {id: b, text: "Each member port, in a policy of its own", trap: near-miss, why_wrong: "Members in a zone can't be referenced on their own; rules choose members."}
+      - {id: c, text: "The any interface, so all members match", trap: misconception, why_wrong: "Too broad, and SD-WAN policies are written against zones."}
+      - {id: d, text: "The health-check's interface for each ISP", trap: misconception, why_wrong: "Health checks aren't interfaces; they measure members."}
     explanation: Policies use zones.
     source: FortiOS 8.0.2 Admin Guide p. 1162
   - id: M8.03.q03
@@ -199,10 +200,10 @@ quiz:
     tier: 2
     stem: A health check lists two servers. When is the member considered failed?
     options:
-      - { id: a, text: "When both servers fail", correct: true }
-      - { id: b, text: "When either server fails", why_wrong: "That would cause false link-down events." }
-      - { id: c, text: "Only the first server is used", why_wrong: "Both are probed." }
-      - { id: d, text: "When the average latency exceeds 5 ms", why_wrong: "That's an SLA target, not dead/alive." }
+      - {id: a, text: "When both servers stop answering", correct: true}
+      - {id: b, text: "When either of the servers fails", trap: near-miss, why_wrong: "That would bring links down on one server's outage, the reason to list two."}
+      - {id: c, text: "When the first server listed fails", trap: near-miss, why_wrong: "Both servers are probed; the first isn't special."}
+      - {id: d, text: "When latency passes the SLA target", trap: misconception, why_wrong: "That makes the member out of SLA, not dead."}
     explanation: Two servers avoid false positives.
     source: FortiOS 8.0.2 Admin Guide p. 1198
   - id: M8.03.q05
@@ -210,20 +211,20 @@ quiz:
     tier: 2
     stem: "The customer: 'Use cheap broadband for Office 365 unless it's bad, then MPLS.' Which strategy?"
     options:
-      - { id: a, text: "Lowest Cost (SLA)", correct: true }
-      - { id: b, text: "Best Quality", why_wrong: "It always picks the best link, even if more expensive." }
-      - { id: c, text: "Maximize Bandwidth", why_wrong: "That spreads traffic over all good links." }
-      - { id: d, text: "Manual", why_wrong: "Manual ignores SLA quality." }
+      - {id: a, text: "Lowest Cost (SLA) with broadband ranked first", correct: true}
+      - {id: b, text: "Best Quality measured on latency to Office 365", trap: near-miss, why_wrong: "Picks the best link even when it's the expensive MPLS."}
+      - {id: c, text: "Maximize Bandwidth (SLA) across both members", trap: near-miss, why_wrong: "Spreads traffic over all good links, including MPLS."}
+      - {id: d, text: "Manual with broadband first and MPLS second", trap: misconception, why_wrong: "Manual reacts only to dead members, not to 'bad'."}
     explanation: Cheapest member that meets the SLA.
   - id: M8.03.q06
     type: single
     tier: 2
     stem: Which strategies only look at Dead/Alive and ignore SLA targets?
     options:
-      - { id: a, text: "Manual and Best Quality", correct: true }
-      - { id: b, text: "Lowest Cost and Maximize Bandwidth", why_wrong: "Those use SLA targets." }
-      - { id: c, text: "All strategies use SLA targets", why_wrong: "Not according to the guide." }
-      - { id: d, text: "Only the implicit rule", why_wrong: "The question is about rule strategies." }
+      - {id: a, text: "Manual and Best Quality", correct: true}
+      - {id: b, text: "Lowest Cost and Manual", trap: near-miss, why_wrong: "Manual ignores targets, but Lowest Cost uses them."}
+      - {id: c, text: "Best Quality and Lowest Cost", trap: near-miss, why_wrong: "Best Quality compares a metric, but Lowest Cost uses targets."}
+      - {id: d, text: "Maximize Bandwidth and Manual", trap: misconception, why_wrong: "Maximize Bandwidth uses SLA targets to choose members."}
     explanation: Best Quality compares a metric; it doesn't use pass/fail targets.
     source: FortiOS 8.0.2 Admin Guide p. 1199
   - id: M8.03.q07
@@ -231,10 +232,10 @@ quiz:
     tier: 3
     stem: "An SD-WAN rule for 10.50.0.0/16 never matches. There's a static route 10.50.0.0/16 via port5, which is not an SD-WAN member. Why?"
     options:
-      - { id: a, text: "The FIB best match isn't an SD-WAN member, so by default the rule is not consulted", correct: true }
-      - { id: b, text: "The SLA is failing", why_wrong: "SLA state doesn't matter if the rule isn't consulted." }
-      - { id: c, text: "Rules only work for internet traffic", why_wrong: "Rules work for any destination with SD-WAN routes." }
-      - { id: d, text: "The implicit rule has priority", why_wrong: "Rules are checked before the implicit rule." }
+      - {id: a, text: "The best route isn't via an SD-WAN member, so the rule isn't consulted", correct: true}
+      - {id: b, text: "The rule's SLA is failing, so traffic moves to the static route instead", trap: near-miss, why_wrong: "SLA state doesn't matter if routing never hands the traffic to SD-WAN."}
+      - {id: c, text: "SD-WAN rules apply to Internet destinations and not to private ranges", trap: misconception, why_wrong: "Rules work for any destination with routes via SD-WAN members."}
+      - {id: d, text: "The implicit rule has priority over user rules for static destinations", trap: near-miss, why_wrong: "User rules are checked before the implicit rule."}
     explanation: Routing decides whether SD-WAN rules apply.
     source: FortiOS 8.0.2 Admin Guide p. 1262
   - id: M8.03.q08
@@ -246,10 +247,10 @@ quiz:
       Seq(2 wan2): state(alive), packet-loss(4.000%) latency(95.732), jitter(31.005) sla_map=0x0
     stem: "The SLA target is latency 50 ms, jitter 10 ms, loss 1 %. What does this show?"
     options:
-      - { id: a, text: "Both members are alive; wan1 meets the SLA, wan2 is out of SLA", correct: true }
-      - { id: b, text: "wan2 is dead", why_wrong: "state(alive); it's out of SLA, not dead." }
-      - { id: c, text: "Both meet the SLA", why_wrong: "wan2 exceeds all three targets." }
-      - { id: d, text: "The health check has no server", why_wrong: "It's measuring both members." }
+      - {id: a, text: "Both are alive; wan1 meets the SLA and wan2 is out of it", correct: true}
+      - {id: b, text: "wan2 is dead, so routes over it are removed from the FIB", trap: misconception, why_wrong: "state(alive); it's out of SLA, not dead."}
+      - {id: c, text: "Both meet the SLA, since packet loss is below 5% on each", trap: near-miss, why_wrong: "The target is 1% loss; wan2 also breaks latency and jitter."}
+      - {id: d, text: "wan2 fails jitter alone; latency and loss are still fine", trap: near-miss, why_wrong: "wan2 breaks all three targets; sla_map=0x0 means no SLA passes."}
     explanation: Alive and Out-of-SLA are separate states; sla_map shows which targets pass.
     source: FortiOS 8.0.2 Admin Guide pp. 1169, 1199
   - id: M8.03.q09
@@ -264,10 +265,10 @@ quiz:
     tier: 2
     stem: Which is the default implicit load-balance mode?
     options:
-      - { id: a, text: "source-ip-based", correct: true }
-      - { id: b, text: "weight-based", why_wrong: "Available, not the default." }
-      - { id: c, text: "measured-volume-based", why_wrong: "Available, not the default." }
-      - { id: d, text: "round-robin per packet", why_wrong: "Not an SD-WAN mode." }
+      - {id: a, text: "source-ip-based", correct: true}
+      - {id: b, text: "weight-based", trap: near-miss, why_wrong: "Available, but not the default."}
+      - {id: c, text: "volume-based", trap: near-miss, why_wrong: "measured-volume-based exists, but isn't the default."}
+      - {id: d, text: "round-robin-pkt", trap: misconception, why_wrong: "Per-packet round robin isn't an SD-WAN mode."}
     explanation: Sessions from the same source IP use the same path.
     source: FortiOS 8.0.2 Admin Guide p. 1269
   - id: M8.03.q11
@@ -275,10 +276,10 @@ quiz:
     tier: 3
     stem: Links flip between members every few minutes and users complain. The SLA latency target is the default 5 ms. Best fix?
     options:
-      - { id: a, text: "Set targets from the application's real needs (slightly inside its limit) and keep failtime/recoverytime to dampen flaps", correct: true }
-      - { id: b, text: "Lower the check interval to 100 ms", why_wrong: "Faster checks make flapping more visible, not less." }
-      - { id: c, text: "Remove the health check", why_wrong: "You lose failover." }
-      - { id: d, text: "Switch to Maximize Bandwidth", why_wrong: "Same SLA problem." }
+      - {id: a, text: "Targets set from the app's real needs, keeping failtime and recoverytime", correct: true}
+      - {id: b, text: "A 100 ms check interval, so the member state follows the link faster", trap: near-miss, why_wrong: "Faster checks make flapping more frequent, not less."}
+      - {id: c, text: "Maximize Bandwidth instead, so sessions spread over both of the links", trap: misconception, why_wrong: "The same tight targets cause the same flapping."}
+      - {id: d, text: "Higher failtime and recoverytime, keeping the default 5 ms latency target", trap: near-miss, why_wrong: "Dampens flaps but the target still fails almost every link."}
     explanation: Targets too tight cause flapping.
     source: FortiOS 8.0.2 Admin Guide p. 1198
   - id: M8.03.q12
@@ -286,10 +287,11 @@ quiz:
     tier: 2
     stem: Which can be SD-WAN members? Select all that apply.
     options:
-      - { id: a, text: "A physical WAN port", correct: true }
-      - { id: b, text: "An IPsec tunnel interface", correct: true }
-      - { id: c, text: "A VLAN interface", correct: true }
-      - { id: d, text: "A firewall address object", why_wrong: "Members are interfaces." }
+      - {id: a, text: "A physical WAN port", correct: true}
+      - {id: b, text: "An IPsec tunnel interface", correct: true}
+      - {id: c, text: "A VLAN interface on a port", correct: true}
+      - {id: d, text: "A loopback for BGP peering", trap: near-miss, why_wrong: "Loopbacks don't carry traffic out; members are egress interfaces."}
+      - {id: e, text: "An address object for an ISP", trap: misconception, why_wrong: "Members are interfaces, not addresses."}
     explanation: Ports, VLANs, LAGs, tunnels and more.
     source: FortiOS 8.0.2 Admin Guide p. 1170
   - id: M8.03.q13
@@ -297,10 +299,10 @@ quiz:
     tier: 3
     stem: "You changed a rule so Teams goes over wan2, but an active call stays on wan1. Why?"
     options:
-      - { id: a, text: "Existing sessions keep their route until they end or are cleared", correct: true }
-      - { id: b, text: "The rule change failed", why_wrong: "New sessions will use it." }
-      - { id: c, text: "wan2 is dead", why_wrong: "Nothing suggests that." }
-      - { id: d, text: "Teams can't be steered", why_wrong: "It can, via ISDB or application rules." }
+      - {id: a, text: "Existing sessions keep their route until they end or are cleared", correct: true}
+      - {id: b, text: "The rule change failed to apply, so new calls will also use wan1", trap: near-miss, why_wrong: "Nothing suggests it failed; new sessions use the new rule."}
+      - {id: c, text: "Teams media uses UDP, which SD-WAN rules can't steer by application", trap: misconception, why_wrong: "Teams can be steered with ISDB or application rules."}
+      - {id: d, text: "wan2 is out of SLA, so the rule fell back to wan1 for the active call", trap: near-miss, why_wrong: "Possible in general, but the call started before the change."}
     explanation: Sessions are sticky to their original decision.
   - id: M8.03.q14
     type: text
@@ -309,6 +311,17 @@ quiz:
     accept: ["update-static-route", "set update-static-route enable"]
     explanation: update-static-route enable.
     source: FortiOS 8.0.2 Admin Guide p. 1169
+  - id: M8.03.q15
+    type: single
+    tier: 3
+    format: first-step
+    stem: "Users say Office 365 is slow at a branch. SD-WAN should send it over broadband. What do you check first?"
+    options:
+      - {id: a, text: "diagnose sys sdwan service4 for the rule's member choice", correct: true}
+      - {id: b, text: "A sniffer on wan1 to look for retransmissions to Office 365", trap: near-miss, why_wrong: "Useful later; first see which member the rule picked and why."}
+      - {id: c, text: "The policy log for the Office 365 sessions in FortiAnalyzer", trap: near-miss, why_wrong: "Shows sessions, but not why SD-WAN chose the member."}
+      - {id: d, text: "A firmware upgrade to the current release on the FortiGate", trap: misconception, why_wrong: "No evidence of a bug yet; follow the troubleshooting order."}
+    explanation: "Health, then the rule's decision, then the installed result, then packets."
 
 labs:
   - id: M8.03.lab1

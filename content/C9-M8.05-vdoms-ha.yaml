@@ -3,6 +3,7 @@ title: "VDOMs and advanced HA"
 stage: S8
 stage_title: "S8 · Enterprise Firewall (NSE 7 level)"
 order: 166
+quality: 2
 est_sessions: 1
 objectives:
   - Design multi-VDOM deployments: global vs per-VDOM, management VDOM, VDOM types and resources
@@ -120,9 +121,9 @@ quiz:
     stem: "Two customers share a FortiGate and both use 192.168.10.0/24. What makes this work?"
     options:
       - {id: a, text: "Separate VDOMs, each with its own routing table", correct: true}
-      - {id: b, text: "Two zones in one VDOM", why_wrong: "One routing table; overlapping subnets conflict."}
-      - {id: c, text: "Policy routes", why_wrong: "Still one routing domain."}
-      - {id: d, text: "Two VLANs with the same IP", why_wrong: "Not in one VDOM."}
+      - {id: b, text: "Two zones in one VDOM with separate policy sets", trap: near-miss, why_wrong: "One routing table; overlapping subnets still conflict."}
+      - {id: c, text: "Policy routes that steer each tenant's traffic", trap: near-miss, why_wrong: "Still one routing domain with duplicate connected routes."}
+      - {id: d, text: "VLAN interfaces with the same IP in one VDOM", trap: misconception, why_wrong: "One VDOM can't hold two interfaces in the same subnet."}
     explanation: "VDOMs separate routing and policy."
   - id: M8.05.q02
     type: single
@@ -130,31 +131,42 @@ quiz:
     stem: "Where do you assign port3 to the VDOM CUST-B?"
     options:
       - {id: a, text: "config global → config system interface → edit port3 → set vdom CUST-B", correct: true}
-      - {id: b, text: "config vdom → edit CUST-B → config system interface", why_wrong: "Interfaces are global."}
-      - {id: c, text: "config system vdom-link", why_wrong: "That's for links between VDOMs."}
-      - {id: d, text: "It's automatic", why_wrong: "It's explicit."}
+      - {id: b, text: "config vdom → edit CUST-B → config system interface → edit port3 → set vdom", trap: near-miss, why_wrong: "Interfaces are global objects; you assign them from config global."}
+      - {id: c, text: "config global → config system vdom-link → edit port3 → set vdom CUST-B", trap: misconception, why_wrong: "vdom-link creates links between VDOMs, not interface assignments."}
+      - {id: d, text: "config vdom → edit CUST-B → config system zone → edit port3 → set intf", trap: near-miss, why_wrong: "Zones group interfaces already in the VDOM; assignment happens first."}
     explanation: "Interfaces are global objects."
   - id: M8.05.q03
     type: multi
     tier: 3
     stem: "Traffic from tenant VDOM A to the Internet via root crosses an inter-VDOM link. Which apply? Select all that apply."
     options:
-      - {id: a, text: "A policy in VDOM A and a policy in root must both allow it", correct: true}
-      - {id: b, text: "Each VDOM may NAT it", correct: true}
-      - {id: c, text: "Both VDOMs can log it", correct: true}
-      - {id: d, text: "Only root's policy matters", why_wrong: "Both VDOMs inspect it."}
+      - {id: a, text: "Policies in VDOM A and in root both allow it", correct: true}
+      - {id: b, text: "Each VDOM can apply its own source NAT", correct: true}
+      - {id: c, text: "Both VDOMs can log the same session", correct: true}
+      - {id: d, text: "Root's policy alone can decide the outcome", trap: near-miss, why_wrong: "Both VDOMs inspect it, like two firewalls in series."}
     explanation: "Two firewalls in series."
   - id: M8.05.q04
     type: single
     tier: 2
     stem: "Which admin profile is required for a global admin with full access?"
     options:
-      - {id: a, text: "super_admin", correct: true}
-      - {id: b, text: "prof_admin", why_wrong: "Not global."}
-      - {id: c, text: "Any profile set in config global", why_wrong: "Must be super_admin."}
-      - {id: d, text: "A VDOM admin with all VDOMs listed", why_wrong: "Still not global."}
+      - {id: a, text: "The super_admin profile", correct: true}
+      - {id: b, text: "The prof_admin profile", trap: near-miss, why_wrong: "prof_admin isn't global; it's scoped to VDOMs."}
+      - {id: c, text: "A profile made in global", trap: misconception, why_wrong: "Global with full access across VDOMs needs super_admin."}
+      - {id: d, text: "A VDOM admin on all VDOMs", trap: near-miss, why_wrong: "Listing every VDOM still isn't global scope."}
     explanation: "Global, all-VDOM access needs super_admin."
     source: "FortiOS 8.0.2 Admin Guide p. 4286"
+  - id: M8.05.q05
+    type: single
+    tier: 3
+    format: first-step
+    stem: "A customer wants one FortiGate split into two tenants tomorrow. Before enabling multi-VDOM mode, what do you do first?"
+    options:
+      - {id: a, text: "Back up the config and plan what moves, since existing config ends up in root", correct: true}
+      - {id: b, text: "Create the tenant VDOM administrators so they can log in when it's switched on", trap: near-miss, why_wrong: "VDOM admins are created after multi-VDOM mode is on."}
+      - {id: c, text: "Buy a VDOM licence, as the second VDOM needs a licence on this hardware model", trap: near-miss, why_wrong: "Most models include 10 VDOMs; licences are for more than that."}
+      - {id: d, text: "Factory reset the unit so both tenants start from a clean and equal baseline", trap: misconception, why_wrong: "Throws away the working config the first tenant depends on."}
+    explanation: "Enabling multi-VDOM puts the current config into root. Back up, then plan interfaces, policies and admins per VDOM."
 
 labs:
   - id: M8.05.lab1

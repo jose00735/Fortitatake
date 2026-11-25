@@ -3,6 +3,7 @@ title: "FortiManager Policy & Objects and the install process"
 stage: S5
 stage_title: "S5 · FortiManager (FortiManager 7.6 Administrator)"
 order: 122
+quality: 2
 est_sessions: 1
 objectives:
   - Organise policy packages, installation targets, policy blocks and global policies
@@ -121,10 +122,10 @@ quiz:
     pretest: true
     stem: Which install operation has no preview and can't be cancelled?
     options:
-      - { id: a, text: "Quick Install (Device DB)", correct: true }
-      - { id: b, text: "Install Wizard", why_wrong: "It offers a preview." }
-      - { id: c, text: "Re-install Policy", why_wrong: "It offers a preview." }
-      - { id: d, text: "Scheduled install", why_wrong: "Configured from the wizard." }
+      - {id: a, text: "Quick Install to Device DB", correct: true}
+      - {id: b, text: "A run of the Install Wizard", trap: near-miss, why_wrong: "The wizard offers a preview before install."}
+      - {id: c, text: "The Re-install Policy action", trap: near-miss, why_wrong: "Re-install also offers a preview."}
+      - {id: d, text: "A scheduled install task", trap: misconception, why_wrong: "Scheduling is set up from the wizard, which previews."}
     explanation: Use Quick Install only when you know the change.
     source: FortiManager 7.6.8 Admin Guide p. 56
   - id: M5.03.q02
@@ -133,10 +134,10 @@ quiz:
     pretest: true
     stem: "Installing the shared branch package to a new FortiGate fails on normalized interface 'LAN'. Fix?"
     options:
-      - { id: a, text: "Add a per-device (or default) mapping of 'LAN' to the branch's real interface", correct: true }
-      - { id: b, text: "Use Quick Install", why_wrong: "The mapping is still missing." }
-      - { id: c, text: "Disable auto-update", why_wrong: "Unrelated." }
-      - { id: d, text: "Create a new ADOM", why_wrong: "Overkill; the mapping is the issue." }
+      - {id: a, text: "Add a per-device or default mapping of 'LAN' to the branch's real port", correct: true}
+      - {id: b, text: "Use Quick Install so the package goes out without object validation", trap: misconception, why_wrong: "The mapping is still missing; the install would fail the same way."}
+      - {id: c, text: "Rename the branch's internal port to LAN on the FortiGate before install", trap: near-miss, why_wrong: "Interface names are fixed by hardware; the normalized interface needs a mapping."}
+      - {id: d, text: "Create a separate package for this branch with its own interface names", trap: near-miss, why_wrong: "Works, but defeats one shared package; a mapping is the fix."}
     explanation: Mappings must exist for referenced objects.
     source: FortiManager 7.6.8 Admin Guide p. 391
   - id: M5.03.q03
@@ -144,10 +145,10 @@ quiz:
     tier: 2
     stem: What does FortiManager push to the FortiGate during an install?
     options:
-      - { id: a, text: "The difference between the updated device database and the FortiGate's current configuration", correct: true }
-      - { id: b, text: "The whole configuration file", why_wrong: "Only the diff." }
-      - { id: c, text: "The CLI template lines exactly as written", why_wrong: "The guide says the diff is installed, not the template text." }
-      - { id: d, text: "Only new objects", why_wrong: "Changes and deletions too." }
+      - {id: a, text: "The difference between the device database and the FortiGate's config", correct: true}
+      - {id: b, text: "The whole configuration file, which replaces what the FortiGate now runs", trap: misconception, why_wrong: "Only the difference is pushed."}
+      - {id: c, text: "The CLI template lines exactly as written, then the policy package", trap: near-miss, why_wrong: "Templates update the device database first; the diff is what's installed."}
+      - {id: d, text: "New objects and policies, leaving deletions for a manual clean-up", trap: near-miss, why_wrong: "Changes and deletions are part of the diff too."}
     explanation: Diff-based install.
     source: FortiManager 7.6.8 Admin Guide pp. 60–62
   - id: M5.03.q04
@@ -155,10 +156,10 @@ quiz:
     tier: 2
     stem: A local admin adds a firewall policy directly on a managed FortiGate. What may FortiManager show?
     options:
-      - { id: a, text: "The policy package in Conflict status (auto-update brought the change in)", correct: true }
-      - { id: b, text: "Nothing; FortiManager can't see local changes", why_wrong: "Auto-update reports them." }
-      - { id: c, text: "The device deleted from the ADOM", why_wrong: "No." }
-      - { id: d, text: "A new ADOM", why_wrong: "No." }
+      - {id: a, text: "The policy package in Conflict status after auto-update", correct: true}
+      - {id: b, text: "Nothing, since FortiManager can't see local changes", trap: misconception, why_wrong: "Auto-update reports local changes to FortiManager."}
+      - {id: c, text: "The device as Modified, with the package still in Synced", trap: near-miss, why_wrong: "Device-level changes look like that; a policy change conflicts with the package."}
+      - {id: d, text: "A pending install that pushes the change to all sites", trap: misconception, why_wrong: "FortiManager doesn't spread a local change to other devices."}
     explanation: Policy-level local changes conflict.
     source: FortiManager 7.6.8 Admin Guide p. 58
   - id: M5.03.q05
@@ -171,12 +172,13 @@ quiz:
   - id: M5.03.q06
     type: single
     tier: 3
-    stem: You reverted a FortiGate to an older revision in Device Manager. What must you do so the policy package matches?
+    format: "first-step"
+    stem: "You reverted a FortiGate to an older revision in Device Manager. What do you do first so the policy package matches?"
     options:
-      - { id: a, text: "Import the configuration to realign the package, then re-install", correct: true }
-      - { id: b, text: "Nothing; revert updates the package", why_wrong: "Revert only affects the device database." }
-      - { id: c, text: "Quick install", why_wrong: "The package would still be misaligned." }
-      - { id: d, text: "Delete the package", why_wrong: "Destructive." }
+      - {id: a, text: "Import the config to realign the package, then re-install", correct: true}
+      - {id: b, text: "Nothing more, since the revert also updates the package", trap: misconception, why_wrong: "A revert changes the device database, not the package."}
+      - {id: c, text: "Quick Install the device database to push the revision", trap: near-miss, why_wrong: "Pushes the device DB, but the package stays misaligned for the next install."}
+      - {id: d, text: "Re-install the policy package so that it overwrites the device", trap: near-miss, why_wrong: "That would undo the revert's policy changes."}
     explanation: Revert → import → re-install.
     source: FortiManager 7.6.8 Admin Guide pp. 58–59
   - id: M5.03.q07
@@ -184,10 +186,10 @@ quiz:
     tier: 2
     stem: "During import, an address 'SRV-WEB' already exists in the ADOM with a different IP. You choose 'keep'. Result?"
     options:
-      - { id: a, text: "FortiManager's definition stays; the next install pushes it to the FortiGate", correct: true }
-      - { id: b, text: "The FortiGate's IP replaces it everywhere", why_wrong: "That's 'update'." }
-      - { id: c, text: "Import fails", why_wrong: "You chose an option." }
-      - { id: d, text: "Two objects with the same name", why_wrong: "Names are unique." }
+      - {id: a, text: "FortiManager's definition stays and the next install pushes it", correct: true}
+      - {id: b, text: "The FortiGate's IP replaces it in the ADOM for all the devices", trap: near-miss, why_wrong: "That's what 'update' does, not 'keep'."}
+      - {id: c, text: "The import stops until the duplicate name gets resolved by hand", trap: misconception, why_wrong: "Choosing keep resolves it; the import continues."}
+      - {id: d, text: "A second object called SRV-WEB_1 is created with the device IP", trap: near-miss, why_wrong: "Renaming happens with some conflict choices, not with keep."}
     explanation: Keep = FortiManager wins at next install.
     source: FortiManager 7.6.8 Admin Guide p. 57
   - id: M5.03.q08
@@ -195,20 +197,21 @@ quiz:
     tier: 2
     stem: Which help one policy package serve many branches? Select all that apply.
     options:
-      - { id: a, text: "Normalized interfaces with per-device mapping", correct: true }
-      - { id: b, text: "Dynamic address mapping", correct: true }
-      - { id: c, text: "Installation targets including all branches", correct: true }
-      - { id: d, text: "Quick Install", why_wrong: "An install method, not reuse." }
+      - {id: a, text: "Normalized interfaces with mappings", correct: true}
+      - {id: b, text: "Dynamic address mapping per device", correct: true}
+      - {id: c, text: "Installation targets for all sites", correct: true}
+      - {id: d, text: "A separate ADOM for each branch", trap: misconception, why_wrong: "Splits the devices so one package can't serve them."}
+      - {id: e, text: "Device groups as install targets", trap: near-miss, why_wrong: "Groups are a way to set targets, so this overlaps c rather than adding reuse."}
     explanation: Mapping plus targets.
   - id: M5.03.q09
     type: single
     tier: 2
     stem: Is an explicit DENY policy at the bottom required to block unmatched traffic?
     options:
-      - { id: a, text: "No; unmatched traffic is dropped. A DENY is needed to log violations", correct: true }
-      - { id: b, text: "Yes, always", why_wrong: "Implicit drop exists." }
-      - { id: c, text: "Only in FortiManager", why_wrong: "Same behaviour." }
-      - { id: d, text: "Only for IPsec", why_wrong: "No." }
+      - {id: a, text: "No; anything unmatched is dropped, and a deny rule adds logging", correct: true}
+      - {id: b, text: "Yes; FortiManager packages carry no implicit deny at the very bottom", trap: misconception, why_wrong: "The FortiGate's implicit deny still applies to installed packages."}
+      - {id: c, text: "Yes, when the package is installed to several devices at once", trap: misconception, why_wrong: "Behaviour is the same for one device or many."}
+      - {id: d, text: "No; but enable implicit deny logging in each device's settings", trap: near-miss, why_wrong: "That's one way to log, but the question is whether the deny is required."}
     explanation: Explicit deny for logging.
     source: FortiManager 7.6.8 Admin Guide p. 383
 

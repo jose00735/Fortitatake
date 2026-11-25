@@ -3,6 +3,7 @@ title: "FortiEDR security policies, exceptions and exclusions"
 stage: S10
 stage_title: "S10 · FortiEDR (FortiEDR Administrator)"
 order: 192
+quality: 2
 est_sessions: 1
 objectives:
   - Explain the security policies (execution, exfiltration, ransomware, device control) and their rules
@@ -84,21 +85,22 @@ quiz:
     pretest: true
     stem: "The Event Viewer shows 'Simulated Block'. What happened?"
     options:
-      - {id: a, text: "The policy was in simulation; the action was not blocked", correct: true}
-      - {id: b, text: "The action was blocked in a sandbox", why_wrong: "Not blocked."}
-      - {id: c, text: "The Collector was offline", why_wrong: "Then no event."}
-      - {id: d, text: "A test event", why_wrong: "It's real activity."}
+      - {id: a, text: "The policy is in simulation, so the action was allowed and logged", correct: true}
+      - {id: b, text: "The action was blocked and replayed in a sandbox for verification", trap: misconception, why_wrong: "Simulation doesn't block or sandbox; it records what would be blocked."}
+      - {id: c, text: "The Collector was offline and blocked the action in autonomous mode", trap: near-miss, why_wrong: "Autonomous mode blocks for real; 'Simulated' means the policy didn't enforce."}
+      - {id: d, text: "An administrator ran a test event to check the alerting pipeline", trap: near-miss, why_wrong: "Tests exist, but simulated blocks come from real activity matching a simulation policy."}
     explanation: "Simulation reports, doesn't block."
     source: "FortiEDR 7.2.5 Admin Guide p. 92"
   - id: M10.02.q02
     type: single
     tier: 2
-    stem: "A signed vendor updater is blocked by 'Unconfirmed Executable' every night. Best fix?"
+    format: "first-step"
+    stem: "A signed vendor updater is blocked by 'Unconfirmed Executable' every night. What is the best first fix?"
     options:
-      - {id: a, text: "An exception for that process and rule", correct: true}
-      - {id: b, text: "Put Execution Prevention in simulation", why_wrong: "Removes protection everywhere."}
-      - {id: c, text: "Uninstall the Collector on that PC", why_wrong: "Unprotected endpoint."}
-      - {id: d, text: "Ignore it", why_wrong: "The business is broken."}
+      - {id: a, text: "A narrow exception for that process on that rule, after checking signer and hash", correct: true}
+      - {id: b, text: "Execution Prevention set to simulation mode for the PC group that runs the updater", trap: near-miss, why_wrong: "Removes protection for the whole group to fix one process."}
+      - {id: c, text: "An exclusion for the vendor's install folder across all the Collector groups", trap: near-miss, why_wrong: "Folder exclusions are broad; attackers can drop tools there too."}
+      - {id: d, text: "A scheduled window each night in which the Collectors on those PCs are disabled", trap: misconception, why_wrong: "Leaves endpoints unprotected at a predictable time."}
     explanation: "Narrow exception."
   - id: M10.02.q03
     type: multi
@@ -107,8 +109,8 @@ quiz:
     options:
       - {id: a, text: "Signer and hash reputation", correct: true}
       - {id: b, text: "Path and parent process", correct: true}
-      - {id: c, text: "That the vendor documents the behavior", correct: true}
-      - {id: d, text: "That the user wants it", why_wrong: "Not sufficient evidence."}
+      - {id: c, text: "Vendor documents the behaviour", correct: true}
+      - {id: d, text: "The user asked for the change", trap: near-miss, why_wrong: "A request starts the process but isn't evidence the file is safe."}
     explanation: "Evidence that it's legitimate."
 
 labs:

@@ -3,6 +3,7 @@ title: "FortiSIEM rules, incidents and cases"
 stage: S9
 stage_title: "S9 · FortiSIEM (FortiSIEM Analyst)"
 order: 184
+quality: 2
 est_sessions: 1.5
 objectives:
   - Read a correlation rule: filters, grouping, thresholds, time windows
@@ -96,10 +97,10 @@ quiz:
     pretest: true
     stem: "A vulnerability scanner triggers 'Excessive Logon Failures' every night. Best fix?"
     options:
-      - {id: a, text: "An exception for the scanner's source IP on that rule", correct: true}
-      - {id: b, text: "Disable the rule", why_wrong: "Blinds you to real attacks."}
-      - {id: c, text: "Raise the threshold to 1000", why_wrong: "Effectively disables it."}
-      - {id: d, text: "Delete the incidents each morning", why_wrong: "Wastes analyst time."}
+      - {id: a, text: "A documented exception for the scanner's source IP on that rule", correct: true}
+      - {id: b, text: "Disabling the rule until the scanner is moved to a daytime slot", trap: near-miss, why_wrong: "Rescheduling is fine, but disabling blinds you to real attacks meanwhile."}
+      - {id: c, text: "Raising the threshold to 1,000 failures so the scan stays below it", trap: misconception, why_wrong: "A threshold that high disables the rule for everyone."}
+      - {id: d, text: "Excluding all internal sources, since attacks come from outside", trap: misconception, why_wrong: "Internal sources matter most once an attacker is inside."}
     explanation: "Narrow, documented exceptions."
   - id: M9.03.q02
     type: order
@@ -112,17 +113,31 @@ quiz:
     tier: 3
     stem: "12 failed logons then one success for the same user and source in 3 minutes. Which rule logic catches it best?"
     options:
-      - {id: a, text: "Two sub-patterns (failures ≥ N, then success) joined on user and source", correct: true}
-      - {id: b, text: "Count of 4624 events ≥ 1", why_wrong: "Fires on every logon."}
-      - {id: c, text: "Count of 4625 ≥ 5", why_wrong: "Misses the success."}
-      - {id: d, text: "Any event from that source", why_wrong: "Too broad."}
+      - {id: a, text: "Two sub-patterns, N failures followed by a success, joined on account and IP", correct: true}
+      - {id: b, text: "Count of 4625 failures ≥ 10 per user and source within a three-minute window", trap: near-miss, why_wrong: "Catches the failures but misses the success that makes it a compromise."}
+      - {id: c, text: "Count of 4624 successes ≥ 1 for that user and source in three minutes", trap: misconception, why_wrong: "Fires on every normal logon."}
+      - {id: d, text: "Distinct users ≥ 10 per source with any failure inside three minutes", trap: near-miss, why_wrong: "That's a spray pattern across users, not repeated failures on one user."}
     explanation: "The sequence matters."
   - id: M9.03.q04
     type: text
     tier: 2
     stem: "Which Fortinet product runs multi-step playbooks for FortiSIEM incidents?"
-    accept: ["fortisoar", "forti soar"]
+    accept: ["fortisoar", "forti soar", "~soar"]
     explanation: "FortiSOAR."
+  - id: M9.03.q05
+    type: output
+    tier: 3
+    output: |
+      Incident: Excessive Logon Failures   Severity: HIGH   Count: 214
+      srcIpAddr: 10.20.40.30 (SCAN-01)   user: svc_print, svc_scan, kreyes, lnunez, egil …
+      failureCode: 0x12   first: 13:00:02   last: 13:19:58   every ~30 s
+    stem: "The SOC wants this incident tuned. What does the evidence point to?"
+    options:
+      - {id: a, text: "A script hitting disabled or expired accounts; filter 0x12 out of the rule", correct: true}
+      - {id: b, text: "A password spray from SCAN-01; isolate the host and reset the five accounts", trap: near-miss, why_wrong: "A spray shows bad-password failures (0x18); 0x12 is account disabled or expired."}
+      - {id: c, text: "Clock skew between SCAN-01 and the DCs; resynchronise NTP on the scanner", trap: near-miss, why_wrong: "Skew gives code 0x25 and usually all users from one host would fail anyway."}
+      - {id: d, text: "A brute force on svc_print; lock the account and raise severity to critical", trap: misconception, why_wrong: "The failures spread across several accounts at a fixed pace, with a non-password code."}
+    explanation: "0x12 is a disabled, expired or locked account. A fixed-interval script is noise; a rule on 0x18 keeps the real signal."
 
 labs:
   - id: M9.03.lab1
