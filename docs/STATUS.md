@@ -98,6 +98,11 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.1 fixes
+
+- "Set up the builder" failed on Jose's PC: that WSL has no `--install --name`, and `wsl --install -d Ubuntu-24.04` answered "Invalid distribution name" (WSL_E_DISTRO_NOT_FOUND). The app now downloads Canonical's Ubuntu 24.04 WSL image itself (cloud-images.ubuntu.com, resumable, checked against SHA256SUMS) and creates `FortiTatake-Builder` with `wsl --import … --version 2`: no Microsoft Store, no `--name`, no administrator.
+- The OS tab shows the PC's CPU model and RAM instead of a thread count.
+
 ### What v0.8.0 adds (FortiTatake OS, stages 0–3)
 
 - **OS tab.** Sets up the builder (a dedicated WSL2 distro, `FortiTatake-Builder`), builds FortiTatake OS from source with Buildroot 2026.02.3 (Linux 6.12 from allnoconfig plus fragments, musl, BusyBox, iproute2, nftables, conntrack-tools, tcpdump, dnsmasq, lighttpd, Dropbear, curl, mstpd, lldpd; EROFS LZ4HC root, no initramfs), shows the build as phases, a power gauge and a per-thread strip, and resumes interrupted downloads from `.part` files and the build journal. "Build for the phone" makes the ARM64 build; generic or tuned to the CPU (x86_64 `-march=native`; ARM64 from the phone's reported CPU parts).
@@ -107,9 +112,9 @@
 - **Lab agent** (`ftkos/agent`, static Go): JSON lines on virtio-console. Namespaces, veth, VLAN-filtering bridges, 802.1Q sub-interfaces, dummies, routes (incl. blackhole), netem, nftables per device, probes (tcp/http/https/dns/udp/icmp), AF_PACKET capture to pcap, and in-namespace servers that log who connected (web, TLS, SSH banner, DNS answering from the lab's names, plain TCP/UDP).
 - **FortiOS compiler** (`web/js/labs/compile.js`): a running lab becomes one namespace per device plus a switching fabric; FortiGate interfaces (physical, VLAN, loopback), static and dynamic routes, policies in order (zones, address objects and groups, FQDN, services and groups, schedules evaluated on the lab clock, deny), VIPs (static and port-forward; DNAT only when a policy uses the VIP), NAT (interface IP or IP pool), allowaccess with admin ports and trusted hosts; hosts with their DHCP leases and services; ISP routers (drop private addresses toward the Internet) and the Internet cloud with every lab name. SD-WAN, VDOMs, IPsec, HA, identity policies and FortiAnalyzer/FortiManager labs stay on the simulator.
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
-- **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). Tier 0–2: all pass, 0 disagreements left after fixing the compiler.
+- **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Not in v0.8.0 (next: v0.8.1): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, pcap download and console diagnostics from the kernel's state, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
+Not in v0.8.0 (next: v0.8.2): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, pcap download and console diagnostics from the kernel's state, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
 
 ### What v0.7.3 fixes
 

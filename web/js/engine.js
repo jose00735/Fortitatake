@@ -120,7 +120,7 @@ function details(st) {
     parts.push(`<div class="eg-box"><b>Mounting protocols</b><div class="chips">${PROTOS.map((p) => `<span class="chip ${st.protocols.includes(p) ? "lit" : "dim"}">${esc(p)}</span>`).join("")}</div></div>`);
   }
   if (st.cores.length && st.job && st.job.running) {
-    parts.push(`<div class="eg-box"><b>${st.cores.length} threads</b> <span class="muted small">${st.active.length ? "compiling " + esc(st.active.slice(0, 6).join(", ")) + (st.active.length > 6 ? "…" : "") : ""}</span>
+    parts.push(`<div class="eg-box"><b>CPU load</b> <span class="muted small">${st.active.length ? "compiling " + esc(st.active.slice(0, 6).join(", ")) + (st.active.length > 6 ? "…" : "") : ""}</span>
       <div class="cores">${st.cores.map((c) => `<i style="height:${Math.max(4, c)}%" title="${c}%"></i>`).join("")}</div></div>`);
   }
   return parts.join("");
@@ -179,12 +179,14 @@ export async function engineView(main) {
     renderStatic();
   }
 
+  // "AMD Ryzen 9 7950X 16-Core Processor" -> "AMD Ryzen 9 7950X"
+  const cpuName = (n) => String(n || "").replace(/\(R\)|\(TM\)|CPU|@.*$|\d+-Core Processor|Processor/gi, "").replace(/\s+/g, " ").trim();
   function renderStatic() {
     const b = status.builder;
     const chips = [];
     if (status.can_build) {
       if (!b || !b.wsl) chips.push(`<span class="chip off">WSL not found</span>`);
-      else chips.push(`<span class="chip ${b.ready ? "on" : "off"}">Builder: ${esc(b.distro)} ${b.ready ? "ready" : "not set up"}</span><span class="chip on">${b.cpus} threads</span>`);
+      else chips.push(`<span class="chip ${b.ready ? "on" : "off"}">Builder: ${esc(b.distro)} ${b.ready ? "ready" : "not set up"}</span><span class="chip on">${esc(cpuName(b.cpu) || "CPU")}${b.ram_bytes ? ` · ${Math.round(b.ram_bytes / 2 ** 30)} GB RAM` : ""}</span>`);
     } else chips.push(`<span class="chip">Builds arrive from your PC by sync</span>`);
     chips.push(`<span class="chip ${status.runner && status.runner.qemu ? "on" : "off"}">Runner ${status.runner && status.runner.qemu ? "installed" : "missing"}</span>`);
     $("[data-status]", main).innerHTML = `<div class="chips">${chips.join("")}</div>`;

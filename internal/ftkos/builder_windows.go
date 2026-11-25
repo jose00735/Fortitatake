@@ -72,6 +72,7 @@ func (m *Manager) saveBuilderCfg(c builderCfg) {
 }
 
 var (
+	hostCPU  map[string]any
 	infoMu   sync.Mutex
 	infoAt   time.Time
 	infoLast map[string]any
@@ -89,7 +90,11 @@ func (m *Manager) builderInfo() map[string]any {
 	for _, d := range ds {
 		has = has || d == c.Distro
 	}
-	infoLast = map[string]any{"wsl": err == nil, "distro": c.Distro, "exists": has, "ready": has && c.Ready, "cpus": runtime.NumCPU()}
+	if hostCPU == nil {
+		hostCPU = deviceInfo()
+	}
+	infoLast = map[string]any{"wsl": err == nil, "distro": c.Distro, "exists": has, "ready": has && c.Ready, "cpus": runtime.NumCPU(),
+		"cpu": hostCPU["cpu"], "ram_bytes": hostCPU["ram_bytes"]}
 	infoAt = time.Now()
 	return infoLast
 }
@@ -128,15 +133,20 @@ func (m *Manager) setupJob(j *job) error {
 		has = has || d == c.Distro
 	}
 	if !has {
-		m.emit("step", map[string]any{"label": "Installing Ubuntu 24.04 as " + builderDistro + " (a few minutes)"})
-		if err := m.runLogged(ctx, "--install", "Ubuntu-24.04", "--name", builderDistro, "--no-launch"); err != nil {
-			// Older WSL without --name: install Ubuntu-24.04 under its own name.
-			m.emit("step", map[string]any{"label": "This WSL can't name distros; using Ubuntu-24.04"})
-			if err2 := m.runLogged(ctx, "--install", "-d", "Ubuntu-24.04", "--no-launch"); err2 != nil {
-				return fmt.Errorf("could not install Ubuntu in WSL: %v", err2)
-			}
-			c.Distro = "Ubuntu-24.04"
+		// Import our own Ubuntu instead of `wsl --install`: works on every WSL 2 version,
+		// needs no Microsoft Store and no administrator, and lets us name the distro.
+		c.Distro = builderDistro
+		tar, err := m.fetchUbuntu(ctx)
+		if err != nil {
+			return err
 		}
+		m.emit("step", map[string]any{"label": "Creating " + builderDistro + " (Ubuntu 24.04)"})
+		home := filepath.Join(m.Dir, "builder", "distro")
+		os.MkdirAll(home, 0755)
+		if err := m.runLogged(ctx, "--import", builderDistro, home, tar, "--version", "2"); err != nil {
+			return fmt.Errorf("WSL couldn't create the builder (%v). If the log mentions Virtual Machine Platform or WSL 2, open PowerShell as administrator, run: wsl --install --no-distribution, restart Windows, and press Set up again", err)
+		}
+		os.Remove(tar) // 340 MB we don't need any more
 		m.saveBuilderCfg(c)
 	}
 	src, err := m.extractAssets()
@@ -238,4 +248,39 @@ func (m *Manager) buildJob(j *job, arch, variant string) error {
 	m.emit("ready", map[string]any{"arch": arch, "variant": variant, "files": mf.Files})
 	m.saveReport("build."+arch+"-"+variant, mf.BuildInfo)
 	return nil
+}
+
+// Ubuntu's own WSL image (Canonical's cloud-images), checked against its SHA256SUMS.
+const ubuntuWSL = "https://cloud-images.ubuntu.com/wsl/releases/noble/current/"
+const ubuntuFile = "ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz"
+
+func (m *Manager) fetchUbuntu(ctx context.Context) (string, error) {
+	dir := filepath.Join(m.Dir, "builder")
+	os.MkdirAll(dir, 0755)
+	dst := filepath.Join(dir, ubuntuFile)
+	sums, err := httpGetSmall(ctx, ubuntuWSL+"SHA256SUMS")
+	if err != nil {
+		return "", fmt.Errorf("can't reach cloud-images.ubuntu.com to download Ubuntu: %v", err)
+	}
+	want := ""
+	for _, l := range strings.Split(sums, "\n") {
+		if f := strings.Fields(l); len(f) == 2 && strings.TrimPrefix(f[1], "*") == ubuntuFile {
+			want = f[0]
+		}
+	}
+	if want == "" {
+		return "", errors.New("Ubuntu's checksum list doesn't name the WSL image")
+	}
+	if sum, _, _ := sha256File(dst); sum == want {
+		return dst, nil
+	}
+	m.emit("step", map[string]any{"label": "Downloading Ubuntu 24.04 for WSL (340 MB, resumes if interrupted)"})
+	if err := m.download(ctx, ubuntuWSL+ubuntuFile, dst); err != nil {
+		return "", fmt.Errorf("Ubuntu download: %v", err)
+	}
+	if sum, _, _ := sha256File(dst); sum != want {
+		os.Remove(dst)
+		return "", errors.New("the Ubuntu download is corrupt (checksum mismatch); press Set up again")
+	}
+	return dst, nil
 }
