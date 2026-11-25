@@ -171,13 +171,14 @@ export function compile(lab) {
     for (const i of r.ifaces) {
       if (!IFOK.test(i.name)) continue;
       if (!attached(r.id, i.name)) topo.dummies.push({ dev: r.id, if: i.name, down: true });
-      if (i.prefix) { topo.addrs.push({ dev: r.id, if: i.name, cidr: `${intToIp(i.prefix.ip)}/${i.prefix.len}` }); where[i.prefix.ip] = r.id; }
+      if (i.prefix && i.up !== false) { topo.addrs.push({ dev: r.id, if: i.name, cidr: `${intToIp(i.prefix.ip)}/${i.prefix.len}` }); where[i.prefix.ip] = r.id; }
     }
     const up = segs.find((s) => s.members.some((m) => m.dev === r.id) && s.members.some((m) => (lab.dev(m.dev) || {}).kind === "cloud"));
     const upIf = up && up.members.find((m) => m.dev === r.id).port;
     for (const rt of r.routes) {
       const dst = rt.dst.len === 0 ? "default" : prefixStr(rt.dst);
-      if (rt.dev === "internet" || rt.via === null) { if (up && cloudIp.has(up.id)) topo.routes.push({ dev: r.id, dst, via: intToIp(cloudIp.get(up.id)) }); }
+      if (rt.dev === "null") topo.routes.push({ dev: r.id, dst, type: "blackhole" });
+      else if (rt.dev === "internet" || rt.via === null) { if (up && cloudIp.has(up.id)) topo.routes.push({ dev: r.id, dst, via: intToIp(cloudIp.get(up.id)) }); }
       else topo.routes.push({ dev: r.id, dst, via: intToIp(rt.via) });
     }
     // routes the simulator's OSPF/BGP gave this router (FRR takes over in a later stage)

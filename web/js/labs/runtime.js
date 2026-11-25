@@ -12,6 +12,7 @@ import "./vdom.js";
 import "./switch.js";
 import "./soc.js";
 import { hostRun, routerRun } from "./diag.js";
+import { routerPrompt } from "./netcfg.js";
 import { runChecks } from "./grader.js";
 import { runChecksReal } from "./real.js";
 import { FortiGate } from "./fgt.js";
@@ -108,7 +109,7 @@ export class LabRun {
   prompt(devId) {
     const d = this.lab.dev(devId);
     if (d instanceof FortiGate) return this.lab.mgmtPrompt(d) || d.prompt();
-    if (d.kind === "router") return `${d.id}> `;
+    if (d.kind === "router") return routerPrompt(d) + " ";
     if (d.kind === "fortiswitch") return `${d.id} # `;
     if (d.kind === "fortisiem") return `FortiSIEM ${d.id}> `;
     if (d.kind === "fortiedr") return `FortiEDR ${d.id}> `;

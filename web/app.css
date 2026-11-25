@@ -499,3 +499,19 @@ button.danger { color: var(--bad); border-color: var(--bad); }
 .conf .chip { cursor: pointer; gap: 6px; }
 .conf .chip input { margin: 0; }
 .conf .chip:has(input:checked) { border-color: var(--acc, var(--ok)); color: var(--ink); }
+/* nano-style editor in the lab console (Notepad look on Windows) */
+.labrun[data-edit] .lr-out, .labrun[data-edit] .lr-line, .labrun[data-edit] .lr-keys { display: none; }
+.lr-editor { display: grid; grid-template-rows: auto 1fr auto auto; min-height: 320px; font: .84rem/1.45 var(--mono); background: var(--term-bg); color: var(--term-ink); }
+.lr-editor .ed-title { display: flex; justify-content: space-between; gap: 12px; padding: 2px 10px; background: var(--term-ink); color: var(--term-bg); font-weight: 600; white-space: nowrap; overflow: hidden; }
+.lr-editor .ed-path { overflow: hidden; text-overflow: ellipsis; }
+.lr-editor .ed-text { width: 100%; min-height: 260px; resize: none; border: 0; border-radius: 0; margin: 0; padding: 8px 12px; background: transparent; color: inherit; font: inherit; outline: none; box-shadow: none; white-space: pre; overflow: auto; tab-size: 4; }
+.lr-editor .ed-status { min-height: 1.5em; padding: 0 10px; text-align: center; color: var(--term-prompt); }
+.lr-editor .ed-keys { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 4px 8px 8px; }
+.lr-editor .ed-keys button { background: rgba(255, 255, 255, .08); color: var(--term-ink); border: 0; font: .78rem var(--mono); padding: 5px 9px; }
+.lr-editor .ed-keys b { background: var(--term-ink); color: var(--term-bg); padding: 0 3px; margin-right: 3px; border-radius: 2px; }
+.lr-editor.notepad { background: #fff; color: #111; font-family: Consolas, "Lucida Console", var(--mono); }
+.lr-editor.notepad .ed-title { background: #f3f3f3; color: #111; font-weight: 400; border-bottom: 1px solid #ddd; }
+.lr-editor.notepad .ed-status { color: #555; }
+.lr-editor.notepad .ed-keys button { background: #eee; color: #111; }
+.lr-editor .ed-status button { background: var(--term-ink); color: var(--term-bg); border: 0; font: 600 .78rem var(--mono); padding: 2px 8px; margin-left: 4px; }
+.lr-editor.notepad .ed-status button { background: #e5e5e5; color: #111; }

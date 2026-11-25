@@ -1,3 +1,4 @@
+import { hostsEntry } from "./netcfg.js";
 import { ipToInt, intToIp } from "./net.js";
 // Host and ISP-router troubleshooting commands answered from the real network when the lab is live:
 // the Linux tool runs in the device's namespace on FortiTatake OS and its output is printed the way
@@ -54,7 +55,7 @@ export async function realHostCmd(call, lab, h, line) {
   const c = (t[0] || "").toLowerCase();
   const win = h.os === "windows";
   const ns = h.id;
-  const target = async (name) => { if (isIp(name)) return name; const r = await realResolve(call, lab, h, name); return r.err ? null : r.ip; };
+  const target = async (name) => { if (isIp(name)) return name; const he = hostsEntry(h, name); if (he !== null) return intToIp(he); const r = await realResolve(call, lab, h, name); return r.err ? null : r.ip; };
 
   if (c === "nslookup" || c === "dig") {
     const args = t.slice(1).filter((a) => !a.startsWith("-") && !a.startsWith("+"));

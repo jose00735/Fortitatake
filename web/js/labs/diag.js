@@ -3,6 +3,7 @@ import { Lab, PROTO, bpf } from "./sim.js";
 import { pick, tokenize } from "./fgt.js";
 import { ipToInt, intToIp, prefixStr, maskStr, hex, inPrefix, parsePrefix } from "./net.js";
 import { FortiGate } from "./fgt.js";
+import { hostConfig, routerConfig, ROUTER_CONFIG_HELP } from "./netcfg.js";
 
 const NOT_SIM = "This command exists in FortiOS 8.0.2 but is not simulated in FortiTatake.";
 const pad = (s, n) => (String(s).length >= n ? String(s) + " " : String(s) + " ".repeat(n - String(s).length));
@@ -306,14 +307,15 @@ function srcOf(lab, fromId, dst) {
 
 // ---------- PCs and servers ----------
 export function hostRun(lab, h, line) {
-  h.history.push({ line, ts: lab.clock });
+  h.history.push({ line: line.startsWith("\u0001write ") ? line.split("\n")[0] : line, ts: lab.clock });
+  { const r = hostConfig(lab, h, line); if (r !== null) return r; }
   const t = tokenize(line.trim());
   if (!t.length) return "";
   const c = t[0].toLowerCase();
   const win = h.os === "windows";
   if (c === "help" || c === "?") return win
-    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, pathping <host>, nslookup <name>, arp -a, route print, netstat -ano, curl [-k] [-I] <url>, tnc <host> -port <n>, ssh <user>@<host>, telnet <host> [port], ver, systeminfo, hostname, login <user> <password>, forticlient connect|status|disconnect, cls"
-    : "Commands: ip a, ip route, ip neigh, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, ss -tuln, uname [-a], cat /etc/resolv.conf, ssh <user>@<host>, telnet <host> [port], hostname, login <user> <password>, clear";
+    ? "Commands: ipconfig [/all|/renew|/release], ping [-n N] [-l size] [-f] <host>, tracert <host>, pathping <host>, nslookup <name>, arp -a, route print, netstat -ano, curl [-k] [-I] <url>, tnc <host> -port <n>, ssh <user>@<host>, telnet <host> [port], ver, systeminfo, hostname, login <user> <password>, forticlient connect|status|disconnect, cls\nAddressing: netsh interface ip show config | set address name=\"Ethernet0\" static <ip> <mask> [<gw>] | dhcp, netsh interface ip set dns name=\"Ethernet0\" static <ip> | dhcp, netsh interface ip add dns name=\"Ethernet0\" <ip> index=2, route add|delete 0.0.0.0 mask 0.0.0.0 <gw>, ipconfig /flushdns\nPowerShell: Get-NetIPConfiguration, New-NetIPAddress, Remove-NetIPAddress, Set-DnsClientServerAddress, Set-NetIPInterface -Dhcp Enabled\nFiles: notepad C:\\Windows\\System32\\drivers\\etc\\hosts, type <file>"
+    : "Commands: ip a, ip route, ip neigh, ping [-c N] [-s size] [-M do] <host>, traceroute <host>, nslookup|dig <name>, curl [-k] [-I] <url>, nc -zv <host> <port>, ss -tuln, uname [-a], cat /etc/resolv.conf, ssh <user>@<host>, telnet <host> [port], hostname, login <user> <password>, clear\nAddressing (needs sudo): ip addr add|del <ip/len> dev eth0, ip addr flush dev eth0, ip route add|replace|del default via <gw>, ip link set eth0 up|down, netplan get|apply|try, dhclient [-r] eth0, resolvectl status\nFiles: nano (or vi) /etc/netplan/50-cloud-init.yaml, /etc/resolv.conf, /etc/hosts, /etc/hostname; cat, ls /etc/netplan";
   if (c === "ipconfig" || (c === "ip" && t[1] && "address".startsWith(t[1])) || c === "ifconfig") {
     if (t[1] && t[1].toLowerCase() === "/renew") { const ok = lab.renew(h); if (!ok) return "An error occurred while renewing interface Ethernet0 : unable to contact your DHCP server. Request has timed out."; }
     if (t[1] && t[1].toLowerCase() === "/release") { h.lease = null; return "Ethernet adapter Ethernet0:\n\n   Media State . . . . . . . . . . . : Media disconnected"; }
@@ -340,7 +342,7 @@ export function hostRun(lab, h, line) {
   if (c === "nslookup" || c === "dig") {
     const name = t[1];
     if (!name) return "Usage: nslookup <name>";
-    const r = lab.resolve(h.id, name);
+    const r = lab.resolve(h.id, name, { dnsOnly: true });
     const srv = r.server !== undefined ? intToIp(r.server) : "(none)";
     if (r.err) return `Server:  UnKnown\nAddress:  ${srv}\n\n*** ${r.err.includes("timed out") ? `Request to UnKnown timed-out` : `UnKnown can't find ${name}: Non-existent domain`}`;
     return `Server:  UnKnown\nAddress:  ${srv}\n\nNon-authoritative answer:\nName:    ${name}\nAddress:  ${intToIp(r.ip)}`;
@@ -370,7 +372,6 @@ export function hostRun(lab, h, line) {
   if (win && c === "pathping") { const tgt = t.slice(1).find((x) => !x.startsWith("-")); if (!tgt) return "Usage: pathping [-n] target_name"; const r = lab.resolve(h.id, tgt); if (r.err) return `Unable to resolve target system name ${tgt}.`; return traceroute(lab, h.id, r.ip, tgt, "windows").replace("Trace complete.", "Computing statistics for 25 seconds...\nTrace complete."); }
   if (!win && c === "uname") { const k = "6.8.0-48-generic"; return t[1] === "-a" ? `Linux ${h.hostname.toLowerCase()} ${k} #48-Ubuntu SMP PREEMPT_DYNAMIC Fri Sep 27 14:04:52 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux` : t[1] === "-r" ? k : "Linux"; }
   if (!win && c === "ip" && t[1] && "neighbour".startsWith(t[1])) return gw ? `${intToIp(gw)} dev eth0 lladdr ${mac("gw" + h.id)} REACHABLE` : "";
-  if (!win && c === "cat" && t[1] === "/etc/resolv.conf") return `nameserver ${h.dns ? intToIp(h.dns) : gw ? intToIp(gw) : "127.0.0.53"}\noptions edns0 trust-ad`;
   if (win && c === "uname") return `'uname' is not recognized as an internal or external command,\noperable program or batch file.`;
   return win ? `'${t[0]}' is not recognized as an internal or external command,\noperable program or batch file. Type help for the commands this lab PC knows.` : `bash: ${t[0]}: command not found (type help)`;
 }
@@ -387,6 +388,7 @@ function hostPing(lab, h, args, win) {
     else target = a;
   }
   if (!target) return win ? "Usage: ping [-n count] [-l size] [-f] target_name" : "Usage: ping [-c count] [-s size] [-M do] destination";
+  if (!win && !h.ip()) return "ping: connect: Network is unreachable";
   const r = lab.resolve(h.id, target);
   if (r.err) return win ? `Ping request could not find host ${target}. Please check the name and try again.` : `ping: ${target}: Temporary failure in name resolution`;
   const ip = r.ip;
@@ -445,15 +447,16 @@ function hostCurl(lab, h, args) {
 
 // ---------- routers (read-only) ----------
 export function routerRun(lab, r, line) {
+  { const c = routerConfig(lab, r, line); if (c !== null) { if (typeof c !== "object") return c; const was = r.mode; r.mode = "priv"; try { return routerRun(lab, r, c.exec); } finally { r.mode = was; } } }
   const t = line.trim().toLowerCase();
   if (!t) return "";
-  if (t === "help" || t === "?") return `Commands: show ip interface brief, show ip route, show interfaces, show arp, show running-config, show version, show access-lists, show logging, show clock, ping <ip>, traceroute <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}, ssh -l <user> <ip>, telnet <ip>`;
+  if (t === "help" || t === "?") return `${ROUTER_CONFIG_HELP}\nCommands: show ip interface brief, show ip route, show interfaces, show arp, show running-config, show version, show access-lists, show logging, show clock, ping <ip>, traceroute <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}, ssh -l <user> <ip>, telnet <ip>`;
   const w = t.split(/\s+/);
   const is = (f) => { const fw = f.split(" "); return fw.length === w.length && fw.every((x, i) => x.startsWith(w[i])); };
   if (is("show running-config")) {
-    const L = ["Building configuration...", "", "Current configuration : 2114 bytes", "!", "version 17.9", "service timestamps log datetime msec", "!", `hostname ${r.id}`, "!", "ip domain name isp.lab", "!", "username noc privilege 15 secret 9 $9$ftk$lab", "!"];
-    for (const i of r.ifaces) L.push(`interface ${i.name}`, i.prefix ? ` ip address ${intToIp(i.prefix.ip)} ${maskStr(i.prefix.len)}` : " no ip address", ...(r.dropPrivate && /inet|internet|up/i.test(i.name) ? [" ip access-group ISP-BOGON-FILTER out"] : []), i.up === false ? " shutdown" : " no shutdown", "!");
-    for (const x of r.routes) L.push(`ip route ${intToIp(x.dst.ip)} ${maskStr(x.dst.len)} ${x.via ? intToIp(x.via) : "Null0"}`);
+    const L = ["Building configuration...", "", "Current configuration : 2114 bytes", "!", "version 17.9", "service timestamps log datetime msec", "!", `hostname ${r.hostname || r.id}`, "!", "ip domain name isp.lab", ...((r.dns || []).length ? [`ip name-server ${r.dns.join(" ")}`] : []), "!", "username noc privilege 15 secret 9 $9$ftk$lab", "!"];
+    for (const i of r.ifaces) L.push(`interface ${i.name}`, ...(i.description ? [` description ${i.description}`] : []), i.prefix ? ` ip address ${intToIp(i.prefix.ip)} ${maskStr(i.prefix.len)}` : " no ip address", ...(r.dropPrivate && /inet|internet|up/i.test(i.name) ? [" ip access-group ISP-BOGON-FILTER out"] : []), i.up === false ? " shutdown" : " no shutdown", "!");
+    for (const x of r.routes) L.push(`ip route ${intToIp(x.dst.ip)} ${maskStr(x.dst.len)} ${x.via ? intToIp(x.via) : x.dev === "null" ? "Null0" : (r.ifaces.find((i) => /inet|internet|up/i.test(i.name)) || r.ifaces[0]).name}`);
     if (r.dropPrivate) L.push("!", "ip access-list extended ISP-BOGON-FILTER", " 10 deny ip 10.0.0.0 0.255.255.255 any", " 20 deny ip 172.16.0.0 0.15.255.255 any", " 30 deny ip 192.168.0.0 0.0.255.255 any", " 40 deny ip 100.64.0.0 0.63.255.255 any", " 1000 permit ip any any");
     L.push("!", "line vty 0 4", " login local", " transport input ssh telnet", "!", "end");
     return L.join("\n");
@@ -465,8 +468,8 @@ export function routerRun(lab, r, line) {
   if (is("show interfaces")) return r.ifaces.map((i) => `${i.name} is ${i.up === false ? "administratively down" : "up"}, line protocol is ${i.up === false ? "down" : "up"}\n  Internet address is ${i.prefix ? prefixStr(i.prefix) : "unassigned"}\n  MTU 1500 bytes, BW 1000000 Kbit/sec`).join("\n");
   if (is("show access-lists") || is("show ip access-lists")) return r.dropPrivate ? `Extended IP access list ISP-BOGON-FILTER\n    10 deny ip 10.0.0.0 0.255.255.255 any\n    20 deny ip 172.16.0.0 0.15.255.255 any\n    30 deny ip 192.168.0.0 0.0.255.255 any\n    40 deny ip 100.64.0.0 0.63.255.255 any\n    1000 permit ip any any` : "";
   if (/^tr(a(c(e(r(o(u(te?)?)?)?)?)?)?)? \S+/.test(t)) { const ip = ipToInt(w[1]); if (ip === null) return "% Unrecognized host or address, or protocol not running."; return traceroute(lab, r.id, ip, w[1], "ios"); }
-  if (t.startsWith("show ip int")) return r.ifaces.map((i) => `${pad(i.name, 16)}${pad(i.prefix ? intToIp(i.prefix.ip) + "/" + i.prefix.len : "unassigned", 20)}${i.up ? "up" : "down"}`).join("\n");
-  if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] via ${x.via ? intToIp(x.via) : "Internet uplink"}`)).concat(lab.routerDynamic(r).map((x) => `${x.type.padEnd(5)}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}`)).join("\n");
+  if (t.startsWith("show ip int")) return r.ifaces.map((i) => `${pad(i.name, 16)}${pad(i.prefix ? intToIp(i.prefix.ip) + "/" + i.prefix.len : "unassigned", 20)}${i.up !== false ? "up" : "administratively down"}`).join("\n");
+  if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] via ${x.via ? intToIp(x.via) : x.dev === "null" ? "Null0" : "Internet uplink"}`)).concat(lab.routerDynamic(r).map((x) => `${x.type.padEnd(5)}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}`)).join("\n");
   { const d = lab.routerShow && lab.routerShow(r, t); if (d !== null && d !== undefined) return d; }
   if (t.startsWith("ping")) {
     const ip = ipToInt(t.split(/\s+/)[1] || "");
@@ -475,5 +478,5 @@ export function routerRun(lab, r, line) {
     for (let i = 0; i < 5; i++) if (lab.probe(r.id, { dst: ip, proto: 1, src: r.ifaces.find((x) => x.prefix && inPrefix(ip, x.prefix))?.prefix.ip ?? r.ifaces[0].prefix.ip }).ok) ok++;
     return `Type escape sequence to abort.\nSending 5, 100-byte ICMP Echos to ${intToIp(ip)}, timeout is 2 seconds:\n${"!".repeat(ok)}${".".repeat(5 - ok)}\nSuccess rate is ${ok * 20} percent (${ok}/5)`;
   }
-  return `This router is read-only for you. Try: show ip interface brief, show ip route, ping <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}`;
+  return `% Invalid input detected at '^' marker.\n(Type help. Try: enable, configure terminal, show ip interface brief, show ip route, ping <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}`;
 }

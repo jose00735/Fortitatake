@@ -1,6 +1,7 @@
 // Network simulator for FortiTatake labs: topology, hosts, routers, the Internet, and the FortiGate packet path.
 // It answers "what would this packet do" from the devices' current config, and feeds debug flow and the sniffer.
 import { FortiGate } from "./fgt.js";
+import { hostsEntry } from "./netcfg.js";
 import { ipToInt, intToIp, parsePrefix, inPrefix, isPrivate, prefixStr, hex, rng, lenToMask, network } from "./net.js";
 
 const ICMP = 1, TCP = 6, UDP = 17;
@@ -30,10 +31,10 @@ class Host {
     this.vpnSpec = spec.vpn || null;
     this.vpn = null;
   }
-  addr() { return this.dhcp ? (this.lease && this.lease.prefix) : this.static; }
+  addr() { if (this.down) return null; return this.dhcp ? (this.lease && this.lease.prefix) : this.static; }
   ip() { const a = this.addr(); return a ? a.ip : null; }
   gateway() { return this.dhcp ? (this.lease && this.lease.gw) : (this.gw ? ipToInt(this.gw) : null); }
-  dnsServers() { return this.dhcp ? (this.lease ? this.lease.dns : []) : this.dns.map(ipToInt); }
+  dnsServers() { if (this.dnsOverride) return this.dnsOverride.map(ipToInt); return this.dhcp ? (this.lease ? this.lease.dns : []) : this.dns.map(ipToInt); }
   listens(proto, port) {
     if (proto === ICMP) return this.services.has("icmp");
     return this.services.has(`${PNAME[proto]}/${port}`);
@@ -530,6 +531,7 @@ export class Lab {
     const cands = [...r.routes, ...dyn].filter((x) => inPrefix(pkt.dst, x.dst)).sort((a, b) => (b.dst.len - a.dst.len) || ((a.dyn ? 1 : 0) - (b.dyn ? 1 : 0)));
     const rt = cands[0];
     if (!rt || (r.dropPrivate && isPrivate(pkt.dst) && rt.dst.len === 0)) { res.drop = { dev: r.id, reason: `no route to ${intToIp(pkt.dst)}` }; return null; }
+    if (rt.dev === "null") { res.drop = { dev: r.id, reason: `route to Null0 for ${prefixStr(rt.dst)}` }; return null; }
     if (rt.dev === "internet" || rt.via === null) {
       const seg = this.segments.find((s) => s.members.some((m) => m.dev === r.id) && s.members.some((m) => this.dev(m.dev) instanceof Cloud));
       if (!seg) { res.drop = { dev: r.id, reason: "no uplink" }; return null; }
@@ -859,9 +861,11 @@ export class Lab {
     }
     return res;
   }
-  resolve(fromId, name) {
+  resolve(fromId, name, opts = {}) {
     if (/^\d+\.\d+\.\d+\.\d+$/.test(name)) return { ip: ipToInt(name) };
     const h = this.dev(fromId);
+    // the hosts file answers first (nslookup and dig skip it, as on the real systems)
+    if (!opts.dnsOnly) { const he = hostsEntry(h, name); if (he !== null) return { ip: he, hosts: true }; }
     const servers = h instanceof Host ? h.dnsServers() : h instanceof FortiGate ? this.fgtDns(h) : [];
     if (!servers.length) return { err: "no DNS server configured" };
     for (const s of servers) {

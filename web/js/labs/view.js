@@ -11,6 +11,7 @@ import { intToIp, ipToInt, isIp } from "./net.js";
 import { api } from "../core.js";
 import { drawTopology } from "./topo.js";
 import { FortiGate } from "./fgt.js";
+import { isConfigLine } from "./netcfg.js";
 
 const TIERS = ["Console", "Fundamentals", "Core PS", "Advanced", "Break-fix", "SecOps", "Capstones"];
 const TRACK = { fortigate: "FortiGate", routing: "Routing", identity: "Identity", fortimanager: "FortiManager", fortianalyzer: "FortiAnalyzer", fortiswitch: "FortiSwitch", fortisiem: "FortiSIEM", fortiedr: "FortiEDR", secops: "SecOps", integration: "Multi-product", sdwan: "SD-WAN", vpn: "VPN", ha: "HA" };
@@ -121,7 +122,7 @@ function mount(main, run, opts = {}) {
     else if (d.kind === "router") ui.buf[d.id].push("", `User Access Verification`, "", `${d.id} line 0 is now available`, "");
   }
   for (const d of devs) if (d instanceof FortiGate) ui.buf[d.id].push(`${{ fortianalyzer: "FortiAnalyzer", fortimanager: "FortiManager" }[d.product] || "FortiOS"} v8.0.2 emulated by FortiTatake · ${d.model} · type ? for help, Tab to complete`, "");
-  else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: read-only ${d.label || "router"}. Type help for its commands.` : `${d.id} (${d.os}) · type help`, "");
+  else ui.buf[d.id].push(d.kind === "router" ? `${d.id}: ${d.label || "router"}, IOS-style CLI (enable, configure terminal). Type help for its commands.` : `${d.id} (${d.os}) · type help`, "");
 
   const el = h(`<div class="labrun${emb ? " embedded" : ""}" data-view="ticket">
     <header class="lr-head">
@@ -199,6 +200,7 @@ function mount(main, run, opts = {}) {
     const r = run.exec(dev, line);
     if (r) print(dev, r);
     pump();
+    if (run.lab.pendingEdit) { const pe = run.lab.pendingEdit; run.lab.pendingEdit = null; if (line.trim()) { ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length; } store(run, k); paint(); openEditor(pe); return; }
     if (line.trim()) { ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length; }
     store(run, k);
     paint(); topo();
@@ -451,11 +453,13 @@ function mount(main, run, opts = {}) {
   // a command typed in a remote session, answered by the device it arrived at
   const remoteAnswer = async (devId, line) => {
     const d = run.device(devId);
-    if (live.state === "live" && ["host", "server", "router"].includes(d.kind) && REALCMD.test(line.trim())) {
+    if (live.state === "live" && ["host", "server", "router"].includes(d.kind) && REALCMD.test(line.trim()) && !isConfigLine(d, line)) {
+      await catchUp();
       try { const o = d.kind === "router" ? await realRouterCmd(realCall, run.lab, d, line) : await realHostCmd(realCall, run.lab, d, line); if (o !== null) { run.log.push({ dev: devId, line }); return o; } } catch (e) { /* the simulator answers */ }
     }
     const o = run.exec(devId, line);
     pump();
+    if (run.lab.pendingEdit) { const pe = run.lab.pendingEdit; run.lab.pendingEdit = null; openEditor(pe); }
     return o;
   };
   const remData = (dev, text) => {
@@ -601,6 +605,98 @@ function mount(main, run, opts = {}) {
     }, 250);
   };
 
+  // wait until the real network matches the lab (after an address or route change)
+  const catchUp = async () => {
+    for (let i = 0; i < 60 && real.on && real.net && real.net.stateKey(run.lab) !== real.net.key; i++) {
+      await liveTick();
+      if (real.net.stateKey(run.lab) !== real.net.key) await new Promise((r) => setTimeout(r, 250));
+    }
+  };
+
+  // ----- a small nano-style editor (Notepad on Windows) for config files -----
+  const openEditor = (pe) => {
+    const old = $(".lr-editor", el); if (old) old.remove();
+    const win = pe.app === "notepad";
+    const name = pe.path.split(/[\\/]/).pop();
+    const ed = h(`<div class="lr-editor${win ? " notepad" : ""}" role="dialog" aria-label="Editing ${esc(pe.path)}">
+      <div class="ed-title">${win ? `<span>${esc(name)} - Notepad</span>` : `<span>GNU nano 7.2</span><span class="ed-path">${esc(pe.path)}</span><span class="ed-mod"></span>`}</div>
+      <textarea class="ed-text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="File contents"></textarea>
+      <div class="ed-status" aria-live="polite"></div>
+      <div class="ed-keys">${win
+        ? `<button data-a="save">Save <span class="kbd">Ctrl+S</span></button><button data-a="exit">Close <span class="kbd">Esc</span></button>`
+        : `<button data-a="save"><b>^O</b> Write Out</button><button data-a="exit"><b>^X</b> Exit</button><button data-a="find"><b>^W</b> Where Is</button><button data-a="cut"><b>^K</b> Cut</button><button data-a="paste"><b>^U</b> Paste</button>`}</div>
+    </div>`);
+    const ta = $(".ed-text", ed), st = $(".ed-status", ed), mod = $(".ed-mod", ed);
+    ta.value = pe.text;
+    let saved = pe.text, clip = "", ask = null;
+    const lines = (s) => (s.match(/\n/g) || []).length + (s && !s.endsWith("\n") ? 1 : 0);
+    const status = (msg) => { st.textContent = msg || ""; };
+    const dirty = () => ta.value !== saved;
+    const markMod = () => { if (mod) mod.textContent = dirty() ? "Modified" : ""; };
+    status(pe.note || (pe.readOnly ? `[ ${pe.path} is owned by root: open it with sudo to save changes ]` : win ? "" : `[ Read ${lines(pe.text)} lines ]`));
+    const save = () => {
+      if (pe.readOnly) { status(`[ Error writing ${pe.path}: Permission denied ]`); return false; }
+      const msg = run.exec(pe.dev, "\u0001write " + pe.path + "\n" + ta.value);
+      saved = ta.value; markMod(); store(run, k);
+      status(win ? `Saved ${name}` : `[ Wrote ${lines(ta.value)} lines ]`);
+      if (msg) print(pe.dev, msg);
+      return true;
+    };
+    const close = () => { ed.remove(); delete el.dataset.edit; paint(); topo(); inp.focus(); };
+    const exit = () => {
+      if (!dirty()) return close();
+      ask = "save"; status(win ? "Do you want to save changes to " + name + "?" : "Save modified buffer?");
+      // buttons too, for phones without Ctrl or Y/N keys handy
+      st.insertAdjacentHTML("beforeend", ` <button data-yn="y">${win ? "Save" : "Y Yes"}</button> <button data-yn="n">${win ? "Don't save" : "N No"}</button> <button data-yn="c">${win ? "Cancel" : "^C Cancel"}</button>`);
+      $$("[data-yn]", st).forEach((b) => (b.onclick = () => answer(b.dataset.yn)));
+    };
+    const answer = (k) => {
+      if (k === "y") { if (save()) close(); else ask = null; }
+      else if (k === "n") close();
+      else { ask = null; status("[ Cancelled ]"); ta.focus(); }
+    };
+    const find = () => { ask = "find"; status(win ? "" : "Search: "); };
+    const act = (a) => {
+      if (a === "save") save();
+      else if (a === "exit") exit();
+      else if (a === "find") find();
+      else if (a === "cut") { const v = ta.value, p = ta.selectionStart; const s0 = v.lastIndexOf("\n", p - 1) + 1; let e0 = v.indexOf("\n", p); e0 = e0 < 0 ? v.length : e0 + 1; clip = v.slice(s0, e0); ta.value = v.slice(0, s0) + v.slice(e0); ta.selectionStart = ta.selectionEnd = s0; markMod(); }
+      else if (a === "paste") { const v = ta.value, p = ta.selectionStart; ta.value = v.slice(0, p) + clip + v.slice(p); ta.selectionStart = ta.selectionEnd = p + clip.length; markMod(); }
+      ta.focus();
+    };
+    let query = "";
+    ed.addEventListener("keydown", (e) => {
+      if (ask === "save") {
+        e.preventDefault();
+        const kk = e.key.toLowerCase();
+        if (kk === "y" || kk === "n") answer(kk);
+        else if (kk === "escape" || (kk === "c" && e.ctrlKey)) answer("c");
+        return;
+      }
+      if (ask === "find") {
+        e.preventDefault();
+        if (e.key === "Enter") { ask = null; const i = ta.value.indexOf(query, ta.selectionEnd) >= 0 ? ta.value.indexOf(query, ta.selectionEnd) : ta.value.indexOf(query); if (query && i >= 0) { ta.setSelectionRange(i, i + query.length); status(""); } else status(`[ "${query}" not found ]`); query = ""; }
+        else if (e.key === "Escape" || (e.key === "c" && e.ctrlKey)) { ask = null; query = ""; status("[ Cancelled ]"); }
+        else if (e.key === "Backspace") { query = query.slice(0, -1); status("Search: " + query); }
+        else if (e.key.length === 1) { query += e.key; status("Search: " + query); }
+        return;
+      }
+      const kk = e.key.toLowerCase();
+      if (e.ctrlKey && (kk === "o" || kk === "s")) { e.preventDefault(); act("save"); }
+      else if ((e.ctrlKey && kk === "x") || (win && kk === "escape")) { e.preventDefault(); act("exit"); }
+      else if (e.ctrlKey && kk === "w" && !win) { e.preventDefault(); act("find"); }
+      else if (e.ctrlKey && kk === "k" && !win) { e.preventDefault(); act("cut"); }
+      else if (e.ctrlKey && kk === "u" && !win) { e.preventDefault(); act("paste"); }
+      e.stopPropagation();
+    });
+    ta.addEventListener("input", markMod);
+    $$(".ed-keys [data-a]", ed).forEach((b) => (b.onclick = () => act(b.dataset.a)));
+    $(".lr-devtabs", el).after(ed);
+    el.dataset.edit = "1";
+    if (ui.view !== "term") setView("term");
+    ta.focus(); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
+  };
+
   // PCs, servers and ISP routers: troubleshooting commands answered from the real network
   const realDevCmd = (dev, line) => {
     const d = run.device(dev);
@@ -618,7 +714,7 @@ function mount(main, run, opts = {}) {
       })();
       return true;
     }
-    if (!REALCMD.test(line.trim())) return false;
+    if (!REALCMD.test(line.trim()) || isConfigLine(d, line)) return false;
     print(dev, run.prompt(dev) + line);
     ui.hist[dev].push(line); ui.hi[dev] = ui.hist[dev].length;
     paint();
@@ -628,6 +724,7 @@ function mount(main, run, opts = {}) {
       if (name && !isIp(name)) await realResolve(realCall, run.lab, d, name).catch(() => null);
       const simOut = run.exec(dev, line); // history and checks; also the answer if the OS can't give one
       run.drain();
+      await catchUp(); // an address change made just before must be on the real network first
       let out = null;
       try { out = d.kind === "router" ? await realRouterCmd(realCall, run.lab, d, line) : await realHostCmd(realCall, run.lab, d, line); }
       catch (e) { out = null; }

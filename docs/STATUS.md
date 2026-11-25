@@ -98,6 +98,15 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.10.1 adds (addressing on lab devices, a nano-style editor)
+
+- **Windows PCs:** `netsh interface ip set address name="Ethernet0" static <ip> <mask> [<gw>]` or `dhcp`, `netsh interface ip set|add|delete dns`, `netsh interface ip show config`, `netsh interface set interface ... admin=disable|enable`, `route add|delete 0.0.0.0 mask 0.0.0.0 <gw>`, `ipconfig /flushdns`, and the PowerShell cmdlets `Get-NetIPConfiguration`, `New-NetIPAddress`, `Remove-NetIPAddress`, `Set-DnsClientServerAddress`, `Set-NetIPInterface -Dhcp`, `New-/Remove-NetRoute` (default route), `Disable-/Enable-NetAdapter`.
+- **Linux servers (sudo needed, as on Ubuntu):** `ip addr add|del|flush`, `ip route add|replace|del default via`, `ip link set eth0 up|down`, `netplan get|apply|try` from `/etc/netplan/50-cloud-init.yaml`, `dhclient [-r]`, `resolvectl status`, `hostnamectl`; `cat`/`ls` on the config files. `/etc/resolv.conf` takes effect at once; netplan applies on `netplan apply`.
+- **ISP routers, IOS style:** `enable`, `configure terminal`, `interface <name>`, `ip address`, `[no] shutdown`, `description`, `ip route <net> <mask> <next-hop|Null0>`, `no ip route`, `hostname`, `ip name-server`, `do <command>`, `exit`/`end`, `write memory`. Prompts follow the mode (`>`, `#`, `(config)#`, `(config-if)#`); the running config shows the changes.
+- **Editor:** `nano` (also `vi`, `vim`, `pico` on Linux) and `notepad` on Windows open a small in-console editor: ^O write out, ^X exit with the Y/N prompt, ^W search, ^K/^U cut and paste, with buttons for phones. Editing `/etc/*` without sudo shows nano's permission error on save. Hosts files (`/etc/hosts`, `C:\Windows\System32\drivers\etc\hosts`) answer before DNS for ping, curl and friends; nslookup and dig skip them, as on the real systems.
+- **Real network:** every change rebuilds the device's namespace from the simulator (tested in the VM: new addresses, default routes and Null0 blackhole routes appear in the kernel). No OS rebuild needed. Changes and editor saves replay from the lab log, so they survive a reload.
+- Lab hosts still model one adapter with one IPv4 address and a default route; extra static routes on PCs and servers are refused with a message.
+
 ### What v0.10.0 adds (question quality overhaul, confidence rating)
 
 - **Every module is now `quality: 2`** (71 modules, 548 items: 364 single, 62 multi, 42 order, 27 output, 25 numeric, 28 text) and `python3 tools/quiz_lint.py --strict` passes: balanced option lengths, no hedge, parenthesis or absolute-word cues on one side only, labelled traps (misconception / irrelevant / near-miss) with specific why_wrong, two near-misses at tier 3+, text answers of 3+ characters, and an output, first-step, answer-reason or not-work item in every module with tier 3+ questions. Two short text items became numeric or single-choice items.
