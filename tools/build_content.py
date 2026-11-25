@@ -5,6 +5,8 @@ Usage: python3 tools/build_content.py [--check]
 """
 import json, sys, glob, os, re, datetime
 import yaml
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from quiz_lint import lint_module
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQ = {
@@ -63,6 +65,9 @@ def lint(mods):
                 errs.append(f"{l['id']}: faded template has no blanks")
             if l.get("solo") and not l["solo"].get("required"):
                 errs.append(f"{l['id']}: solo needs required lines")
+        # question quality (v0.10.0 rules): enforced on modules marked quality: 2
+        if (m.get("quality") or 1) >= 2:
+            errs += [f"{i}: [{r}] {msg}" for i, r, msg in lint_module(m)]
     return errs
 
 def main():

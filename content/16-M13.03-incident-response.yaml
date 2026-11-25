@@ -1,0 +1,444 @@
+id: M13.03
+title: "Incident response: scoping, containment decisions and recovery with the Fortinet stack"
+stage: S13
+stage_title: "S13 · SOC & SecOps (consultant level)"
+order: 15.3
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Run the first hour of an incident: questions, evidence, severity and communication
+  - Choose containment (EDR isolation, FortiGate quarantine, account disable, segment block) by trade-off
+  - Plan eradication and recovery for AD compromise and ransomware, including credential resets
+  - Lead the post-incident review and turn it into detections and control changes
+sources:
+  - "NIST SP 800-61 Rev. 3 (2025): incident response recommendations aligned with CSF 2.0; classic phases from Rev. 2"
+  - "FortiEDR and FortiGate response features as covered in M10.03, M10.04, M4.12 and M8.01"
+  - "Microsoft guidance on krbtgt reset after domain compromise (reset twice, allowing replication between resets)"
+
+units:
+  - id: M13.03.u1
+    title: Frameworks and the first hour
+    tier: 2
+    est_min: 14
+    body: |
+      **The phases you will hear.** NIST SP 800-61 (Rev. 2) described preparation; detection and analysis;
+      containment, eradication and recovery; post-incident activity. SANS teaches the same as PICERL (prepare,
+      identify, contain, eradicate, recover, lessons). Rev. 3 (2025) reorganises the guidance around the CSF 2.0
+      functions (govern, identify, protect, detect, respond, recover), so IR is part of risk management, not a
+      separate playbook. In a customer meeting, use whichever vocabulary their policy uses.
+
+      **The first hour, in order:**
+
+      1. **Confirm and classify.** Is it real? What type (malware, account compromise, data exposure)? Initial
+         severity.
+      2. **Assemble.** Incident lead, scribe, technical leads, a business owner with authority. One bridge.
+      3. **Scope questions.** Which hosts, users, data? Since when? Is it still active?
+      4. **Preserve.** Volatile evidence first: memory and live connections, then disk and logs. Don't reboot
+         first.
+      5. **Contain the bleeding** proportionately (next unit).
+      6. **Communicate.** Next update time on every message. Facts, not guesses.
+
+      **The scribe matters.** A timeline written live (time, who, what, why) is your legal record, your
+      post-incident input, and the thing executives ask for at 2 a.m.
+
+      :::recall
+      Q: Why preserve memory and live connections before rebooting an infected server?
+      A: A reboot destroys running processes, injected code and live C2 connections, which are often the best evidence of what the attacker did.
+      :::
+
+      :::why
+      Q: Why should every incident update state the time of the next update?
+      A: It stops stakeholders interrupting the responders for news and sets a rhythm the team can keep.
+      :::
+  - id: M13.03.u2
+    title: Choosing containment
+    tier: 4
+    est_min: 16
+    body: |
+      Containment is a trade-off between stopping the attacker and keeping the business running. Know your options
+      and what each costs:
+
+      | Option | Fortinet tool | Stops | Cost / risk |
+      |---|---|---|---|
+      | **Isolate host** | FortiEDR isolation (only EDR core traffic allowed) | Lateral movement, C2 from that host | The user can't work; on servers, the service stops |
+      | **Quarantine at the network** | FortiGate address group in a deny policy, FortiSwitch/FortiAP quarantine via automation | That host's traffic through the fabric | Doesn't stop traffic inside the same L2 segment unless the switch enforces it |
+      | **Block destination** | FortiGate deny policy, DNS filter, threat feed | C2 / exfil to known infrastructure | Attacker switches infrastructure; tips them off |
+      | **Disable / reset account** | AD, IdP; FortiAuthenticator | Use of stolen credentials | Kerberos tickets already issued stay valid until expiry; tips them off |
+      | **Segment block** | FortiGate policy between zones, SD-WAN rule | Spread between sites or VLANs | Broad business impact |
+
+      **Decision rules:**
+
+      - **Scope before you show your hand** when the attacker is quiet and you don't yet know all footholds: block
+        one host and they move to the next one you didn't see. When damage is active (ransomware encrypting, data
+        leaving), contain now and scope in parallel.
+      - **Prefer the narrowest action that stops the harm**, and widen it when it fails.
+      - **Disabling an account isn't instant on its own.** Existing Kerberos tickets remain valid until they
+        expire; combine with isolating the hosts using them, and for domain-level compromise plan the krbtgt reset.
+      - **Life and safety first.** Medical, OT and safety systems need a pre-agreed alternative (segment
+        quarantine, manual operation) instead of isolation.
+
+      :::recall
+      Q: When should you contain immediately instead of scoping quietly first?
+      A: When the harm is active: encryption spreading, data leaving, or safety at risk.
+      :::
+
+      :::why
+      Q: Why might quarantining a host on the FortiGate not stop it from attacking its neighbours?
+      A: Traffic between hosts in the same VLAN doesn't cross the FortiGate unless the switch forwards it there (FortiLink/quarantine VLAN) or EDR isolates the host.
+      :::
+  - id: M13.03.u3
+    title: "Eradication and recovery after AD compromise and ransomware"
+    tier: 4
+    est_min: 16
+    body: |
+      **Eradication removes every foothold**, not just the one you found: persistence (services, scheduled tasks,
+      run keys, new accounts, added group memberships), web shells, implants on other hosts, and the initial access
+      path (the unpatched VPN, the phished account without MFA).
+
+      **Credential reset order after domain compromise:**
+
+      1. Accounts the attacker is known to hold (and their sessions in the IdP).
+      2. Privileged accounts: domain admins, service accounts with SPNs, accounts with replication rights.
+      3. **krbtgt twice**, with replication between the two resets (Microsoft's guidance is to wait at least the
+         maximum ticket lifetime, typically 10 hours). Twice, because the DC keeps the previous key; a forged
+         golden ticket signed with the old key works until both are gone.
+      4. Everyone else, if the NTDS database was taken.
+
+      **Rebuild or clean?** Rebuild domain controllers and servers where the attacker had SYSTEM, unless you can
+      prove what they changed. Clean only what EDR evidence fully explains.
+
+      **Ransomware specifics.** Isolate first, keep encrypted systems for evidence, restore from backups known to
+      predate the intrusion (not just the encryption), check the backups weren't touched, and expect
+      exfiltration: most ransomware crews steal data before encrypting.
+
+      **Recovery is monitored.** Restored systems go back with extra watch: EDR in prevention mode, the indicators
+      from this case in the SIEM, and a named owner watching for 30 days.
+
+      :::recall
+      Q: Why is krbtgt reset twice?
+      A: The DC accepts tickets signed with the current and the previous krbtgt key; both must change to kill forged tickets.
+      :::
+
+      :::why
+      Q: Why restore from a backup that predates the intrusion rather than the encryption?
+      A: The attacker was inside before encrypting; a backup taken in between contains their persistence.
+      :::
+  - id: M13.03.u4
+    title: "Communication and the post-incident review"
+    tier: 3
+    est_min: 12
+    body: |
+      **Three audiences, three messages.**
+
+      - **Responders:** facts, tasks, owners, next sync.
+      - **Executives:** impact on the business, what is being done, decisions needed from them, next update time.
+        No jargon, no guesses presented as facts.
+      - **External** (customers, regulators, insurer): through legal and the communication owner only. Deadlines
+        depend on jurisdiction and contracts (for example, GDPR expects notification to the authority within 72
+        hours of becoming aware of a personal-data breach); know the customer's obligations before the incident.
+
+      **The post-incident review** is blameless and specific:
+
+      1. Timeline with times of first malicious action, first alert, acknowledgement, containment.
+      2. What worked, what didn't, what we got lucky with.
+      3. Detection gaps → new rules with tests (M13.02).
+      4. Control gaps → owners and dates (MFA, patching, segmentation).
+      5. Process gaps → runbook changes (authority to contain, escalation).
+
+      Publish the actions with owners and dates, and check them at 30 days.
+
+      :::recall
+      Q: Four times to record in every incident timeline?
+      A: First malicious action, first alert, acknowledgement, containment.
+      :::
+
+      :::why
+      Q: Why keep the post-incident review blameless?
+      A: People hide mistakes when they expect blame, and hidden mistakes are the gaps the next attacker uses.
+      :::
+
+cards:
+  - {id: M13.03.c01, unit: M13.03.u1, tier: 1, front: "NIST 800-61 (Rev. 2) phases", back: "Preparation; detection and analysis; containment, eradication and recovery; post-incident activity."}
+  - {id: M13.03.c02, unit: M13.03.u1, tier: 2, front: "PICERL", back: "Prepare, identify, contain, eradicate, recover, lessons learned (SANS)."}
+  - {id: M13.03.c03, unit: M13.03.u1, tier: 3, front: "800-61 Rev. 3 (2025) change", back: "Organises IR around the CSF 2.0 functions as part of risk management."}
+  - {id: M13.03.c04, unit: M13.03.u1, tier: 2, front: "Evidence order", back: "Volatile first: memory and live connections, then disk and logs."}
+  - {id: M13.03.c05, unit: M13.03.u1, tier: 2, front: "The scribe's timeline fields", back: "Time, who, what, why."}
+  - {id: M13.03.c06, unit: M13.03.u2, tier: 3, front: "FortiEDR isolation stops", back: "All network traffic from the host except to the EDR core: lateral movement and C2."}
+  - {id: M13.03.c07, unit: M13.03.u2, tier: 3, front: "FortiGate quarantine limit", back: "Doesn't stop same-VLAN traffic unless the switch enforces it."}
+  - {id: M13.03.c08, unit: M13.03.u2, tier: 3, front: "Disabling an AD account isn't instant because", back: "Kerberos tickets already issued stay valid until they expire."}
+  - {id: M13.03.c09, unit: M13.03.u2, tier: 3, front: "Contain now vs scope first", back: "Active harm (encryption, exfil, safety) → contain now. Quiet attacker, unknown footholds → scope first."}
+  - {id: M13.03.c10, unit: M13.03.u3, tier: 4, front: "krbtgt reset", back: "Twice, with replication (and the max ticket lifetime, ~10 h) between resets."}
+  - {id: M13.03.c11, unit: M13.03.u3, tier: 3, front: "Credential reset order", back: "Known-compromised, privileged and service accounts, krbtgt twice, everyone if NTDS was taken."}
+  - {id: M13.03.c12, unit: M13.03.u3, tier: 3, front: "Restore point after ransomware", back: "A backup from before the intrusion, checked untouched."}
+  - {id: M13.03.c13, unit: M13.03.u3, tier: 3, front: "Rebuild vs clean", back: "Rebuild where the attacker had SYSTEM, unless EDR evidence fully explains the changes."}
+  - {id: M13.03.c14, unit: M13.03.u4, tier: 2, front: "Executive update contents", back: "Business impact, actions, decisions needed, next update time."}
+  - {id: M13.03.c15, unit: M13.03.u4, tier: 3, front: "GDPR notification window", back: "72 hours from awareness of a personal-data breach, to the supervisory authority."}
+  - {id: M13.03.c16, unit: M13.03.u4, tier: 2, front: "Post-incident gaps to assign", back: "Detection gaps, control gaps, process gaps — each with owner and date."}
+
+quiz:
+  - id: M13.03.q01
+    type: single
+    tier: 3
+    pretest: true
+    stem: "FortiEDR shows ransomware-like file renaming on FS01 right now, spreading to shares on two other servers. What comes first?"
+    options:
+      - {id: a, text: "Isolate FS01 and the affected servers now, and scope from the EDR events in parallel", correct: true}
+      - {id: b, text: "Scope quietly for an hour first, so the attacker doesn't learn that you have seen them", trap: near-miss, why_wrong: "Right for a quiet intrusion, wrong when encryption is spreading: every minute costs data."}
+      - {id: c, text: "Reboot FS01 into safe mode so that the encryption process stops and can be removed", trap: misconception, why_wrong: "Destroys memory evidence and the process may come back at boot; isolation stops spread without losing evidence."}
+      - {id: d, text: "Disable the user account seen on FS01 in AD, then wait for the sessions to expire", trap: near-miss, why_wrong: "Existing sessions and tickets keep working; the encryption continues meanwhile."}
+    explanation: "Active harm means contain now. EDR isolation stops spread and keeps the host's evidence intact."
+  - id: M13.03.q02
+    type: single
+    tier: 4
+    stem: "A threat hunt finds a quiet beacon from one server, no other alerts, no data loss seen yet. The CISO wants the server blocked today. What do you recommend?"
+    options:
+      - {id: a, text: "Scope the other footholds first with a set deadline, then contain them all at once", correct: true}
+      - {id: b, text: "Block the C2 domain on the FortiGate today and keep watching the server for a week", trap: near-miss, why_wrong: "Tips the attacker off while leaving every other foothold you haven't found in place."}
+      - {id: c, text: "Isolate the server today and rebuild it, because a known-bad host cannot stay online", trap: near-miss, why_wrong: "Cleans one host and teaches the attacker to use the others; scoping first is the safer order here."}
+      - {id: d, text: "Leave it until the next maintenance window, because nothing harmful is happening right now", trap: misconception, why_wrong: "No visible harm is not the same as no harm; scoping must start now with a deadline."}
+    explanation: "With a quiet attacker, a premature block makes them change behaviour. Scope fast with a deadline, then contain all known footholds together."
+  - id: M13.03.q03
+    type: single
+    tier: 3
+    stem: "A laptop is quarantined with a FortiGate address group in a deny policy, but it still reaches a file server in the same VLAN. Why?"
+    options:
+      - {id: a, text: "Same-VLAN traffic is switched locally and never crosses the FortiGate's policies", correct: true}
+      - {id: b, text: "The deny policy sits below an allow policy for that VLAN in the policy order", trap: near-miss, why_wrong: "Order matters for routed traffic, but this traffic never reaches the policy table at all."}
+      - {id: c, text: "Existing sessions were kept because the policy change didn't clear the session table", trap: near-miss, why_wrong: "A real effect for routed sessions, but same-VLAN traffic isn't in the FortiGate's sessions."}
+      - {id: d, text: "Address groups are evaluated after the first packet, so the quarantine misses replies", trap: misconception, why_wrong: "Addresses are matched on the first packet of a session; that's not how they work."}
+    explanation: "L2 traffic within a VLAN is switched. Use EDR isolation or switch-level quarantine (FortiSwitch via FortiLink) to stop it."
+  - id: M13.03.q04
+    type: order
+    tier: 3
+    stem: "Order the credential resets after a confirmed domain compromise with NTDS.dit stolen."
+    items: ["Accounts known to be held by the attacker", "Privileged and SPN service accounts", "krbtgt, first reset", "krbtgt, second reset after replication and ticket lifetime", "All remaining user passwords"]
+    explanation: "Cut the attacker's known access, then the most powerful accounts, then kill forged tickets with two krbtgt resets, then everyone (NTDS had every hash)."
+  - id: M13.03.q05
+    type: single
+    tier: 4
+    stem: "After the first krbtgt reset, the team wants to do the second one ten minutes later 'to be safe'. What is the risk?"
+    options:
+      - {id: a, text: "Tickets signed with the first new key fail before replication completes", correct: true}
+      - {id: b, text: "The second reset is ignored, because a DC accepts one krbtgt password change per day", trap: misconception, why_wrong: "There is no such limit; the issue is tickets and replication timing."}
+      - {id: c, text: "Golden tickets signed with the original key keep working until the DCs are next rebooted", trap: near-miss, why_wrong: "After two resets the original key is gone; the problem with rushing is breaking legitimate tickets."}
+      - {id: d, text: "The DCs fall out of sync and need re-promotion before users can log on again", trap: near-miss, why_wrong: "Overstated; the realistic impact is authentication failures, not re-promotion."}
+    explanation: "Both keys are kept so in-flight tickets keep working. Resetting twice too quickly invalidates valid tickets before all DCs and clients catch up."
+  - id: M13.03.q06
+    type: multi
+    tier: 3
+    stem: "Ransomware hit a hospital's admin network. Which steps belong in recovery? Select all that apply."
+    options:
+      - {id: a, text: "Restore from backups that predate the intrusion and check they were not altered", correct: true}
+      - {id: b, text: "Assume data was stolen before encryption and involve legal on notification", correct: true}
+      - {id: c, text: "Restore the most recent backup to cut downtime, then scan it with antivirus", trap: near-miss, why_wrong: "The latest backup may hold the attacker's persistence; a clean scan doesn't prove absence of access."}
+      - {id: d, text: "Return systems with EDR in prevention mode and the case indicators watched", correct: true}
+      - {id: e, text: "Delete the encrypted copies right away to free storage for the restores", trap: misconception, why_wrong: "They are evidence (and sometimes decryptable later); keep them."}
+    explanation: "Restore point before intrusion, assume exfiltration, monitor what you restore, keep evidence."
+  - id: M13.03.q07
+    type: single
+    tier: 3
+    stem: "It's 02:30. The CFO joins the bridge and asks 'are we breached?'. You know one account is compromised and two laptops are isolated; scope is ongoing. What do you say?"
+    options:
+      - {id: a, text: "What is confirmed, what we are doing, what we don't know yet, and when the next update is", correct: true}
+      - {id: b, text: "That it is too early to say, and that you will call back once the investigation is complete", trap: near-miss, why_wrong: "Leaves the executive with nothing to act on and no time for the next update."}
+      - {id: c, text: "The full technical timeline so far, including the Kerberos tickets and the EDR events", trap: near-miss, why_wrong: "Right facts, wrong audience; executives need impact and decisions, not event IDs."}
+      - {id: d, text: "That it is contained, since both laptops are isolated and the account is now disabled", trap: misconception, why_wrong: "Scope isn't finished; claiming containment is a guess presented as fact."}
+    explanation: "Executive updates: confirmed facts, actions, unknowns, decisions needed, next update time."
+  - id: M13.03.q08
+    type: single
+    tier: 4
+    format: first-step
+    stem: "An infusion-pump management server on the clinical VLAN shows the same beacon as an infected admin PC. Isolating it would stop pump drug-library updates. What is the best first step?"
+    options:
+      - {id: a, text: "Call the clinical engineering lead and apply the pre-agreed segment-level control for that VLAN", correct: true}
+      - {id: b, text: "Isolate it with FortiEDR immediately, because the same beacon means the same compromise and risk", trap: near-miss, why_wrong: "Correct for the admin PC; for a clinical system safety comes first, with a pre-agreed alternative."}
+      - {id: c, text: "Leave it untouched until the vendor confirms the beacon, because it is a medical device", trap: misconception, why_wrong: "Waiting with a known compromise on a clinical network is the bigger safety risk."}
+      - {id: d, text: "Block the C2 destination on the FortiGate and keep monitoring the server for further signs", trap: near-miss, why_wrong: "A useful layer, but it skips the clinical owner and the agreed plan for this device class."}
+    explanation: "Life-safety systems get a pre-agreed alternative to isolation, decided with their owner: involve them first, then apply the planned control."
+  - id: M13.03.q09
+    type: single
+    tier: 2
+    stem: "Which item is the most important output of the post-incident review?"
+    options:
+      - {id: a, text: "Detection, control and process gaps, each with an owner and a due date", correct: true}
+      - {id: b, text: "A report that names who made the mistake that allowed the initial access", trap: misconception, why_wrong: "Blame makes people hide errors; the review is blameless by design."}
+      - {id: c, text: "A full export of the logs that were collected during the incident response", trap: irrelevant, why_wrong: "Evidence is preserved separately; the review produces actions."}
+      - {id: d, text: "A list of the indicators of compromise, added as blocks on the FortiGates", trap: near-miss, why_wrong: "Useful but short-lived; gaps with owners prevent the next incident."}
+    explanation: "Actions with owners and dates are what make the next incident shorter."
+  - id: M13.03.q10
+    type: text
+    tier: 2
+    stem: "How many times must the krbtgt password be reset to invalidate forged golden tickets?"
+    accept: ["two", "twice", "2 times", "two times"]
+    explanation: "Twice, with replication and the maximum ticket lifetime between the two resets."
+
+labs:
+  - id: M13.03.lab1
+    title: The first-hour checklist
+    goal: "Write the first-hour checklist for an account-compromise incident."
+    worked:
+      config: |
+        # 00-10 min  Confirm (EDR + SIEM evidence), classify (account compromise), initial severity P1/P2
+        # 00-15 min  Bridge: incident lead, scribe, AD admin, EDR admin, business owner with authority
+        # 10-30 min  Scope: hosts used by the account (4624 by user), processes run (EDR), data touched (file server logs)
+        # 10-30 min  Preserve: EDR forensic collection on the hosts, export FortiGate logs for the account's IPs
+        # 20-40 min  Contain: isolate the hosts in active use, disable the account, revoke IdP sessions
+        # every 30 min  Update: facts, actions, unknowns, decisions needed, next update time
+      notes:
+        - "Disable + isolate together: tickets outlive the disabled account."
+    faded:
+      template: |
+        # Evidence order: {{memory}} and live connections first, then disk and logs
+        # Every update ends with the {{next update}} time
+    solo:
+      prompt: "Write the six first-hour steps, one per line."
+      required: ["confirm", "assemble", "scope", "preserve", "contain", "communicate"]
+      solution: |
+        confirm and classify
+        assemble the team
+        scope
+        preserve evidence
+        contain
+        communicate
+      notes: "The scribe starts the timeline at minute zero."
+  - id: M13.03.lab2
+    title: Containment decision table
+    goal: "For four findings, choose the containment, the tool and the risk you accept."
+    worked:
+      config: |
+        # Finding                          Action                         Tool                  Risk accepted
+        # Encryption spreading on FS01     Isolate FS01 + servers hit      FortiEDR isolation    Shares down
+        # Quiet beacon on APP-SRV-03       Scope 24 h, then contain all    FortiEDR + FortiGate  Attacker active 24 h
+        # Stolen VPN credentials           Disable, reset, kill sessions   AD + FortiGate        User locked out
+        # Infected PC, same VLAN as ERP    Isolate the PC                  FortiEDR              Same-VLAN gap closed
+    faded:
+      template: |
+        # Encryption spreading -> {{isolate}} now
+        # Quiet beacon -> {{scope}} first, then contain all footholds
+    solo:
+      prompt: "Name the five containment options, one per line."
+      required: ["isolate", "quarantine", "block", "disable", "segment"]
+      solution: |
+        isolate host
+        network quarantine
+        block destination
+        disable account
+        segment block
+      notes: "Each with its cost."
+
+scenarios:
+  - id: M13.03.sc1
+    kind: raid
+    tier: 4
+    title: "Raid: Friday 23:40, the domain is gone"
+    situation: |
+      A logistics customer's FortiSIEM fires 'DCSync from non-DC account' for `svc_sqlrpt` at 23:31. FortiEDR shows
+      `svc_sqlrpt` logged on to two app servers this week. FortiAnalyzer shows APP-SRV-03 beaconing to an external
+      host every 60 s since Tuesday. The IT director is on holiday; the on-call admin is junior.
+    ask: "Run the next two hours."
+    right_thinking:
+      - "Treat it as domain compromise: replication rights mean every hash may be gone"
+      - "Bridge with an incident lead, scribe and a decision-maker reachable by phone"
+      - "Scope fast: all hosts where svc_sqlrpt and other admin accounts logged on, all beaconing hosts"
+      - "Contain the known footholds together: isolate APP-SRV-03 and the other hosts, disable svc_sqlrpt, block the C2"
+      - "Plan the krbtgt double reset and privileged resets; don't rush the second reset"
+      - "Executive update with facts, actions, unknowns and the next update time"
+    what: "Domain-compromise response: scope fast, contain all footholds at once, plan the credential reset properly."
+    why: "DCSync means the attacker can forge tickets; partial containment just moves them."
+    how: ["Bridge and authority", "Scope by account and beacon", "Contain together", "krbtgt plan", "Updates"]
+    pitfalls: ["Disabling the account alone and calling it contained", "Resetting krbtgt twice in ten minutes"]
+    model_answer: |
+      "DCSync from a service account means I assume every domain hash is gone. First the bridge: me leading, a
+      scribe, the on-call admin, and the IT director by phone for decisions. In the first 30 minutes we scope: every
+      host svc_sqlrpt touched, and every host with the 60-second beacon. Then we contain together — isolate those
+      hosts with FortiEDR, disable svc_sqlrpt, block the C2 on the FortiGate — so the attacker can't just switch
+      footholds. The krbtgt reset is planned, not rushed: first reset tonight after the privileged accounts, second
+      after replication and the ticket lifetime. The director gets an update at 00:30 with what we know, what we
+      did, what we don't know, and the decisions we need."
+    best_way: "Assume every hash is gone, contain all footholds together, and plan the krbtgt reset properly."
+    rubric: ["severity right", "authority on the bridge", "scope before partial block", "contain together", "credential plan", "communication"]
+  - id: M13.03.sc2
+    kind: situation
+    tier: 3
+    title: "The CEO wants it switched off"
+    situation: |
+      Mid-incident, the CEO says on the bridge: 'Shut down the whole network until you're sure.' The company runs
+      24×7 warehouses; scope shows two infected laptops and no server activity.
+    ask: "How do you respond?"
+    right_thinking:
+      - "Acknowledge the instinct (safety), then show the cost and the targeted alternative"
+      - "Present options with risk: targeted isolation now vs full shutdown"
+      - "Give a trigger for escalation: if X happens, we do the broader step"
+      - "Ask for the decision explicitly and record it"
+    what: "Options with risks, a recommendation, and a clear escalation trigger."
+    why: "Executives decide on risk; your job is to make the trade-off clear, not to win the argument."
+    how: ["Acknowledge", "Options", "Recommendation", "Trigger", "Record the decision"]
+    model_answer: |
+      "I understand: you want certainty. Here are the two options. Full shutdown stops every warehouse tonight.
+      Targeted containment isolates the two infected laptops now — they're isolated as we speak — and we watch every
+      server for the indicators. My recommendation is targeted, with a trigger: if we see any server activity or
+      encryption, we segment the office network from the warehouses within five minutes. Can you confirm that
+      decision so we record it?"
+    best_way: "Two options, a recommendation, a trigger, and the decision on record."
+    rubric: ["respectful", "options and risk", "trigger", "explicit decision"]
+  - id: M13.03.sc3
+    kind: situation
+    tier: 3
+    title: "The review that turned into a trial"
+    situation: |
+      In the post-incident review of a phishing-led compromise, the IT manager says the helpdesk analyst who reset
+      the attacker's MFA 'should be fired'. The analyst is in the meeting.
+    ask: "What do you do as the facilitator?"
+    right_thinking:
+      - "Reframe to process: why could one call reset MFA without verification?"
+      - "Keep the review blameless and say why (hidden mistakes come back)"
+      - "Turn it into actions: verification procedure, callback, manager approval for MFA resets"
+      - "Follow up privately with the IT manager if needed"
+    what: "A blameless reset of the discussion into process actions."
+    why: "Social engineering beats people; process is what makes it fail."
+    how: ["Reframe", "Explain blameless", "Actions with owners", "Private follow-up"]
+    model_answer: |
+      "I'd step in: 'Let's look at why one phone call was enough to reset MFA. If the process allows it, the next
+      analyst will do the same.' Then we agree actions: identity verification with a callback to the number on
+      file, and manager approval for MFA resets on privileged accounts, with owners and dates. If the manager
+      still wants a conversation about the person, that's a private one, not this meeting."
+    best_way: "The process failed, not the person: fix the process."
+    rubric: ["defuses", "blameless explained", "concrete actions"]
+
+interview:
+  - id: M13.03.t01
+    stage: technical
+    question: "Walk me through how you'd contain an active ransomware outbreak using the Fortinet stack."
+    testing: "Containment judgement and product use"
+    framework: "Active harm → isolate → network block → scope → recover"
+    model_answer: |
+      "Encryption spreading is active harm, so containment comes first. FortiEDR isolates the hosts showing the
+      behaviour — they can only talk to the EDR core, so evidence is preserved. On the FortiGate I block SMB between
+      segments and the C2 destinations, and FortiSwitch quarantine covers hosts in the same VLAN. In parallel we scope
+      from the EDR events and FortiAnalyzer logs for other hosts and the initial access. Recovery comes from backups
+      that predate the intrusion, and we assume data was stolen, so legal is in the loop early."
+    best_way: "Isolate with EDR, cut SMB and C2 at the FortiGate, scope in parallel, restore from before the intrusion."
+    target: "1:00"
+  - id: M13.03.t02
+    stage: technical
+    question: "Why isn't disabling a compromised account enough?"
+    testing: "Kerberos understanding"
+    framework: "Mechanism → consequence → full action"
+    model_answer: |
+      "Because Kerberos tickets already issued stay valid until they expire — by default up to ten hours for a TGT —
+      and sessions on hosts keep running. So I disable the account, isolate the hosts it's active on, revoke IdP
+      sessions, and if the attacker reached replication rights or the DCs, plan a double krbtgt reset."
+    best_way: "Tickets outlive the account; isolate the hosts too."
+    target: "0:35"
+  - id: M13.03.t03
+    stage: hm
+    question: "How do you keep executives calm and useful during an incident?"
+    testing: "Communication under pressure"
+    framework: "Structure + rhythm + decisions"
+    model_answer: |
+      "Structure and rhythm. Every update has the same four parts: what's confirmed, what we're doing, what we don't
+      know yet, and when the next update comes. And I always bring them a decision when one is needed, with the
+      options and my recommendation. At Netskope I ran QBRs and difficult escalations in three languages; the same
+      principle worked there — clarity reduces panic."
+    best_way: "Confirmed, doing, unknown, next update — and a decision when one is needed."
+    target: "0:45"

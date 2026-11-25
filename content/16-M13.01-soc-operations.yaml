@@ -1,0 +1,512 @@
+id: M13.01
+title: "SOC operations: the operating model, metrics and log sources a PS consultant must design"
+stage: S13
+stage_title: "S13 · SOC & SecOps (consultant level)"
+order: 15.1
+quality: 2
+est_sessions: 1.5
+objectives:
+  - Describe how a SOC moves an alert to a closed case, and who owns each step
+  - Pick metrics that show whether a SOC works (and spot the vanity ones)
+  - Choose log sources by the detections they enable, and size their quality problems
+  - Run the SOC part of a Fortinet PS engagement: discovery, RACI, handover
+sources:
+  - "Vendor-neutral SOC practice (NIST CSF 2.0 Detect/Respond functions, MITRE ATT&CK data sources)"
+  - "FortiSIEM 7.6.1 User Guide: incidents, cases, CMDB and device health (as cited in M9.01–M9.04)"
+  - "FortiAnalyzer 8.0.2 Administration Guide: log storage, Log View, FortiView (as cited in M6.01–M6.05)"
+
+units:
+  - id: M13.01.u1
+    title: From alert to closed case
+    tier: 2
+    est_min: 14
+    body: |
+      A SOC is a production line for decisions. Each alert either dies quickly (false positive, benign) or grows
+      into a case that ends with a written conclusion and, often, a change somewhere else (a rule, a patch, a policy).
+
+      | Step | Who | Output |
+      |---|---|---|
+      | **Alert** | Detection (rule, EDR, IPS, user report) | One event or a correlated incident |
+      | **Triage** | L1 analyst | Close as false positive / benign, or escalate with notes |
+      | **Investigation** | L2 analyst | Scope: which users, hosts, data, since when |
+      | **Response** | L2/L3 with IT and the business | Containment, eradication, recovery |
+      | **Lessons** | SOC lead, detection engineer | New or tuned detections, control gaps closed |
+
+      Three roles sit beside the line: **detection engineering** (writes and tests rules), **threat hunting** (looks
+      for what no rule caught) and **incident response** (leads the big ones). In a small customer one person wears
+      several hats; in an MSSP the tiers are separate teams with an SLA between them.
+
+      **Severity is impact × confidence.** A critical rule on a test VM with a known scanner is low; a medium rule on
+      the domain controller with a fresh admin logon is high. Write the matrix down with the customer before go-live,
+      with response times per level (for example, P1 acknowledged in 15 minutes, 24×7) — the numbers are theirs to
+      choose, the matrix is yours to propose.
+
+      **Handover between shifts** is where cases die. Every open case carries: what is known, what was done, what is
+      pending, and who owns the next step.
+
+      :::recall
+      Q: What does an L1 analyst produce for each alert?
+      A: A decision with notes: closed as false positive or benign, or escalated with what was checked.
+      :::
+
+      :::why
+      Q: Why define severity as impact × confidence instead of using the rule's severity?
+      A: The rule doesn't know the asset or the context; the same rule hit means different things on a lab VM and on a domain controller.
+      :::
+  - id: M13.01.u2
+    title: Metrics that tell you the SOC works
+    tier: 3
+    est_min: 14
+    body: |
+      Good SOC metrics measure **time** and **quality**, not volume.
+
+      - **MTTD** (mean time to detect): from the first malicious action to the first alert. Long MTTD means
+        detection gaps.
+      - **MTTA** (to acknowledge): from alert to an analyst opening it. Long MTTA means staffing or alert fatigue.
+      - **MTTR** (to respond / contain): from alert to containment. Long MTTR often means unclear authority to act.
+      - **True-positive rate per rule**: the share of a rule's incidents that were real. The weekly tuning list is
+        sorted by this.
+      - **Coverage**: which ATT&CK techniques the SOC can detect *and has tested*. Untested coverage is a guess.
+      - **Log source health**: sources sending, parsing correctly, on time. A source that goes quiet is itself an
+        incident.
+
+      **Vanity metrics** look good on a slide and say little: "2 million threats blocked", total events per day,
+      number of rules enabled. Use them only next to a quality metric.
+
+      **Reading the numbers together.** MTTA rising while incidents per day rise points to alert fatigue: tune, don't
+      hire. MTTR high with MTTA low points to authority: analysts see it fast but can't isolate a host without a
+      change ticket — fix the runbook, pre-approve containment for defined cases.
+
+      :::recall
+      Q: Which metric exposes alert fatigue first?
+      A: MTTA (time to acknowledge) rising, together with incidents per analyst per shift.
+      :::
+
+      :::why
+      Q: Why is "number of rules enabled" a weak metric?
+      A: Enabled is not tested or tuned; a rule that never fires on the real technique, or fires 500 times a day, adds no detection.
+      :::
+  - id: M13.01.u3
+    title: Log sources, chosen by the detections they enable
+    tier: 3
+    est_min: 16
+    body: |
+      Start from the detections the customer needs, then pick sources. "Send everything" fills the disk and the
+      licence and still misses the one log that matters.
+
+      | Detection need | Source | Key events |
+      |---|---|---|
+      | Password attacks, odd logons | Domain controllers | 4624, 4625, 4768, 4769, 4771, 4776 |
+      | Privilege changes | Domain controllers | 4720, 4728, 4732, 4756, 4662 |
+      | What ran on endpoints | EDR (FortiEDR), Sysmon, 4688 with command line | process, parent, hash, user |
+      | Traffic and threats at the edge | FortiGate traffic and UTM logs | deny, IPS, AV, web, DNS, app control |
+      | Remote users | FortiSASE / VPN logs | logins, posture, policy hits |
+      | Cloud and SaaS identity | IdP sign-ins (e.g. Entra ID) | impossible travel, MFA fatigue, consent |
+
+      **Quality problems to plan for:**
+
+      - **Time.** Every source on NTP and one time zone in the SIEM, or timelines lie.
+      - **Parsing.** A log that arrives but doesn't parse can't trigger a rule. Test one sample event per source
+        type before calling a source "onboarded".
+      - **Volume.** Firewall traffic logs dominate. Decide what to keep hot (searchable) and what to archive; in
+        FortiAnalyzer that is the analytics vs archive split, in FortiSIEM the online event database vs archive.
+      - **Health.** Alert when a source stops sending or drops below its usual rate.
+
+      :::recall
+      Q: What makes a log source "onboarded"?
+      A: It sends, it parses into the right event types and fields, its time is right, and a test event triggers the expected rule.
+      :::
+
+      :::why
+      Q: Why can a perfectly running SIEM miss a Kerberoasting attack?
+      A: If the DCs don't send 4769 (or the audit policy doesn't log it), no rule can see the ticket requests.
+      :::
+  - id: M13.01.u4
+    title: The SOC in a Fortinet PS engagement
+    tier: 4
+    est_min: 14
+    body: |
+      When the SOW says "deploy FortiSIEM/FortiAnalyzer and onboard the SOC", success is not the appliance being up.
+      It is the customer's analysts closing real cases with it.
+
+      **Discovery questions that change the design**
+
+      1. Who works the alerts, when? In-house 8×5, in-house 24×7, or an MSSP?
+      2. Which threats keep the CISO awake (ransomware, fraud, data leak, OT)? These pick the first use cases.
+      3. Which sources exist, who owns each, and can they change audit policy?
+      4. Retention: legal or contractual minimums, and how far back investigations usually go.
+      5. Authority: who may isolate a host, disable an account or block an IP, and at what hour?
+
+      **RACI that avoids the classic fight.** Fortinet PS builds and tunes; the customer (or MSSP) operates; source
+      owners fix their own audit settings. Write it in the SOW, not in an email after go-live.
+
+      **Handover package.** Use-case list with the test that proved each, runbooks for the top incidents, the
+      severity matrix, the tuning log (every exception: who asked, why, review date), source inventory with owners,
+      and a 30/60/90-day tuning plan.
+
+      :::ps
+      Offer a weekly 30-minute tuning session for the first month. It's cheap, it builds trust, and it is where the
+      customer learns to own the SIEM instead of resenting it.
+      :::
+
+      :::recall
+      Q: Name three items in a SOC handover package.
+      A: Tested use-case list, runbooks, severity matrix, tuning log, source inventory with owners, 30/60/90 tuning plan.
+      :::
+
+      :::why
+      Q: Why ask "who may isolate a host at 3 a.m.?" during discovery?
+      A: Without pre-approved authority, MTTR is set by whoever answers the phone, not by the SOC.
+      :::
+
+cards:
+  - {id: M13.01.c01, unit: M13.01.u1, tier: 1, front: "Five steps from alert to lesson", back: "Alert, triage, investigation, response, lessons learned."}
+  - {id: M13.01.c02, unit: M13.01.u1, tier: 2, front: "Three roles beside the SOC tiers", back: "Detection engineering, threat hunting, incident response."}
+  - {id: M13.01.c03, unit: M13.01.u1, tier: 2, front: "Severity of an incident =", back: "Impact (asset, data, users) × confidence (how sure it's malicious)."}
+  - {id: M13.01.c04, unit: M13.01.u1, tier: 2, front: "Four things every handed-over case carries", back: "What is known, what was done, what is pending, who owns the next step."}
+  - {id: M13.01.c05, unit: M13.01.u2, tier: 2, front: "MTTD measures", back: "Time from the first malicious action to the first alert."}
+  - {id: M13.01.c06, unit: M13.01.u2, tier: 2, front: "MTTA rising with incident volume suggests", back: "Alert fatigue: tune rules before adding staff."}
+  - {id: M13.01.c07, unit: M13.01.u2, tier: 3, front: "MTTR high but MTTA low suggests", back: "Analysts see alerts fast but lack authority or runbooks to contain."}
+  - {id: M13.01.c08, unit: M13.01.u2, tier: 2, front: "Coverage that counts", back: "ATT&CK techniques the SOC can detect and has tested with emulation."}
+  - {id: M13.01.c09, unit: M13.01.u2, tier: 2, front: "Vanity metric examples", back: "Threats blocked, total events per day, rules enabled."}
+  - {id: M13.01.c10, unit: M13.01.u3, tier: 2, front: "DC events for password attacks", back: "4625 failed logon, 4771 Kerberos pre-auth failed, 4776 NTLM validation, 4624 success."}
+  - {id: M13.01.c11, unit: M13.01.u3, tier: 3, front: "4769", back: "A Kerberos service ticket was requested (TGS). Basis for Kerberoasting detection."}
+  - {id: M13.01.c12, unit: M13.01.u3, tier: 3, front: "4662 on a DC", back: "An operation was performed on an AD object; with replication GUIDs it reveals DCSync."}
+  - {id: M13.01.c13, unit: M13.01.u3, tier: 2, front: "Four log quality problems", back: "Time (NTP/zone), parsing, volume (hot vs archive), source health."}
+  - {id: M13.01.c14, unit: M13.01.u3, tier: 2, front: "A source goes silent", back: "Treat it as an incident: broken pipeline or an attacker clearing tracks."}
+  - {id: M13.01.c15, unit: M13.01.u4, tier: 3, front: "Discovery question that sets MTTR", back: "Who may isolate a host, disable an account or block an IP, and when."}
+  - {id: M13.01.c16, unit: M13.01.u4, tier: 3, front: "SOC RACI in a PS SOW", back: "PS builds and tunes; customer or MSSP operates; source owners fix their own audit settings."}
+  - {id: M13.01.c17, unit: M13.01.u4, tier: 3, front: "Tuning log entry fields", back: "Rule, exception, who asked, why, date, review date."}
+
+quiz:
+  - id: M13.01.q01
+    type: single
+    tier: 2
+    pretest: true
+    stem: "Over two weeks, a customer's SOC shows MTTA doubling while incidents per day tripled. Analysts and shifts didn't change. What is the first thing to do?"
+    options:
+      - {id: a, text: "Rank rules by incident volume and true-positive rate, then tune the top ones", correct: true}
+      - {id: b, text: "Add a second L1 analyst per shift until MTTA returns to the old level", trap: near-miss, why_wrong: "Treats the symptom; the noise that caused it keeps growing and new staff burn out too."}
+      - {id: c, text: "Lower the severity of the rules that fired more than 50 times a week", trap: near-miss, why_wrong: "Blanket severity cuts also bury the real incidents inside those noisy rules."}
+      - {id: d, text: "Extend the SLA for medium incidents so the weekly dashboards show the SOC as compliant", trap: misconception, why_wrong: "Changes the target instead of the cause; the SOC is still drowning."}
+    explanation: "Volume grew without a staffing change: classic alert fatigue. Measure which rules generate the noise and how often they're right, then tune those with exceptions or thresholds."
+  - id: M13.01.q02
+    type: single
+    tier: 3
+    stem: "MTTA is 6 minutes but MTTR for confirmed malware on laptops is 9 hours. The analysts say they 'wait for IT'. Which fix targets the cause?"
+    options:
+      - {id: a, text: "Pre-approve EDR isolation of infected laptops in the SOC runbook", correct: true}
+      - {id: b, text: "Add an automation that emails IT the moment malware is confirmed", trap: near-miss, why_wrong: "Faster notification still leaves the decision with someone outside the SOC."}
+      - {id: c, text: "Escalate the malware incidents to P1 so IT has to answer faster", trap: near-miss, why_wrong: "Inflates severity across the board and teaches IT to ignore P1."}
+      - {id: d, text: "Tune the malware rules so fewer incidents need a response from IT", trap: irrelevant, why_wrong: "These are confirmed infections; tuning won't shorten the wait for authority."}
+    explanation: "Fast acknowledgement with slow containment points to authority, not detection. Agree in advance which cases the SOC may contain alone."
+  - id: M13.01.q03
+    type: multi
+    tier: 3
+    stem: "Which of these are metrics that show whether detections actually work? Select all that apply."
+    options:
+      - {id: a, text: "True-positive rate of each correlation rule over the last 30 days", correct: true}
+      - {id: b, text: "Number of ATT&CK techniques with a rule that passed an emulation test", correct: true}
+      - {id: c, text: "Count of correlation rules enabled in FortiSIEM across all organizations", trap: near-miss, why_wrong: "Enabled rules can be untested or permanently silent."}
+      - {id: d, text: "Mean time from first malicious action to first alert in exercises", correct: true}
+      - {id: e, text: "Total events per second ingested by the collectors during business hours", trap: irrelevant, why_wrong: "A capacity number; it says nothing about catching attacks."}
+    explanation: "Quality metrics: per-rule precision, tested coverage and time to detect. Rule counts and EPS are capacity or vanity figures."
+  - id: M13.01.q04
+    type: output
+    tier: 3
+    format: first-step
+    output: |
+      Log source health — last 24 h            events/h (7-day avg)   events/h (now)   last event
+      FGT-HQ  (FortiGate, syslog)              41,200                 40,950           08:14:02
+      DC01    (Windows, agent)                  3,900                  4,020           08:13:58
+      DC02    (Windows, agent)                  3,750                      0           02:11:47
+      FEDR    (FortiEDR, syslog)                  610                    590           08:13:40
+    stem: "It is 08:15. What is the best first step?"
+    options:
+      - {id: a, text: "Open a case for DC02 going silent and investigate before touching it", correct: true}
+      - {id: b, text: "Restart the FortiSIEM agent service on DC02 and confirm events arrive again", trap: near-miss, why_wrong: "Restoring the feed first may erase the trace of why it stopped (an attacker stopping logging)."}
+      - {id: c, text: "Raise a capacity ticket because the FortiGate is close to its seven-day average", trap: irrelevant, why_wrong: "The FortiGate is normal; nothing in its numbers asks for action."}
+      - {id: d, text: "Wait for the next hourly report to see whether DC02 recovers on its own", trap: near-miss, why_wrong: "A DC that stopped logging at 2 a.m. is already six hours of blindness on a crown-jewel asset."}
+    explanation: "A domain controller that stops logging in the middle of the night is a potential incident (log clearing, agent stopped) before it is an IT problem. Open a case, then investigate before you 'fix' it."
+  - id: M13.01.q05
+    type: single
+    tier: 2
+    stem: "A rule fires 'Excessive logon failures' on a lab VM used by the red team, and the same rule fires on DC01 from a laptop at 03:00. How should the two compare in severity?"
+    options:
+      - {id: a, text: "The domain controller, because the asset and the 03:00 timing raise impact", correct: true}
+      - {id: b, text: "Both equal, because severity should come from the rule definition and its tuning", trap: misconception, why_wrong: "Rule severity ignores asset value and context; impact differs hugely."}
+      - {id: c, text: "Lab VM higher, because red-team tooling is the more advanced threat", trap: misconception, why_wrong: "Known, authorised red-team activity is benign by definition if documented."}
+      - {id: d, text: "Both low until a second rule confirms the activity on either host", trap: near-miss, why_wrong: "Waiting for a second signal on a DC wastes the window to contain."}
+    explanation: "Severity = impact × confidence. The asset and the context change the impact."
+  - id: M13.01.q06
+    type: single
+    tier: 3
+    stem: "A customer wants to detect Kerberoasting. Their DCs send 4624 and 4625 to FortiSIEM. What is missing?"
+    options:
+      - {id: a, text: "Auditing of Kerberos service ticket operations, so DCs log event 4769", correct: true}
+      - {id: b, text: "Auditing of Kerberos authentication service, so DCs log event 4768", trap: near-miss, why_wrong: "4768 covers TGT requests (useful for AS-REP roasting), not the service tickets Kerberoasting asks for."}
+      - {id: c, text: "Auditing of credential validation on the DCs, so they log NTLM event 4776", trap: near-miss, why_wrong: "Kerberoasting uses Kerberos, not NTLM validation."}
+      - {id: d, text: "Auditing of directory service access, so DCs log event 4662", trap: near-miss, why_wrong: "4662 catches object access such as DCSync, not ticket requests."}
+    explanation: "Kerberoasting is a burst of service-ticket (TGS) requests, often with RC4 encryption. Those are event 4769, which needs the 'Audit Kerberos Service Ticket Operations' subcategory."
+  - id: M13.01.q07
+    type: order
+    tier: 2
+    stem: "Put the onboarding of a new log source in order."
+    items: ["Agree which detections the source must enable", "Configure the source to send (audit policy, syslog target)", "Confirm events arrive with correct time", "Confirm events parse into the right types and fields", "Trigger a test event and see the expected rule fire"]
+    explanation: "From need to proof: why, send, arrive, parse, detect."
+  - id: M13.01.q08
+    type: single
+    tier: 3
+    stem: "FortiGate traffic logs are 85% of the customer's log volume and they want 365 days of retention. Which design keeps investigations fast without buying three times the storage?"
+    options:
+      - {id: a, text: "Keep 30–90 days searchable and the rest in compressed archive, restoring when needed", correct: true}
+      - {id: b, text: "Send the deny logs alone from the FortiGate, so the year fits in the searchable store", trap: near-miss, why_wrong: "Accepted traffic is what exfiltration and beacons look like; dropping it blinds investigations."}
+      - {id: c, text: "Keep all 365 days searchable but lower the log level on the FortiGate policies", trap: near-miss, why_wrong: "Cutting log detail to fit storage removes fields the investigations need."}
+      - {id: d, text: "Forward traffic logs to a syslog server and keep UTM logs in the analyzer", trap: misconception, why_wrong: "Splits the evidence across tools and still stores the same volume elsewhere."}
+    explanation: "Hot vs archive: most investigations look back weeks, not a year. Archive satisfies retention; the hot window keeps search fast."
+  - id: M13.01.q09
+    type: single
+    tier: 4
+    stem: "In discovery, the customer says the MSSP 'handles the SOC' but the MSSP can't change AD audit policy or isolate hosts. Where should that land in the SOW?"
+    options:
+      - {id: a, text: "A RACI naming who changes audit policy and who may contain, with an escalation path", correct: true}
+      - {id: b, text: "An assumption that the MSSP will request the access rights it needs during the project", trap: near-miss, why_wrong: "An assumption is not an owner; it turns into a blocker in week 3."}
+      - {id: c, text: "A change in scope so Fortinet PS operates the SOC until the MSSP is ready", trap: misconception, why_wrong: "PS builds and hands over; taking operations hides the real gap and creates a dependency."}
+      - {id: d, text: "A risk entry noting that response times may be longer than expected", trap: near-miss, why_wrong: "Records the problem without assigning anyone to solve it."}
+    explanation: "Name owners in the SOW: source owners fix audit settings, and containment authority is explicit."
+  - id: M13.01.q10
+    type: text
+    tier: 2
+    stem: "Which Windows event ID means 'A Kerberos service ticket was requested'?"
+    accept: ["4769"]
+    explanation: "4769. 4768 is the TGT request; 4771 is a failed Kerberos pre-authentication."
+  - id: M13.01.q11
+    type: single
+    tier: 3
+    format: not-work
+    stem: "Which of these would NOT help you trust a timeline built from FortiGate, DC and EDR logs?"
+    options:
+      - {id: a, text: "Raising the FortiGate log level from notification to information", correct: true}
+      - {id: b, text: "Putting all sources on the same NTP servers and checking drift", trap: near-miss, why_wrong: "This does help: clock drift is the first thing that breaks timelines."}
+      - {id: c, text: "Normalising all events to one time zone when they are stored", trap: near-miss, why_wrong: "This does help: mixed local and UTC times reorder events."}
+      - {id: d, text: "Checking that each source's timestamps parse into the event time field", trap: near-miss, why_wrong: "This does help: an unparsed timestamp falls back to receive time."}
+    explanation: "Timeline trust is about time: sync, zone and parsing. More log detail doesn't fix ordering."
+  - id: M13.01.q12
+    type: single
+    tier: 4
+    stem: "After go-live, the CISO asks for one number in the monthly report that shows the SIEM is worth it. Which is the most defensible?"
+    options:
+      - {id: a, text: "Tested ATT&CK coverage this month vs last, with incidents closed as true positive", correct: true}
+      - {id: b, text: "Threats blocked by the FortiGates this month, shown next to last month's figure", trap: near-miss, why_wrong: "The firewall would have blocked those without the SIEM; it doesn't measure the SIEM."}
+      - {id: c, text: "Events correlated per day this month, compared with the vendor's original sizing estimate", trap: misconception, why_wrong: "Volume shows load, not value."}
+      - {id: d, text: "Number of incidents raised this month, with the critical ones highlighted in red", trap: near-miss, why_wrong: "Raw incident counts reward noise; without true-positive rate they can mean the opposite."}
+    explanation: "Value = what you can now detect (tested) and what you actually caught. Pair coverage with confirmed cases."
+
+labs:
+  - id: M13.01.lab1
+    title: A severity matrix the customer can sign
+    goal: "Write a 3 × 3 severity matrix (impact × confidence) with response times."
+    worked:
+      config: |
+        # Impact:     High = crown jewels (DCs, ERP, payment), privileged accounts, many users
+        #             Medium = servers, regular staff endpoints
+        #             Low = lab, guest, test
+        # Confidence: High = confirmed by a second source or a human
+        #             Medium = a tuned rule with good true-positive history
+        #             Low = new rule, anomaly only
+        #
+        #              Conf High   Conf Med   Conf Low
+        # Impact High    P1          P1         P2
+        # Impact Med     P2          P2         P3
+        # Impact Low     P3          P3         P4
+        #
+        # P1: acknowledge 15 min 24x7, contain within 1 h, CISO informed
+        # P2: acknowledge 1 h, investigate same day
+        # P3: next business day; P4: weekly review
+      notes:
+        - "The minutes are the customer's decision; you propose them with reasons."
+        - "Containment authority per level belongs in the same table."
+    faded:
+      template: |
+        # Impact {{High}} + Confidence Med  -> {{P1}}
+        # Impact Low + Confidence High      -> {{P3}}
+        # P1 acknowledge in {{15}} min
+    solo:
+      prompt: "List the two axes and the four priority levels, one per line."
+      required: ["impact", "confidence", "p1", "p2", "p3", "p4"]
+      solution: |
+        impact
+        confidence
+        P1
+        P2
+        P3
+        P4
+      notes: "Then add who may contain at each level."
+  - id: M13.01.lab2
+    title: Log source plan from use cases
+    goal: "For three use cases, name the source, the events and the parsing test."
+    worked:
+      config: |
+        # Use case: password spraying on VPN
+        #   Source: FortiGate (event log, VPN subtype) -> syslog to FortiSIEM
+        #   Fields: user, remote IP, result
+        #   Test:   10 bad logins for 10 users from one IP -> rule fires
+        # Use case: Kerberoasting
+        #   Source: DCs, 'Audit Kerberos Service Ticket Operations' = Success
+        #   Events: 4769 (service name, ticket encryption type, client address)
+        #   Test:   request tickets for 20 SPNs from one account -> rule fires
+        # Use case: malware execution on laptops
+        #   Source: FortiEDR events -> FortiSIEM
+        #   Fields: process, parent, hash, user, action
+        #   Test:   EDR test file -> event parsed with hash and host
+    faded:
+      template: |
+        # Kerberoasting needs DC event {{4769}}
+        # VPN spraying needs FortiGate {{event}} logs with user and remote IP
+    solo:
+      prompt: "Write the four checks of an onboarded source, one per line."
+      required: ["send", "time", "parse", "rule"]
+      solution: |
+        sends
+        time correct
+        parses
+        test rule fires
+      notes: "A source isn't onboarded until a test event fires a rule."
+
+scenarios:
+  - id: M13.01.sc1
+    kind: situation
+    tier: 3
+    title: "The SIEM nobody opens"
+    situation: |
+      A retail customer bought FortiSIEM a year ago. The two analysts open it once a week. 1,400 incidents are
+      "Active". The CISO wants to know if it was a waste of money before renewal.
+    ask: "What do you propose in the first 30 days?"
+    right_thinking:
+      - "Measure first: incidents per rule, true-positive rate, MTTA, source health"
+      - "Bulk-close or tune the noisiest rules with documented exceptions"
+      - "Pick 5 use cases tied to the CISO's top risks and test each end to end"
+      - "Weekly tuning ritual and a monthly value report (tested coverage, true positives)"
+    what: "A 30-day reset: measure, tune, focus on tested use cases, report value."
+    why: "A SIEM fails from noise and no ownership more often than from missing features."
+    how: ["Measure", "Tune the top noise", "Five tested use cases", "Ritual and report"]
+    model_answer: |
+      "Before deciding it was a waste, I'd measure it: which rules make the 1,400 incidents, how many were real, and
+      whether the key sources even arrive and parse. Most of that backlog is usually five or six rules. We tune those
+      with documented exceptions, then pick five use cases from your top risks — say ransomware and privileged
+      account abuse — and prove each one end to end with a test. From week two there's a 30-minute tuning session
+      every Friday. At renewal you'd see tested coverage and real cases caught, not just a number of events."
+    best_way: "Measure, cut the noise, prove five use cases, then report value."
+    rubric: ["measures before acting", "tuning with documentation", "use cases tied to risk", "ongoing ownership"]
+  - id: M13.01.sc2
+    kind: situation
+    tier: 4
+    title: "Who presses the button at 3 a.m.?"
+    situation: |
+      A hospital's SOC is an MSSP. FortiEDR detected ransomware behaviour on a nursing station at 03:10. The MSSP
+      called the hospital's IT on-call, who didn't answer until 04:40. By then two more stations were encrypted.
+    ask: "How do you change the operating model?"
+    right_thinking:
+      - "Pre-approved containment for defined cases (EDR isolation of non-critical endpoints)"
+      - "Exceptions for life-critical devices: who decides, how fast, and the fallback (network quarantine of a segment)"
+      - "Escalation chain with timers and a second on-call"
+      - "Test the runbook with a tabletop and a timed drill"
+    what: "Pre-approved, scoped authority for the SOC plus a tested escalation path."
+    why: "In ransomware, the hour lost waiting for permission is the damage."
+    how: ["Runbook with pre-approval", "Clinical exceptions", "Escalation timers", "Tabletop and drill"]
+    model_answer: |
+      "The detection worked; the authority didn't. I'd agree with the hospital a runbook where the MSSP may isolate
+      administrative and nursing workstations immediately for confirmed ransomware behaviour, and must call the
+      clinical engineering lead within 10 minutes for anything attached to patient care, with segment quarantine on
+      the FortiGate as the fallback. On-call gets a second contact after 15 minutes without an answer. Then we run a
+      tabletop with both teams and a timed drill to prove it."
+    best_way: "Detection worked, authority didn't: pre-approve it, carve out clinical devices, drill it."
+    rubric: ["identifies authority as the cause", "pre-approval scoped", "safety exceptions", "tests the change"]
+  - id: M13.01.sc3
+    kind: situation
+    tier: 3
+    title: "Send everything"
+    situation: |
+      In the kickoff, the customer's infrastructure lead says: "Just send every log from every device to the SIEM,
+      we'll figure out detections later." Their licence covers 5,000 EPS; a quick estimate of 'everything' is 18,000.
+    ask: "How do you answer him in the meeting?"
+    right_thinking:
+      - "Agree with the goal (visibility), reframe the approach (use-case first)"
+      - "Show the cost: licence, storage, and noise that delays detections"
+      - "Propose a prioritised source list by risk, with a phase 2 for the rest"
+      - "Keep raw logs that aren't analysed in cheaper storage if retention requires it"
+    what: "Use-case-driven onboarding with a phased source list."
+    why: "Sources without detections cost money and attention and still miss the event that matters."
+    how: ["Agree goal", "Show cost", "Prioritise by use case", "Archive the rest"]
+    model_answer: |
+      "I agree we want visibility, and I'd get there in an order that pays off. Everything is about 18,000 EPS
+      against a 5,000 licence, and most of it would never feed a rule. Let's start from your top risks: DCs, the
+      FortiGates, EDR and VPN cover password attacks, malware and remote access — roughly 3,500 EPS. Phase 2 adds
+      servers and SaaS once those use cases are tested. If you need the rest for retention, we archive it raw
+      without paying to analyse it."
+    best_way: "Same goal, smarter order: use cases first, everything else archived."
+    rubric: ["agrees with the goal", "quantifies the cost", "prioritised plan", "retention alternative"]
+
+interview:
+  - id: M13.01.t01
+    stage: technical
+    question: "How would you measure whether a customer's SOC is effective?"
+    testing: "Metrics judgement"
+    framework: "Time + quality + coverage + source health"
+    model_answer: |
+      "I look at time and quality, not volume. Time is MTTD, MTTA and MTTR, and the pattern between them tells me
+      where it hurts: high MTTA is fatigue, high MTTR with low MTTA is authority. Quality is the true-positive rate
+      per rule. Coverage is the ATT&CK techniques we can detect and have actually tested. And source health, because
+      a domain controller that goes quiet is either a broken pipeline or an attacker."
+    best_way: "Time, quality, tested coverage, source health."
+    target: "0:45"
+  - id: M13.01.t02
+    stage: hm
+    question: "You haven't run a SOC. Why should we trust you to deliver SOC projects?"
+    testing: "Honesty and transferable evidence"
+    framework: "Honest gap → real evidence → how I close it"
+    model_answer: |
+      "I haven't worked as a SOC analyst, and I won't pretend I have. What I bring: at Fortinet support I worked
+      FortiSIEM, FortiEDR and FortiSOAR cases and saw how deployments break; at Netskope I set up log streaming into
+      customers' SIEMs; and my OSCP, CRTP and CRTE work means I know what the attacks look like from the other side,
+      down to the events they leave. For SOC delivery I pair that with a method: use cases first, tested end to end,
+      tuned weekly with the customer."
+    best_way: "No SOC title, but the attacker's view, the product cases and a delivery method."
+    target: "1:00"
+  - id: M13.01.t03
+    stage: technical
+    question: "A customer says their SIEM generates too many alerts. Walk me through your first week."
+    testing: "Tuning method"
+    framework: "Measure → narrow → document → review"
+    model_answer: |
+      "Day one I pull 30 days of incidents per rule with how many were true positives. Usually five rules make most
+      of the noise. For each, I find why: a known scanner, a service account, a threshold that ignores the
+      environment, or bad parsing. I fix with narrow exceptions or thresholds based on the baseline, never by
+      disabling, and log who asked, why and a review date. By Friday we review the numbers with the SOC lead and set
+      the weekly session."
+    best_way: "Find the five rules, fix the cause narrowly, document, review weekly."
+    target: "1:00"
+  - id: M13.01.t04
+    stage: technical
+    question: "Which logs would you onboard first for a mid-size company, and why?"
+    testing: "Use-case-driven prioritisation"
+    framework: "Risks → sources → events"
+    model_answer: |
+      "Domain controllers first, for password attacks and privilege changes — 4624, 4625, 4769, 4771, the group
+      changes. Then the FortiGates for edge threats and egress, EDR for what runs on endpoints, and remote access —
+      VPN or FortiSASE — because that's where external logins happen. Each one is only done when a test event fires
+      the expected rule."
+    best_way: "Identity, edge, endpoint, remote access — proven with a test event."
+    target: "0:45"
+  - id: M13.01.t05
+    stage: hm
+    question: "How do you hand over a SOC project so the customer doesn't call you every week afterwards?"
+    testing: "Ownership transfer"
+    framework: "Package + practice + plan"
+    model_answer: |
+      "A package, practice and a plan. The package is the tested use-case list, runbooks, severity matrix, tuning log
+      and source inventory with owners. The practice is that their analysts ran the weekly tuning sessions in the
+      last two weeks, not me. The plan is 30/60/90 days of tuning with named owners. If they still call, it's
+      usually because one of those three was skipped."
+    best_way: "Package, practice, plan."
+    target: "0:45"

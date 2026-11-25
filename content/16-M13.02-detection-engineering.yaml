@@ -1,0 +1,557 @@
+id: M13.02
+title: "Detection engineering: from the attacker's technique to a rule that fires and stays quiet"
+stage: S13
+stage_title: "S13 · SOC & SecOps (consultant level)"
+order: 15.2
+quality: 2
+est_sessions: 2
+objectives:
+  - Turn an ATT&CK technique into a hypothesis, a data source and testable rule logic
+  - Name the Windows and Linux evidence that Active Directory attacks leave (the ones you practised on the offensive side)
+  - Spot lateral movement, web-shell and tunnelling patterns in endpoint and FortiGate logs
+  - Test, tune and retire rules with replay, baselines and exceptions that expire
+sources:
+  - "MITRE ATT&CK Enterprise techniques (T1110.003, T1558.003, T1558.004, T1003.006, T1003.001, T1003.003, T1550.002, T1569.002, T1505.003, T1071, T1572, T1048)"
+  - "Microsoft Windows security auditing event reference (4624, 4625, 4662, 4688, 4698, 4768, 4769, 4771, 4776, 4886, 4887, 5145, 7045) and Sysmon event IDs 1, 3, 10, 22"
+  - "FortiSIEM 7.6.1 User Guide: rules, Sigma import (pp. 925–942)"
+  - "Jose's own lab work: OSCP, CRTP, CRTE, home AD lab (Kerberos ticket abuse, mitm6, NTDS extraction)"
+
+units:
+  - id: M13.02.u1
+    title: The detection lifecycle
+    tier: 2
+    est_min: 12
+    body: |
+      A detection is a small product with a lifecycle, not a checkbox:
+
+      1. **Hypothesis.** "An attacker who has a domain user will request service tickets for many SPNs to crack
+         them offline" (ATT&CK T1558.003, Kerberoasting).
+      2. **Data source.** Which log proves it? Here: DC event 4769 with the ticket encryption type.
+      3. **Logic.** Filter, group by, threshold, window, and what makes it different from normal.
+      4. **Test.** Emulate the technique in a lab or with an approved purple-team run. A rule that has never fired
+         on the real technique is a guess.
+      5. **Deploy and tune.** Watch it for a week against real traffic; add narrow exceptions with expiry dates.
+      6. **Maintain or retire.** Re-test after OS or product upgrades; retire rules that no longer fit.
+
+      **Atomic vs behavioural.** An atomic rule matches one indicator (a hash, a domain). It is precise and dies
+      the day the attacker changes the file. A behavioural rule matches what the technique *must* do (many
+      service tickets with RC4 from one account). It survives tool changes but needs tuning.
+
+      **Precision vs recall.** Precision is "when it fires, is it real?"; recall is "when it happens, does it
+      fire?". Tuning trades one for the other; write down which one this rule optimises.
+
+      **Portable logic.** Sigma is a vendor-neutral rule format; FortiSIEM can import Sigma rules, which lets you
+      start from community logic and adapt fields to the customer's parsing.
+
+      :::recall
+      Q: What turns a written rule into a detection you can count as coverage?
+      A: A successful test against the real technique (emulation or purple team), plus a tuning week.
+      :::
+
+      :::why
+      Q: Why do behavioural rules survive longer than hash rules?
+      A: Attackers change files cheaply, but the technique still has to do the same things (request tickets, read LSASS), which the behaviour rule watches.
+      :::
+  - id: M13.02.u2
+    title: "Credential attacks against Active Directory: what they leave behind"
+    tier: 4
+    est_min: 20
+    body: |
+      These are the attacks behind CRTP/CRTE-style paths to Domain Admin, seen from the defender's chair.
+
+      | Technique | What the attacker does | Evidence |
+      |---|---|---|
+      | **Password spraying** (T1110.003) | One or two passwords against many accounts | Many 4625 (or 4771 with failure code 0x18) for **distinct users** from one source; on the VPN, FortiGate SSL-VPN/IKE login failures across users |
+      | **Kerberoasting** (T1558.003) | Requests TGS tickets for SPN accounts to crack offline | Burst of 4769 from one account for many service names, ticket encryption type **0x17 (RC4)** where AES is normal |
+      | **AS-REP roasting** (T1558.004) | Asks for TGTs of accounts without pre-authentication | 4768 with **pre-authentication type 0** for those accounts |
+      | **DCSync** (T1003.006) | Asks a DC to replicate secrets | 4662 with the replication rights GUIDs (`1131f6aa-…` Get-Changes, `1131f6ad-…` Get-Changes-All) by an account that is **not a DC** |
+      | **LSASS dump** (T1003.001) | Reads LSASS memory for hashes and tickets | Sysmon 10 (process access) with target `lsass.exe` and read access from an unusual process |
+      | **NTDS.dit theft** (T1003.003) | Copies the AD database via shadow copy or `ntdsutil ifm` | 4688/Sysmon 1 with `vssadmin create shadow` or `ntdsutil`, on a DC |
+      | **Pass-the-hash** (T1550.002) | Uses an NTLM hash instead of a password | 4624 logon type 9 with logon process `seclogo` on the attacker's host; NTLM 4624 type 3 from hosts that never log on that way |
+      | **AD CS abuse (ESC1)** | Requests a certificate that names another user | 4886/4887 on the CA with a subject alternative name that differs from the requester |
+      | **mitm6 / IPv6 DNS takeover** | Rogue DHCPv6 makes itself the DNS server, then relays NTLM | DHCPv6 advertisements from a workstation, WPAD lookups answered internally, NTLM authentications to an unexpected host |
+
+      Two lessons for rule logic: count **distinct** things (users, SPNs), and compare to **who normally does it**
+      (DCs replicate, admins log on to servers, nobody asks for 40 service tickets in a minute).
+
+      :::recall
+      Q: What makes a 4769 event look like Kerberoasting?
+      A: Many service names requested by one account in a short window, with RC4 (0x17) tickets.
+      :::
+
+      :::why
+      Q: Why must a DCSync rule exclude domain controllers?
+      A: DCs replicate with each other all day using exactly those rights; only a non-DC account asking for them is suspicious.
+      :::
+  - id: M13.02.u3
+    title: "Execution, lateral movement and persistence on hosts"
+    tier: 3
+    est_min: 16
+    body: |
+      **Parent–child process pairs** are the cheapest high-value behaviour rules:
+
+      | Pair | Means |
+      |---|---|
+      | `w3wp.exe` → `cmd.exe` / `powershell.exe` | A web shell or exploited IIS app (T1505.003) |
+      | `sqlservr.exe` → `cmd.exe` | `xp_cmdshell` abuse |
+      | `WmiPrvSE.exe` → `powershell.exe` | Remote WMI execution |
+      | `wsmprovhost.exe` → anything | Remote PowerShell (WinRM) session |
+      | `services.exe` → unknown binary after a 7045 | Service-based execution (PsExec-style, T1569.002) |
+      | `php-fpm` / `apache2` → `sh` | Web shell on Linux |
+
+      **Lateral movement** shows on both ends: a 4624 logon type 3 on the target, a 5145 access to `ADMIN$` or
+      `C$`, then a 7045 service install (`PSEXESVC` for PsExec) or a 4698 scheduled task.
+
+      **Privilege escalation** examples you exploited in labs, and their tells: a service account
+      (IIS AppPool, MSSQL) suddenly spawning processes as SYSTEM (the Potato family abusing SeImpersonate);
+      on Linux, `sudo` use outside the admin group, new SUID binaries, edited cron jobs or systemd timers, a member
+      of the `docker` group starting a privileged container that mounts `/`.
+
+      **Reverse shells** are an outbound connection followed by an interactive shell: Sysmon 3 (network
+      connection) from `bash`, `sh`, `powershell.exe` or `nc` to an external address, often on 4444, 443 or 53.
+
+      :::recall
+      Q: Which two events on a target show a PsExec-style lateral move?
+      A: An ADMIN$ share access (5145) and a service install (7045, PSEXESVC), after a network logon (4624 type 3).
+      :::
+
+      :::why
+      Q: Why are parent–child rules cheaper to keep accurate than command-line regexes?
+      A: The pair itself is rare in normal operations (IIS doesn't start shells); command lines change with every tool and obfuscation.
+      :::
+  - id: M13.02.u4
+    title: "Network tells in FortiGate and FortiAnalyzer logs"
+    tier: 3
+    est_min: 15
+    body: |
+      The FortiGate sees what endpoints can hide: who talked to whom, how often, how much.
+
+      - **Scanning**: one source, many destination ports or hosts, mostly denied, in minutes. Count **distinct**
+        ports or IPs per source.
+      - **Beaconing** (T1071): one internal host, one external destination, connections at a near-fixed interval
+        (say every 60 s ± 10 %) with small, similar byte counts, for hours. Long duration + low variance is the
+        signal; volume is not.
+      - **DNS tunnelling** (T1071.004): many unique, long subdomains under one parent domain, TXT or NULL
+        queries, high entropy labels. FortiGate DNS filter logs and DNS server logs both show it.
+      - **Exfiltration** (T1048): bytes sent far larger than bytes received, to a destination the host never used,
+        often at night.
+      - **Tunnels for pivoting** (T1572), like the ligolo-ng or chisel you used to pivot in labs: a long-lived
+        TLS or WebSocket session from a server to a rare external host, carrying traffic in both directions.
+      - **Web attacks** against published servers: IPS signatures for SQL injection, path traversal and command
+        injection on VIP traffic, or requests to cloud metadata (`169.254.169.254`) from an app server (SSRF).
+
+      FortiAnalyzer's Log View filters and FortiView rankings surface most of these; periodicity and entropy need
+      an analytic query or an export.
+
+      :::recall
+      Q: What distinguishes a beacon from a busy app?
+      A: Regular intervals with low variance and small, similar payloads over a long period, to a single destination.
+      :::
+
+      :::why
+      Q: Why count distinct subdomains rather than DNS query volume for tunnelling?
+      A: A busy client makes many queries to few names; a tunnel encodes data in the name, so almost every query is a new subdomain.
+      :::
+  - id: M13.02.u5
+    title: "Testing, tuning and retiring rules"
+    tier: 4
+    est_min: 13
+    body: |
+      **Replay before production.** Keep two streams: the attack (from an emulation run) and a normal week. A good
+      rule fires on the first and stays quiet on the second. FortiTatake's detection labs grade exactly this.
+
+      **Exceptions are narrow and expire.** Except one source, one account or one host, never "any source on this
+      subnet". Record who asked, why, and a review date. An exception without an expiry becomes the attacker's
+      hiding place.
+
+      **Thresholds come from data.** Look at the 30-day maximum for the grouping key (per user, per host) and set
+      the threshold above it with a margin, not at a round number someone liked.
+
+      **Rule health.** Track per rule: last fired, true-positive rate, last tested. A rule that hasn't fired in a
+      year and was never tested is either perfect or broken; find out which.
+
+      **Purple teaming turns findings into rules.** Every pentest finding that says "the EDR didn't alert on X"
+      (unprotected LSASS, unflagged tooling, an undetected reverse shell) becomes a detection backlog item with an
+      owner and a test.
+
+      :::recall
+      Q: What two streams does a rule need to pass before production?
+      A: An attack replay (must fire) and a benign baseline (must stay quiet).
+      :::
+
+      :::why
+      Q: Why should every exception have a review date?
+      A: The reason it was granted expires (a scanner moves, a project ends) but the blind spot stays unless someone looks again.
+      :::
+
+cards:
+  - {id: M13.02.c01, unit: M13.02.u1, tier: 1, front: "Six steps of the detection lifecycle", back: "Hypothesis, data source, logic, test, deploy and tune, maintain or retire."}
+  - {id: M13.02.c02, unit: M13.02.u1, tier: 2, front: "Atomic vs behavioural rule", back: "Atomic: one indicator (hash, domain), precise but brittle. Behavioural: what the technique must do, durable but needs tuning."}
+  - {id: M13.02.c03, unit: M13.02.u1, tier: 2, front: "Precision vs recall", back: "Precision: when it fires, it's real. Recall: when it happens, it fires."}
+  - {id: M13.02.c04, unit: M13.02.u1, tier: 2, front: "Sigma", back: "Vendor-neutral detection rule format; FortiSIEM can import Sigma rules."}
+  - {id: M13.02.c05, unit: M13.02.u2, tier: 3, front: "Password spraying tell", back: "Failures (4625/4771 0x18) for many distinct users from one source in a short window."}
+  - {id: M13.02.c06, unit: M13.02.u2, tier: 3, front: "Kerberoasting tell", back: "Burst of 4769 for many SPNs from one account, ticket encryption 0x17 (RC4)."}
+  - {id: M13.02.c07, unit: M13.02.u2, tier: 3, front: "AS-REP roasting tell", back: "4768 with pre-authentication type 0 (account doesn't require pre-auth)."}
+  - {id: M13.02.c08, unit: M13.02.u2, tier: 4, front: "DCSync tell", back: "4662 with replication GUIDs 1131f6aa-… / 1131f6ad-… by a non-DC account."}
+  - {id: M13.02.c09, unit: M13.02.u2, tier: 3, front: "LSASS credential dump tell", back: "Sysmon 10: unusual process opening lsass.exe with memory read access."}
+  - {id: M13.02.c10, unit: M13.02.u2, tier: 4, front: "Pass-the-hash on the attacker host", back: "4624 logon type 9 (NewCredentials) with logon process seclogo."}
+  - {id: M13.02.c11, unit: M13.02.u2, tier: 4, front: "AD CS ESC1 tell", back: "CA events 4886/4887 where the certificate's SAN names a different user than the requester."}
+  - {id: M13.02.c12, unit: M13.02.u2, tier: 3, front: "NTDS.dit theft tell", back: "vssadmin create shadow or ntdsutil (ifm) run on a DC (4688/Sysmon 1)."}
+  - {id: M13.02.c13, unit: M13.02.u2, tier: 4, front: "mitm6 tell", back: "DHCPv6 advertisements from a workstation, internal WPAD answers, NTLM auth to an unexpected host."}
+  - {id: M13.02.c14, unit: M13.02.u3, tier: 3, front: "w3wp.exe → cmd.exe", back: "Web shell or exploited IIS application."}
+  - {id: M13.02.c15, unit: M13.02.u3, tier: 3, front: "PsExec on the target", back: "4624 type 3, 5145 ADMIN$ access, 7045 PSEXESVC service install."}
+  - {id: M13.02.c16, unit: M13.02.u3, tier: 3, front: "Potato / SeImpersonate tell", back: "A service account (IIS AppPool, MSSQL) spawning processes as SYSTEM."}
+  - {id: M13.02.c17, unit: M13.02.u3, tier: 3, front: "Linux privesc tells", back: "sudo outside admins, new SUID files, edited cron/systemd timers, docker group mounting /."}
+  - {id: M13.02.c18, unit: M13.02.u4, tier: 3, front: "Beacon signature", back: "Fixed interval, low variance, small similar payloads, one destination, long duration."}
+  - {id: M13.02.c19, unit: M13.02.u4, tier: 3, front: "DNS tunnelling signature", back: "Many unique long subdomains of one domain, TXT/NULL queries, high-entropy labels."}
+  - {id: M13.02.c20, unit: M13.02.u4, tier: 3, front: "Pivot tunnel signature", back: "Long-lived TLS/WebSocket session from a server to a rare external host, traffic both ways."}
+  - {id: M13.02.c21, unit: M13.02.u4, tier: 3, front: "SSRF tell from an app server", back: "Requests to 169.254.169.254 (cloud metadata)."}
+  - {id: M13.02.c22, unit: M13.02.u5, tier: 2, front: "Two replay streams", back: "Attack replay must fire; benign baseline must stay quiet."}
+  - {id: M13.02.c23, unit: M13.02.u5, tier: 3, front: "Where thresholds come from", back: "The 30-day max per grouping key, plus a margin."}
+  - {id: M13.02.c24, unit: M13.02.u5, tier: 3, front: "Rule health fields", back: "Last fired, true-positive rate, last tested."}
+
+quiz:
+  - id: M13.02.q01
+    type: output
+    tier: 3
+    pretest: true
+    output: |
+      Time      EventID  Account          Service name       Ticket enc.  Client address
+      10:02:11  4769     svc_backup$      cifs/FS01          0x12         10.20.10.15
+      10:14:05  4769     m.rojas          MSSQLSvc/DB01:1433 0x17         10.20.10.44
+      10:14:05  4769     m.rojas          HTTP/intranet      0x17         10.20.10.44
+      10:14:06  4769     m.rojas          MSSQLSvc/DB02:1433 0x17         10.20.10.44
+      10:14:06  4769     m.rojas          exchangeAB/EX01    0x17         10.20.10.44
+      10:14:06  4769     m.rojas          WSMAN/APP03        0x17         10.20.10.44
+      ... 31 more rows for m.rojas within 4 seconds
+    stem: "What is the most likely explanation?"
+    options:
+      - {id: a, text: "m.rojas's session is being used to Kerberoast: dozens of RC4 service tickets in seconds", correct: true}
+      - {id: b, text: "m.rojas is password spraying the service accounts, which is why each line is a separate SPN", trap: near-miss, why_wrong: "Spraying produces failed logons (4625/4771); these are successful ticket requests."}
+      - {id: c, text: "A Golden Ticket is in use, because the tickets are RC4 while the backup account's are AES", trap: near-miss, why_wrong: "Forged TGTs show up as anomalies in TGT use, not as a burst of TGS requests for many services."}
+      - {id: d, text: "The client at 10.20.10.44 runs a legacy app that supports RC4 alone, so this is normal noise", trap: misconception, why_wrong: "A legacy app talks to its few services; 36 different SPNs in four seconds is enumeration."}
+    explanation: "Many distinct SPNs from one account in seconds, all with RC4 (0x17) while normal tickets use AES (0x12), is the Kerberoasting pattern. The account may be compromised or the user may be the attacker."
+  - id: M13.02.q02
+    type: single
+    tier: 4
+    stem: "You must write a DCSync rule on 4662 events. Which condition gives the best precision without losing the attack?"
+    options:
+      - {id: a, text: "Replication GUIDs in the properties, and the subject is not a domain controller account", correct: true}
+      - {id: b, text: "Replication GUIDs in the properties, and the subject is a member of Domain Admins or Enterprise Admins", trap: near-miss, why_wrong: "DCSync works with any account granted the rights; attackers often grant them to a quiet user."}
+      - {id: c, text: "Any 4662 on the domain object outside business hours, from any account at all", trap: misconception, why_wrong: "Catches noise and misses daytime DCSync, which is just as common."}
+      - {id: d, text: "Replication GUIDs in the properties, and the source host is not on the server VLAN", trap: near-miss, why_wrong: "Attackers run it from servers too; the account (non-DC) is the reliable signal."}
+    explanation: "DCs replicate with these rights constantly. The tell is a non-DC account asking for Get-Changes/Get-Changes-All."
+  - id: M13.02.q03
+    type: single
+    tier: 3
+    stem: "Spraying against the domain: which grouping key and condition separate it from a user who keeps mistyping a password?"
+    options:
+      - {id: a, text: "Group by source address; distinct target users ≥ 10 within 30 minutes", correct: true}
+      - {id: b, text: "Group by target user; failed logons ≥ 10 within 30 minutes from any source", trap: near-miss, why_wrong: "That is brute force on one account; spraying spreads few attempts over many users and stays under per-user lockout."}
+      - {id: c, text: "Group by source address; failed logons ≥ 10 in 30 minutes for the same account", trap: near-miss, why_wrong: "Same-account repeats are the mistyping user or classic brute force, not spraying."}
+      - {id: d, text: "Group by domain controller; account lockouts (4740) ≥ 3 within one hour", trap: near-miss, why_wrong: "Sprayers deliberately stay below the lockout threshold, so lockouts may never occur."}
+    explanation: "Spraying is breadth: one source, one or two passwords, many accounts. Count distinct users per source."
+  - id: M13.02.q04
+    type: multi
+    tier: 3
+    stem: "On a file server you see, within one minute: 4624 logon type 3 from 10.20.10.44, 5145 access to ADMIN$, then 7045 service 'PSEXESVC'. Which conclusions are justified? Select all that apply."
+    options:
+      - {id: a, text: "A remote execution tool was used against the file server from 10.20.10.44", correct: true}
+      - {id: b, text: "The account used holds administrative rights on the file server", correct: true}
+      - {id: c, text: "The account's password was cracked offline from a Kerberos service ticket", trap: near-miss, why_wrong: "Possible, but nothing in these events says how the credentials were obtained."}
+      - {id: d, text: "10.20.10.44 should be scoped next: what ran there before this logon", correct: true}
+      - {id: e, text: "The file server was the first host compromised in this intrusion", trap: misconception, why_wrong: "It is a target of lateral movement; the earlier activity is on the source."}
+    explanation: "ADMIN$ + PSEXESVC means admin rights and remote execution from the source. How the credentials were obtained and which host was first are open questions."
+  - id: M13.02.q05
+    type: single
+    tier: 3
+    stem: "Which parent–child pair is the strongest sign of a web shell on an IIS server?"
+    options:
+      - {id: a, text: "w3wp.exe starting cmd.exe, which then runs whoami and ipconfig", correct: true}
+      - {id: b, text: "svchost.exe starting w3wp.exe after the application pool recycles", trap: irrelevant, why_wrong: "That is how IIS starts worker processes normally."}
+      - {id: c, text: "explorer.exe starting powershell.exe for an administrator at the console", trap: near-miss, why_wrong: "Interactive admin work; suspicious only with other context."}
+      - {id: d, text: "services.exe starting w3wp.exe with the identity of an application pool", trap: near-miss, why_wrong: "Normal service plumbing; no shell is involved in that chain at all."}
+    explanation: "IIS worker processes don't start shells in normal operation. Recon commands right after confirm it."
+  - id: M13.02.q06
+    type: output
+    tier: 4
+    format: first-step
+    output: |
+      FortiAnalyzer — traffic, srcip=10.30.5.21 (APP-SRV-03), last 6 h, grouped by destination
+      dstip            dstport  sessions  avg_interval  stdev_interval  sent_bytes(avg)  rcvd_bytes(avg)
+      52.96.12.40      443      1,904     n/a           n/a             18,220           242,610
+      185.77.31.9      443        358     60.2 s        1.9 s              612              418
+      10.30.1.10        53      2,113     n/a           n/a                 74              148
+    stem: "What do you do first?"
+    options:
+      - {id: a, text: "Open a case for 185.77.31.9 and look on APP-SRV-03 for the process holding that connection", correct: true}
+      - {id: b, text: "Block 185.77.31.9 on the FortiGate at once, then open a case to find the process later", trap: near-miss, why_wrong: "Blocking first tips the attacker off and loses the live process you need to scope the intrusion."}
+      - {id: c, text: "Open a case for 52.96.12.40 because it has the most sessions and the most received bytes", trap: misconception, why_wrong: "High volume with irregular intervals looks like a busy SaaS app, not a beacon."}
+      - {id: d, text: "Open a case for the DNS server because APP-SRV-03 sends more DNS queries than HTTPS sessions", trap: near-miss, why_wrong: "Many queries to the internal resolver are normal; nothing here suggests tunnelling."}
+    explanation: "A 60-second interval with a 1.9-second deviation and tiny constant payloads for six hours is a beacon. Identify the process (EDR) before containing, so you know what else it touched."
+  - id: M13.02.q07
+    type: single
+    tier: 3
+    stem: "Which DNS pattern most strongly suggests tunnelling through the resolver?"
+    options:
+      - {id: a, text: "Thousands of unique 50-character subdomains under one domain, mostly TXT queries", correct: true}
+      - {id: b, text: "Thousands of queries per hour from one host, all for the same Microsoft update host name", trap: misconception, why_wrong: "Repeated queries for one name are a chatty client, not data encoded in names."}
+      - {id: c, text: "A few queries per day to a newly registered domain with a short random name", trap: near-miss, why_wrong: "Worth a look (phishing, C2 setup) but too little volume to carry data."}
+      - {id: d, text: "Queries for many different domains that each resolve to the same CDN address", trap: near-miss, why_wrong: "CDNs host many names on shared addresses; that is normal web traffic."}
+    explanation: "Tunnels encode data in the query name, so almost every query is a new, long, random-looking subdomain of one parent domain."
+  - id: M13.02.q08
+    type: single
+    tier: 4
+    stem: "An app server opens a TLS session to a rare external host that stays up for 9 hours, with steady traffic in both directions. A week ago a pentest used ligolo-ng from a similar server. What is the best detection logic for this class of activity?"
+    options:
+      - {id: a, text: "Long-lived outbound sessions from servers to destinations not seen in 30 days, with sustained two-way bytes", correct: true}
+      - {id: b, text: "A hash rule for the ligolo-ng agent binary found in the pentest, pushed to FortiEDR as a blocklist entry", trap: near-miss, why_wrong: "Catches that exact file only; a recompiled agent or chisel walks past it."}
+      - {id: c, text: "An application-control block on the category 'Proxy' for traffic leaving the server VLAN on TCP 443", trap: near-miss, why_wrong: "Without SSL inspection the tunnel looks like ordinary TLS, so the category rarely matches."}
+      - {id: d, text: "Any session longer than one hour from any internal host to any external destination at all", trap: misconception, why_wrong: "Streaming, VPNs and SaaS keep long sessions; without rarity and the server scope it is pure noise."}
+    explanation: "Behaviour over tool: servers rarely hold long two-way sessions to new destinations. Rarity + duration + direction survives the tool changing."
+  - id: M13.02.q09
+    type: order
+    tier: 2
+    stem: "Order the detection lifecycle."
+    items: ["Write a hypothesis from the technique", "Identify the data source and events", "Write the logic", "Test against an emulated attack and a benign baseline", "Deploy, watch and tune", "Re-test after changes, or retire"]
+    explanation: "Hypothesis, data, logic, test, deploy and tune, maintain."
+  - id: M13.02.q10
+    type: single
+    tier: 3
+    stem: "A rule for LSASS access (Sysmon 10, target lsass.exe) fires 300 times a day. Which tuning keeps it useful?"
+    options:
+      - {id: a, text: "Exclude the known security agents by signed image path and keep read-access masks in scope", correct: true}
+      - {id: b, text: "Exclude the processes under C:\\Program Files, since attackers usually run their tools from user folders", trap: near-miss, why_wrong: "Attackers can drop tools in Program Files or use signed binaries like the Task Manager dump; the exclusion is too wide."}
+      - {id: c, text: "Raise the threshold to 50 accesses per host per hour before raising an incident at all", trap: misconception, why_wrong: "A credential dump needs one access; a threshold hides exactly the event you want."}
+      - {id: d, text: "Keep the rule but lower its severity to informational, reviewing the list each Friday", trap: near-miss, why_wrong: "A dump reviewed days later is a breach already in progress; fix precision instead."}
+    explanation: "Security products touch LSASS legitimately. Exclude them precisely (signed path), and keep the access masks that mean memory read."
+  - id: M13.02.q11
+    type: single
+    tier: 4
+    format: answer-reason
+    stem: "A pentest report says 'the EDR raised no alert when we dumped LSASS on WS-12'. What is the right detection-engineering response, and why?"
+    options:
+      - {id: a, text: "Add a backlog item with an owner, write the rule, and re-test with the same technique", correct: true}
+      - {id: b, text: "Ask the EDR vendor for a signature update and close the finding once the update lands", trap: near-miss, why_wrong: "Without a re-test nobody knows if the update detects that technique in this environment."}
+      - {id: c, text: "Enable LSASS protection (RunAsPPL) on WS-12 and mark the detection finding as remediated", trap: near-miss, why_wrong: "Prevention is good, but the finding was about missing detection; the gap remains on every other host."}
+      - {id: d, text: "Accept the risk, because the pentesters had local admin rights, which a real attacker lacks", trap: misconception, why_wrong: "Real attackers get local admin routinely; that's why the technique exists."}
+    explanation: "A finding becomes a tracked detection item: owner, logic, and the same test repeated to prove it now fires. Prevention is a parallel control, not a substitute for detection."
+  - id: M13.02.q12
+    type: single
+    tier: 3
+    stem: "A 4624 event on a workstation shows logon type 9 and logon process 'seclogo'. What does it most likely indicate?"
+    options:
+      - {id: a, text: "Alternate credentials were used for network access, as with runas /netonly or pass-the-hash", correct: true}
+      - {id: b, text: "A user unlocked the console with a smart card after a short screen saver timeout", trap: near-miss, why_wrong: "Unlocks are logon type 7, not type 9."}
+      - {id: c, text: "A remote desktop session was opened to this workstation from another machine on the network", trap: near-miss, why_wrong: "RDP logons are type 10 (RemoteInteractive)."}
+      - {id: d, text: "A scheduled task ran under a stored service account during the night", trap: near-miss, why_wrong: "Batch logons from scheduled tasks are type 4."}
+    explanation: "Type 9 (NewCredentials) keeps the local identity and uses other credentials for network access: what runas /netonly and pass-the-hash tooling produce."
+  - id: M13.02.q13
+    type: single
+    tier: 4
+    stem: "During an AD CS review you see 4887 (certificate issued) where the requester is 'jperez' and the certificate's subject alternative name is 'administrator'. What is the most likely issue?"
+    options:
+      - {id: a, text: "The certificate template accepts an enrollee-supplied subject, enabling impersonation", correct: true}
+      - {id: b, text: "The CA itself is compromised and is issuing certificates on its own for the privileged accounts", trap: near-miss, why_wrong: "The CA did what the template allowed; the misconfiguration is the template, not a CA compromise."}
+      - {id: c, text: "jperez enrolled for a smart card for the administrator as a delegated enrolment agent", trap: near-miss, why_wrong: "Enrolment agents leave different evidence and need an agent certificate; nothing shows that here."}
+      - {id: d, text: "The certificate was renewed automatically and kept the subject of a previous holder", trap: misconception, why_wrong: "Renewal keeps the requester's own identity; it does not swap in another user."}
+    explanation: "A SAN that names someone else than the requester is the ESC1 pattern: a template allowing enrollee-supplied subject plus client-authentication use."
+  - id: M13.02.q14
+    type: text
+    tier: 3
+    stem: "Which ticket encryption type value in 4769 means RC4-HMAC (the one Kerberoasting rules look for)?"
+    accept: ["0x17", "0x00000017"]
+    explanation: "0x17 (decimal 23) is RC4-HMAC. AES256 is 0x12, AES128 0x11."
+
+labs:
+  - id: M13.02.lab1
+    title: Kerberoasting rule on paper
+    goal: "Write a correlation rule for Kerberoasting and its exceptions."
+    worked:
+      config: |
+        # Name:        Kerberoasting - many RC4 service tickets from one account
+        # Technique:   T1558.003
+        # Source:      Domain controllers, event 4769 (Audit Kerberos Service Ticket Operations)
+        # Filter:      TicketEncryptionType = 0x17 AND ServiceName not ending in '$' AND ServiceName != krbtgt
+        # Group by:    TargetUserName (the requester), IpAddress
+        # Condition:   COUNT(DISTINCT ServiceName) >= 10
+        # Window:      300 s
+        # Severity:    High; incident attributes: user, source IP, service count
+        # Exceptions:  none at start; legacy app accounts reviewed weekly
+        # Test:        request TGS for 20 SPNs from a test user (lab) -> fires; normal week replay -> quiet
+      notes:
+        - "Computer accounts ($) and krbtgt are filtered out: they are not roastable targets."
+        - "Distinct service names is what separates enumeration from one app using one service."
+    faded:
+      template: |
+        # Event: {{4769}}
+        # Filter: TicketEncryptionType = {{0x17}}
+        # Condition: COUNT(DISTINCT {{ServiceName}}) >= 10 in 300 s
+    solo:
+      prompt: "Write the five fields of the rule, one per line: event, filter, group, condition, window."
+      required: ["4769", "0x17", "group", "distinct", "window"]
+      solution: |
+        event 4769
+        filter encryption 0x17
+        group by requesting user and IP
+        count distinct service names >= 10
+        window 300 s
+      notes: "Then the test plan: attack replay fires, baseline stays quiet."
+  - id: M13.02.lab2
+    title: From pentest finding to detection backlog
+    goal: "Turn three pentest findings into detection items with data source, logic and test."
+    worked:
+      config: |
+        # Finding 1: LSASS dumped on WS-12 without alert
+        #   Detection: Sysmon 10, TargetImage=lsass.exe, read access, SourceImage not in signed security agents
+        #   Test: dump LSASS with a test tool in the lab -> incident within 2 min
+        # Finding 2: reverse shell from WEB-01 to 203.0.113.50:4444 not detected
+        #   Detection: Sysmon 3 from sh/bash/powershell to external; FortiGate rule: server VLAN -> any:4444 allowed? (should be denied)
+        #   Test: lab reverse shell -> incident; egress policy denies non-approved ports
+        # Finding 3: BloodHound collection not flagged
+        #   Detection: one host making LDAP queries for all users/groups/sessions in minutes (DC LDAP logging or EDR)
+        #   Test: run the collector in the lab -> incident
+      notes:
+        - "Each finding also gets a prevention control, tracked separately."
+    faded:
+      template: |
+        # LSASS dump -> Sysmon event {{10}}
+        # Reverse shell -> Sysmon event {{3}} from a shell to an external address
+    solo:
+      prompt: "Write the four fields of a detection backlog item, one per line."
+      required: ["finding", "source", "logic", "test"]
+      solution: |
+        finding
+        data source
+        logic
+        test
+      notes: "And an owner with a date."
+
+scenarios:
+  - id: M13.02.sc1
+    kind: situation
+    tier: 4
+    title: "The pentest report lands on your desk"
+    situation: |
+      A bank's annual pentest reached Domain Admin in two days: password spray on the VPN, Kerberoasting of a SQL
+      service account, then DCSync. The SOC (FortiSIEM + FortiEDR) raised one low incident during the whole test.
+      The CISO asks Fortinet PS: "What do we fix in detection, and by when?"
+    ask: "What do you propose?"
+    right_thinking:
+      - "Map each step of the chain to a technique, a data source and the reason it wasn't detected"
+      - "Check the sources first: are 4769 and 4662 even audited and sent? VPN logs parsed?"
+      - "Write and test rules for each step, prioritising the ones that come earliest in the chain"
+      - "Re-run the same chain (purple team) to prove detection, then measure time to detect"
+      - "Pair with prevention: AES-only service accounts with long passwords, MFA on VPN, limit replication rights"
+    what: "A chain-by-chain detection plan proven by a purple-team re-run."
+    why: "Detecting the first step (spray) buys the most time; proving it with the same chain is the only evidence that counts."
+    how: ["Map chain to techniques", "Fix sources", "Rules per step", "Purple-team re-run"]
+    model_answer: |
+      "I'd take their chain step by step. For the spray, the VPN logs must reach FortiSIEM parsed with user and
+      source, and a rule counts distinct users per source. For Kerberoasting, the DCs must audit service tickets
+      and we alert on many RC4 tickets from one account. For DCSync, 4662 with the replication rights from a non-DC
+      account. Earliest steps first, because catching the spray stops the rest. In four weeks we re-run the same
+      chain with the pentesters and measure how fast each step raises an incident. In parallel, prevention: MFA on
+      the VPN and AES-only, long-password service accounts."
+    best_way: "Same chain, step by step: fix the source, write the rule, re-run it."
+    rubric: ["maps the chain", "checks sources first", "prioritises early steps", "proves with re-run", "adds prevention"]
+  - id: M13.02.sc2
+    kind: situation
+    tier: 3
+    title: "The exception that ate the subnet"
+    situation: |
+      During a FortiSIEM health check you find an exception on 'Excessive Logon Failures': srcIpAddr in
+      10.20.0.0/16, created 14 months ago, no comment. The SOC lead says it was added because 'the scanners were
+      noisy'.
+    ask: "What do you do?"
+    right_thinking:
+      - "Treat it as a blind spot covering almost every internal source"
+      - "Find the scanners' real addresses and replace the /16 with those hosts"
+      - "Replay the last 30 days without the exception to see what it hid"
+      - "Add who/why/review date to every exception; schedule a quarterly review"
+    what: "Replace the broad exception with host-level ones and check what it hid."
+    why: "An undocumented /16 exception is exactly where an internal attacker hides."
+    how: ["Narrow to scanner IPs", "Replay 30 days", "Document", "Quarterly review"]
+    model_answer: |
+      "That exception means the rule is off for almost every internal machine. I'd replace it with the two or three
+      scanner addresses, replay the last 30 days without it to see whether anything real was hidden, and add the
+      who, why and review date to it and to every other exception. Then a quarterly review goes in the runbook."
+    best_way: "Narrow it, look at what it hid, document it."
+    rubric: ["recognises blind spot", "narrows", "checks history", "process fix"]
+  - id: M13.02.sc3
+    kind: situation
+    tier: 4
+    title: "IOC feed vs behaviour"
+    situation: |
+      A customer's SOC lead wants to spend the detection budget on threat-intel IOC feeds ('we'll block every known
+      bad hash and IP'). Their last incident was a contractor laptop using legitimate admin tools to move laterally.
+    ask: "How do you advise them?"
+    right_thinking:
+      - "IOCs catch known, reused infrastructure; they miss living-off-the-land and fresh infrastructure"
+      - "Their own incident would not have matched any IOC"
+      - "Balance: IOC feeds for cheap blocking, behaviour rules for the techniques in their incidents"
+      - "Measure with the pyramid of pain: hashes and IPs are easy for attackers to change"
+    what: "IOCs as a cheap layer, behaviour detections as the investment."
+    why: "Attackers change hashes and IPs in minutes; techniques like admin-tool lateral movement stay."
+    how: ["Show their incident", "Pyramid of pain", "Split the budget", "Measure coverage"]
+    model_answer: |
+      "IOC feeds are worth having because they're cheap and they block reused infrastructure, and FortiGuard
+      already gives you a lot of that on the FortiGates. But your last incident used admin tools and a valid
+      account, so no IOC would have fired. I'd put most of the effort into behaviour: remote service installs,
+      admin logons from workstations that never do that, unusual ADMIN$ access. Then we measure coverage on the
+      techniques you've actually seen."
+    best_way: "IOCs for the cheap wins, behaviour for the attacks you actually had."
+    rubric: ["uses their incident", "explains IOC limits", "balanced plan", "measurable"]
+
+interview:
+  - id: M13.02.t01
+    stage: technical
+    question: "How would you detect Kerberoasting?"
+    testing: "AD attack knowledge from the defender side"
+    framework: "Technique → source → logic → test"
+    model_answer: |
+      "Kerberoasting is requesting service tickets for accounts with SPNs and cracking them offline. The DCs log
+      those requests as 4769, if the service ticket auditing is on. The tell is one account asking for many
+      distinct service names in a short window, with RC4 encryption — 0x17 — when the environment normally uses
+      AES. So: group by requester and source IP, count distinct service names, exclude computer accounts and
+      krbtgt, and test it by actually roasting in a lab. I did this attack in my CRTP and CRTE labs, which is why
+      I know exactly what it leaves behind."
+    best_way: "4769, many distinct SPNs, RC4, one account, tested."
+    target: "0:50"
+  - id: M13.02.t02
+    stage: technical
+    question: "What's the difference between an atomic and a behavioural detection, and which would you invest in?"
+    testing: "Detection strategy"
+    framework: "Define → trade-off → recommendation"
+    model_answer: |
+      "Atomic detections match one indicator — a hash, an IP — so they're precise but the attacker changes them in
+      minutes. Behavioural ones match what the technique has to do, like a web server spawning a shell or a
+      non-DC account asking for replication. They need tuning but they survive tool changes. I'd let threat intel
+      cover the atomic layer cheaply and put the engineering time into behaviour."
+    best_way: "Atomic is cheap and brittle; behaviour is the investment."
+    target: "0:40"
+  - id: M13.02.t03
+    stage: technical
+    question: "Tell me about a time your offensive background helped a defensive outcome."
+    testing: "Transferable red-team experience, honestly framed"
+    framework: "STAR from lab and report work"
+    model_answer: |
+      "In my CRTE and OSCP work every finding had to go into a full report with remediation. One recurring finding
+      was that the endpoint monitoring didn't flag things it should — LSASS wasn't protected, tooling ran without
+      alerts, reverse shells went unnoticed — and for each one I documented the fix. That's the habit I bring to a
+      SOC project: every gap becomes a detection item with a data source, logic and a test that proves it now
+      fires. These were lab and exam environments, not a customer SOC, and I say that openly."
+    best_way: "Every gap in my reports came with a fix; in a SOC that becomes a tested detection."
+    target: "1:00"
+  - id: M13.02.t04
+    stage: technical
+    question: "How do you tune a noisy rule without creating a blind spot?"
+    testing: "Tuning discipline"
+    framework: "Cause → narrow exception → expiry → replay"
+    model_answer: |
+      "I find why it's noisy first — a scanner, a service account, a threshold below normal behaviour. Then the
+      narrowest fix: an exception for that host or account, or a threshold set above the 30-day maximum for that
+      key. Every exception gets who asked, why and a review date, and I replay a known attack through the tuned rule
+      to make sure it still fires."
+    best_way: "Narrow, documented, expiring, and re-tested."
+    target: "0:40"
