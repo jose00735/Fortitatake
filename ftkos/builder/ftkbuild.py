@@ -154,17 +154,19 @@ def prefetch_sources(info):
                 jobs.append((src, dest, urls))
     seen = set()
     jobs = [j for j in jobs if not (j[1] in seen or seen.add(j[1]))]
-    ev("sources", total=len(jobs), ready=sum(1 for j in jobs if os.path.exists(j[1])))
+    ready = sum(1 for j in jobs if os.path.exists(j[1]))
+    ev("sources", total=len(jobs), ready=ready)
     for i, (src, dest, urls) in enumerate(jobs):
         if os.path.exists(dest):
             continue
         ev("source", index=i + 1, total=len(jobs), file=src)
         for u in urls:
             if fetch(u, dest, src):
+                ready += 1
                 break
         else:
             log("could not prefetch %s; Buildroot will try again" % src)
-    ev("sources", total=len(jobs), ready=sum(1 for j in jobs if os.path.exists(j[1])))
+        ev("sources", total=len(jobs), ready=ready)
 
 
 # ---------------------------------------------------------------- build

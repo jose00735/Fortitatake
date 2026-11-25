@@ -103,7 +103,8 @@ func (m *Manager) builderInfo() map[string]any {
 // wslpath first; if it fails (fresh imported distros sometimes lack it), the path is worked
 // out directly and checked; if neither works, the log gets what WSL said and how drives mount.
 func (m *Manager) wslPath(ctx context.Context, distro, win string) (string, error) {
-	out, err := wslCmd(ctx, "-d", distro, "-u", "root", "--", "wslpath", "-u", win).CombinedOutput()
+	// forward slashes: wsl.exe's argument passing eats backslashes
+	out, err := wslCmd(ctx, "-d", distro, "-u", "root", "--", "wslpath", "-u", strings.ReplaceAll(win, `\`, "/")).CombinedOutput()
 	if p := strings.TrimSpace(decodeWSL(out)); err == nil && strings.HasPrefix(p, "/") {
 		return p, nil
 	}
@@ -315,7 +316,7 @@ func (m *Manager) buildJob(j *job, arch, variant string) error {
 	id := fmt.Sprintf("%s-%s-%s", m.Version, arch, time.Now().Format("20060102-1504"))
 	m.emit("build", map[string]any{"arch": arch, "variant": variant, "opt": opt, "jobs": runtime.NumCPU(), "id": id})
 	cmd := wslCmd(ctx, "-d", c.Distro, "-u", "ftk", "--cd", "~", "--", "python3", wsrc+"/builder/ftkbuild.py", "build",
-		"--arch", arch, "--variant", variant, "--opt", opt, "--jobs", fmt.Sprint(runtime.NumCPU()),
+		"--arch", arch, "--variant", variant, "--opt=" + opt, "--jobs", fmt.Sprint(runtime.NumCPU()),
 		"--src", wsrc+"/buildroot-external", "--agent", wsrc+"/bin/ftk-agent-"+arch, "--out", wout, "--build-id", id)
 	if err := m.pipeRun(cmd); err != nil {
 		if ctx.Err() != nil {
