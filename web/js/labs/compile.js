@@ -23,9 +23,13 @@ export function unsupported(lab) {
   for (const d of lab.devices.values()) {
     if (!NSOK.test(d.id)) why.push(`device name ${d.id}`);
     if (d instanceof FortiGate) {
-      if (d.kind !== "fortigate") why.push(`${d.kind} ${d.id}`);
+      if (!["fortigate", "fortianalyzer", "fortimanager"].includes(d.kind)) { why.push(`${d.kind} ${d.id}`); continue; }
+      if (d.kind !== "fortigate") continue; // FortiAnalyzer/FortiManager: appliances on the network
       if (d.parent || (d.allVdoms && d.allVdoms().length > 1)) why.push(`VDOMs on ${d.id}`);
-      if (d.entries("vpn ipsec phase1-interface").length) why.push(`IPsec on ${d.id}`);
+      for (const p1 of d.entries("vpn ipsec phase1-interface")) {
+        if (d.one("vpn ipsec phase1-interface", p1, "type") === "dynamic") why.push(`dial-up IPsec on ${d.id}`);
+        if (!IFOK.test(p1.key)) why.push(`tunnel name ${p1.key} on ${d.id}`);
+      }
       try { if (d.one("system sdwan", d.obj("system sdwan"), "status") === "enable") why.push(`SD-WAN on ${d.id}`); } catch { /* no SD-WAN */ }
       try { const m = d.one("system ha", d.obj("system ha"), "mode"); if (m && m !== "standalone") why.push(`HA on ${d.id}`); } catch { /* no HA */ }
     } else if (d.kind === "fortiswitch") { /* cabled through: switchSegments() already gives the broadcast domains */ }
@@ -35,6 +39,7 @@ export function unsupported(lab) {
 
 export function compile(lab) {
   const topo = { devices: [], links: [], bridges: [], addrs: [], routes: [], vlans: [], dummies: [], proxies: [] };
+  const extra = {}; // ns -> ip batch lines run after the topology (IPsec tunnels and the routes through them)
   const nft = {};
   const listen = [];
   const where = {}; // ip -> device id (who owns an address)
@@ -42,7 +47,7 @@ export function compile(lab) {
   const devs = [...lab.devices.values()].filter((d) => d.kind !== "fortiswitch");
   const kindOf = (d) => (d instanceof FortiGate ? "fortigate" : d.kind);
 
-  for (const d of devs) topo.devices.push({ name: d.id, kind: kindOf(d), forward: d instanceof FortiGate || d.kind === "router" || d.kind === "cloud", sysctl: {} });
+  for (const d of devs) topo.devices.push({ name: d.id, kind: kindOf(d), forward: (d instanceof FortiGate && d.kind === "fortigate") || d.kind === "router" || d.kind === "cloud", sysctl: {} });
   topo.devices.push({ name: FABRIC, kind: "fabric", forward: false, sysctl: {} });
 
   // ----- physical attachments: one cable per (device, port), carrying one or more segments -----
@@ -52,7 +57,7 @@ export function compile(lab) {
     const d = lab.dev(m.dev);
     if (!d) return null;
     if (d.kind === "cloud") { const s = segs.find((x) => x.members.includes(m)); if (!cloudPort.has(s.id)) cloudPort.set(s.id, "net" + cloudN++); return cloudPort.get(s.id); }
-    if (d.kind === "host" || d.kind === "server") return m.port || d.port || "eth0";
+    if (["host", "server", "fortisiem", "fortiedr"].includes(d.kind)) return m.port || d.port || "eth0";
     return m.port;
   };
   const att = new Map(); // "dev|port" -> {dev, port, segs: [{seg, vlan}]}
@@ -89,7 +94,9 @@ export function compile(lab) {
   const attached = (dev, port) => att.has(dev + "|" + port);
 
   // ----- hosts and servers -----
-  for (const h of devs.filter((d) => d.kind === "host" || d.kind === "server")) {
+  // collectors: keep: true makes the agent keep each log line that arrives
+  const COLLECT = { fortisiem: [{ proto: "udp", port: 514, keep: true }, { proto: "tcp", port: 514, keep: true }, { proto: "tcp", port: 443, keep: true }], fortiedr: [{ proto: "tcp", port: 8081 }, { proto: "tcp", port: 555 }, { proto: "tcp", port: 443 }] };
+  for (const h of devs.filter((d) => ["host", "server", "fortisiem", "fortiedr"].includes(d.kind))) {
     const port = h.port || "eth0";
     if (!attached(h.id, port)) topo.dummies.push({ dev: h.id, if: port, down: true });
     const p = h.addr();
@@ -98,6 +105,7 @@ export function compile(lab) {
     if (p && gw) topo.routes.push({ dev: h.id, dst: "default", via: intToIp(gw) });
     const binds = [];
     for (const s of h.services) { const m = s.match(/^(tcp|udp)\/(\d+)$/); if (m) binds.push({ proto: m[1], port: Number(m[2]) }); }
+    for (const b of COLLECT[h.kind] || []) { const x = binds.find((y) => y.proto === b.proto && y.port === b.port); if (x) Object.assign(x, b); else binds.push(b); }
     listen.push({ ns: h.id, binds });
     if (!h.services.has("icmp")) nft[h.id] = "table ip ftk {\n chain ftk_in { type filter hook input priority 0; policy accept;\n  icmp type echo-request drop\n }\n}";
   }
@@ -165,7 +173,12 @@ export function compile(lab) {
     const dev = topo.devices.find((x) => x.name === fg.id);
     dev.sysctl = { "net.ipv4.conf.all.arp_ignore": "1", "net.ipv4.conf.all.rp_filter": "0", "net.ipv4.conf.default.rp_filter": "0",
       // session list: byte/packet counters and FortiOS-like timers
-      "net.netfilter.nf_conntrack_acct": "1", "net.netfilter.nf_conntrack_tcp_timeout_established": "3600", "net.netfilter.nf_conntrack_udp_timeout_stream": "180" };
+      "net.netfilter.nf_conntrack_acct": "1", "net.netfilter.nf_conntrack_tcp_timeout_established": "3600", "net.netfilter.nf_conntrack_udp_timeout_stream": "180",
+      // sessions end (and are logged) as soon as they close, like a FortiGate, not after Linux's TIME_WAIT
+      "net.netfilter.nf_conntrack_tcp_timeout_time_wait": "1", "net.netfilter.nf_conntrack_tcp_timeout_close": "1", "net.netfilter.nf_conntrack_tcp_timeout_fin_wait": "2",
+      "net.netfilter.nf_conntrack_tcp_timeout_last_ack": "2", "net.netfilter.nf_conntrack_icmp_timeout": "10", "net.netfilter.nf_conntrack_udp_timeout": "10",
+      // session events for traffic logs, always on (the default "auto" stops after an nftables reload)
+      "net.netfilter.nf_conntrack_events": "1" };
     const intfs = lab.fgtIntfs(fg);
     for (const i of intfs) {
       if (!IFOK.test(i.name)) { notes.push(`${fg.id}: interface name ${i.name} is too long for Linux`); continue; }
@@ -177,6 +190,7 @@ export function compile(lab) {
       if (i.prefix) { topo.addrs.push({ dev: fg.id, if: i.name, cidr: `${intToIp(i.prefix.ip)}/${i.prefix.len}` }); where[i.prefix.ip] = fg.id; }
       if (i.srcCheck) dev.sysctl[`net.ipv4.conf.${i.name}.rp_filter`] = "0"; // FortiOS's RPF is looser than Linux strict mode
     }
+    const tunnels = fg.kind === "fortigate" ? ipsec(lab, fg, intfs, extra) : new Set();
     const { active } = lab.fgtRoutes(fg);
     const seen = new Set();
     for (const r of active) {
@@ -184,9 +198,15 @@ export function compile(lab) {
       const dst = r.dst.len === 0 ? "default" : prefixStr(r.dst);
       if (seen.has(dst)) continue; // ECMP: Linux gets the first path
       seen.add(dst);
+      if (tunnels.has(r.dev)) { (extra[fg.id] = extra[fg.id] || []).push(`route replace ${dst} dev ${r.dev}`); continue; }
       if (r.blackhole) topo.routes.push({ dev: fg.id, dst, type: "blackhole" });
       else if (r.gw) topo.routes.push({ dev: fg.id, dst, via: intToIp(r.gw), if: r.dev });
       else topo.routes.push({ dev: fg.id, dst, if: r.dev });
+    }
+    if (fg.kind !== "fortigate") {
+      // FortiAnalyzer (OFTP on TCP 514, kept line by line) and FortiManager (FGFM on TCP 541): no firewall
+      listen.push({ ns: fg.id, binds: fg.kind === "fortianalyzer" ? [{ proto: "tcp", port: 514, keep: true }, { proto: "tcp", port: 443 }, { proto: "tcp", port: 22 }] : [{ proto: "tcp", port: 541 }, { proto: "tcp", port: 443 }, { proto: "tcp", port: 22 }] });
+      continue;
     }
     const out = fgtRules(lab, fg, intfs, notes);
     nft[fg.id] = out.rules;
@@ -195,7 +215,42 @@ export function compile(lab) {
     const ap = adminPorts(fg);
     listen.push({ ns: fg.id, binds: [...new Set([ap.https[1], 80, ap.ssh[1], 23])].map((port) => ({ proto: "tcp", port })).concat(out.dns ? [{ proto: "udp", port: 53 }] : []), names: out.dns ? Object.fromEntries([...lab.names].map(([n, ip]) => [n, intToIp(ip)])) : undefined });
   }
-  return { topo, nft, listen, where, notes, ver: lab.ver };
+  return { topo, nft, listen, where, notes, extra, ver: lab.ver };
+}
+
+// ---------------------------------------------------------------- IPsec
+// The tunnel interface is a Linux xfrm interface and the traffic is real ESP (AES-GCM) between the two
+// FortiGates' public addresses, visible to the sniffer as ESP. IKE itself isn't run: FortiTatake decides
+// whether phase 1 and phase 2 come up from both ends' settings (vpn.js negotiate) and installs the SAs.
+const fnv = (str) => { let h = 2166136261; for (const c of str) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h; };
+const hexKey = (seed, bytes) => { let out = ""; for (let i = 0; out.length < bytes * 2; i++) out += fnv(seed + ":" + i).toString(16).padStart(8, "0"); return "0x" + out.slice(0, bytes * 2); };
+function ipsec(lab, fg, intfs, extra) {
+  const P1 = "vpn ipsec phase1-interface";
+  const names = new Set();
+  const L = (extra[fg.id] = extra[fg.id] || []);
+  fg.entries(P1).forEach((p1, i) => {
+    const name = p1.key, ifId = i + 1;
+    names.add(name);
+    const wan = fg.one(P1, p1, "interface");
+    const info = lab.tunnelInfo(fg, name) || {};
+    L.push(`link del ${name}`, `link add ${name} type xfrm dev ${wan} if_id ${ifId}`);
+    const ti = intfs.find((x) => x.name === name);
+    if (ti && ti.prefix) L.push(`addr add ${intToIp(ti.prefix.ip)}/32 dev ${name}`);
+    if (!info.up || !info.peer || !info.local) { L.push(`link set ${name} down`); return; }
+    const me = intToIp(info.local), peer = intToIp(info.peer.gw);
+    const pair = [`${fg.id}|${name}`, `${info.peer.fg.id}|${info.peer.p1}`].sort().join("<>");
+    const psk = String(fg.one(P1, p1, "psksecret") || "");
+    const spi = (from, to) => "0x" + ((fnv(pair + from + ">" + to) | 0x100) >>> 0).toString(16);
+    const key = (from, to) => hexKey(pair + psk + from + to, 20); // 16-byte AES key + 4-byte salt
+    L.push(`link set ${name} up`,
+      `xfrm state add src ${me} dst ${peer} proto esp spi ${spi(me, peer)} reqid ${ifId} mode tunnel if_id ${ifId} aead 'rfc4106(gcm(aes))' ${key(me, peer)} 128`,
+      `xfrm state add src ${peer} dst ${me} proto esp spi ${spi(peer, me)} reqid ${ifId} mode tunnel if_id ${ifId} aead 'rfc4106(gcm(aes))' ${key(peer, me)} 128`,
+      `xfrm policy add src 0.0.0.0/0 dst 0.0.0.0/0 dir out if_id ${ifId} tmpl src ${me} dst ${peer} proto esp reqid ${ifId} mode tunnel`,
+      `xfrm policy add src 0.0.0.0/0 dst 0.0.0.0/0 dir in if_id ${ifId} tmpl src ${peer} dst ${me} proto esp reqid ${ifId} mode tunnel`,
+      `xfrm policy add src 0.0.0.0/0 dst 0.0.0.0/0 dir fwd if_id ${ifId} tmpl src ${peer} dst ${me} proto esp reqid ${ifId} mode tunnel`);
+  });
+  if (names.size) L.unshift("xfrm state flush", "xfrm policy flush");
+  return names;
 }
 
 // ---------------------------------------------------------------- FortiGate → nftables
@@ -309,7 +364,9 @@ function fgtRules(lab, fg, intfs, notes) {
     if (dst === null) dsts.push("meta mark 0 ");
     else if (dst.length) dsts.push(`meta mark 0 ip daddr ${dneg}${set(dst)} `);
     const terms = v("service").flatMap((s) => svc(s));
-    for (const dm of dsts) for (const t of terms.length ? terms : []) fwd.push(`  ${head}${sm}${dm}${svcTerm(t)}ct mark set ${id} ${action}`);
+    // deny logs go to the kernel log, which FortiTatake turns into FortiOS traffic logs (reallog.js)
+    const logDeny = action === "drop" && fg.one("firewall policy", p, "logtraffic") !== "disable" ? `log prefix "FTKD ${fg.id} ${id} " ` : "";
+    for (const dm of dsts) for (const t of terms.length ? terms : []) fwd.push(`  ${head}${sm}${dm}${svcTerm(t)}ct mark set ${id} ${logDeny}${action}`);
     if (action === "accept" && fg.one("firewall policy", p, "nat") === "enable") {
       const outIfs = ifMatch("oifname", v("dstintf"));
       const poolName = fg.one("firewall policy", p, "ippool") === "enable" ? v("poolname")[0] : null;
@@ -351,7 +408,7 @@ ${pre.join("\n")}
  chain ftk_fwd { type filter hook forward priority filter; policy drop;
   ct state established,related accept
   ct state invalid drop
-${fwd.join("\n")}
+${fwd.join("\n")}${fg.one("log setting", fg.obj("log setting"), "fwpolicy-implicit-log") === "enable" ? `\n  log prefix "FTKD ${fg.id} 0 " drop` : ""}
  }
  chain ftk_post { type nat hook postrouting priority srcnat; policy accept;
 ${post.join("\n")}
@@ -359,6 +416,7 @@ ${post.join("\n")}
  chain ftk_in { type filter hook input priority filter; policy drop;
   ct state established,related accept
   iif "lo" accept
+  ip protocol esp accept
 ${inp.join("\n")}
  }
 }`;

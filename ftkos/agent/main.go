@@ -173,6 +173,8 @@ func dispatch(r req) (map[string]any, error) {
 		return listenStart(r)
 	case "listen.log":
 		return listenLog(r)
+	case "send":
+		return sendLines(r)
 	case "shell.open":
 		return shellOpen(r)
 	case "shell.write":

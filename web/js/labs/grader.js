@@ -12,6 +12,7 @@ export function runChecks(lab, checks, answers = {}) {
   });
 }
 
+export function checkOne(lab, c, answers) { return one(lab, c, answers); }
 function one(lab, c, answers) {
   if (c.probe) return probeCheck(lab, c.probe);
   if (c.config) return configCheck(lab, c.config);
@@ -375,7 +376,9 @@ function fazCheck(lab, c) {
   if (c.logs) {
     const logs = m ? m.logs : [];
     const f = c.logs;
-    const hits = logs.filter((r) => Object.entries(f).every(([k, v]) => String(r[k]) === String(v)));
+    // an allowed session ends as action=close (TCP) or timeout on a real FortiGate: both mean accepted
+    const same = (k, have, want) => String(have) === String(want) || (k === "action" && want === "accept" && ["close", "timeout", "accept"].includes(String(have)));
+    const hits = logs.filter((r) => Object.entries(f).every(([k, v]) => same(k, r[k], v)));
     if (!hits.length) return { pass: false, detail: `${c.dev} has no ${Object.entries(f).map(([k, v]) => `${k}=${v}`).join(" ")} logs from ${c.device}.` };
     return { pass: true, detail: `${c.dev} holds ${hits.length} matching log(s) from ${c.device}.` };
   }

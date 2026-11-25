@@ -127,7 +127,8 @@ func qemuArgs(arch, build, accel string, port, memMB int) []string {
 	case "kvm":
 		a = append(a, "-accel", "kvm", "-cpu", "host")
 	default:
-		a = append(a, "-accel", "tcg")
+		// a 64 MB translation cache instead of QEMU's default (up to 1 GB): phones are short on RAM
+		a = append(a, "-accel", "tcg,thread=multi,tb-size=64")
 	}
 	return a
 }
@@ -147,8 +148,10 @@ func (m *Manager) Boot(ctx context.Context, memMB int) (*VM, error) {
 	switch runtime.GOOS {
 	case "windows":
 		accels = []string{"whpx", "tcg"}
-	case "linux":
-		if _, err := os.Stat("/dev/kvm"); err == nil {
+	case "linux", "android":
+		// most phones don't let apps open /dev/kvm; those that do get hardware speed
+		if f, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0); err == nil {
+			f.Close()
 			accels = []string{"kvm", "tcg"}
 		}
 	}

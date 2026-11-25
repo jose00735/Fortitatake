@@ -31,6 +31,8 @@ Lab.prototype.reaches = function (fg, ip, port) {
   let src;
   if (port === 514) { const s = String(fg.one("log fortianalyzer setting", fg.obj("log fortianalyzer setting"), "source-ip") || ""); src = s && s !== "0.0.0.0" ? ipToInt(s) : undefined; }
   if (port === 541) { const s = String(fg.one("system central-management", fg.obj("system central-management"), "fmg-source-ip") || ""); src = s && s !== "0.0.0.0" ? ipToInt(s) : undefined; }
+  const live = this.realReach && this.realReach.get(`${fg.id}>${intToIp(ip)}:${port}`);
+  if (live) return { ok: live.ok }; // FortiTatake OS: a real TCP connection decided
   const k = `${fg.id}>${ip}:${port}:${src}`;
   if (!this._reach || this._reachVer !== this.ver) { this._reach = new Map(); this._reachVer = this.ver; }
   if (this._reach.has(k)) return this._reach.get(k);
@@ -41,6 +43,7 @@ Lab.prototype.reaches = function (fg, ip, port) {
   return r;
 };
 Lab.prototype.forwardLog = function (fg, rec) {
+  if (this.realLog) return; // live: logs travel over the real network (reallog.js)
   for (const faz of this.devices.values()) {
     if (faz.kind !== "fortianalyzer") continue;
     if (!this.fazSenders(faz).includes(fg)) continue;

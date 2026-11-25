@@ -97,6 +97,7 @@ Lab.prototype.webInspect = function (fromId, res, url) {
 let logSeq = 1000;
 function stamp(lab) { const d = new Date(lab.clock - 5 * 3600000); return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 19) }; }
 Lab.prototype.logTraffic = function (fg, pol, p) {
+  if (this.realLog) return; // live: traffic logs come from the kernel's sessions (reallog.js)
   const lt = pol ? fg.one("firewall policy", pol, "logtraffic") : null;
   if (p.action === "accept" && lt !== "all") return;
   if (p.action === "deny") {

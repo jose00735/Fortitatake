@@ -190,9 +190,10 @@ function parsePkt(s) {
 export function parseConntrack(text) {
   const out = [];
   for (const line of text.split("\n")) {
-    const m = /^(\w+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line.trim());
+    // "tcp 6 431999 ESTABLISHED src=…" from -L; events (-E) have no timer: "tcp 6 src=…"
+    const m = /^(\w+)\s+(\d+)\s+(?:(\d+)\s+)?(.*)$/.exec(line.trim());
     if (!m) continue;
-    const [, , pnum, expire, rest] = m;
+    const [, , pnum, expire = "0", rest] = m;
     const kv = [...rest.matchAll(/(\w+)=(\S+)/g)].map((x) => [x[1], x[2]]);
     const half = (n) => { const o = {}; let seen = 0; for (const [k, v] of kv) { if (k === "src") seen++; if (seen === n && ["src", "dst", "sport", "dport", "packets", "bytes", "id", "type", "code"].includes(k) && !(k in o)) o[k] = v; } return o; };
     const org = half(1), rep = half(2);

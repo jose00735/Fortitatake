@@ -6,6 +6,7 @@ package main
 // (which source the server saw, which address the client reached).
 
 import (
+	"bufio"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -30,6 +31,7 @@ type hit struct {
 	Dst   string `json:"dst"`
 	T     int64  `json:"t"`
 	Seq   int64  `json:"seq"`
+	Data  string `json:"data,omitempty"` // kept for log collectors (syslog, OFTP stand-in)
 }
 
 var hitSeq int64 // guarded by lsMu
@@ -57,8 +59,8 @@ func (n *nsListen) add(h hit) {
 	defer n.mu.Unlock()
 	h.T = time.Now().UnixMilli()
 	n.log = append(n.log, h)
-	if len(n.log) > 400 {
-		n.log = n.log[len(n.log)-400:]
+	if len(n.log) > 4000 {
+		n.log = n.log[len(n.log)-4000:]
 	}
 }
 
@@ -103,6 +105,7 @@ func listenStart(r req) (map[string]any, error) {
 		proto, _ := m["proto"].(string)
 		pf, _ := m["port"].(float64)
 		port := int(pf)
+		keep, _ := m["keep"].(bool)
 		if ip == "" {
 			ip = "0.0.0.0"
 		}
@@ -120,7 +123,7 @@ func listenStart(r req) (map[string]any, error) {
 				n.mu.Lock()
 				n.closers = append(n.closers, l)
 				n.mu.Unlock()
-				go serveTCP(n, l, port)
+				go serveTCP(n, l, port, keep)
 			case "udp":
 				c, err := net.ListenPacket("udp4", addr)
 				if err != nil {
@@ -129,7 +132,7 @@ func listenStart(r req) (map[string]any, error) {
 				n.mu.Lock()
 				n.closers = append(n.closers, c)
 				n.mu.Unlock()
-				go serveUDP(n, c, port)
+				go serveUDP(n, c, port, keep)
 			default:
 				return fmt.Errorf("bad proto %q", proto)
 			}
@@ -144,7 +147,7 @@ func listenStart(r req) (map[string]any, error) {
 	return map[string]any{"opened": opened, "failed": failed}, nil
 }
 
-func serveTCP(n *nsListen, l net.Listener, port int) {
+func serveTCP(n *nsListen, l net.Listener, port int, keep bool) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
@@ -155,6 +158,16 @@ func serveTCP(n *nsListen, l net.Listener, port int) {
 			src, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 			dst, _, _ := net.SplitHostPort(c.LocalAddr().String())
 			n.add(hit{Proto: "tcp", Port: port, Src: src, Dst: dst})
+			if keep { // a log collector: one hit per line, for as long as the sender stays connected
+				sc := bufio.NewScanner(c)
+				sc.Buffer(make([]byte, 64<<10), 64<<10)
+				for sc.Scan() {
+					if line := strings.TrimSpace(sc.Text()); line != "" {
+						n.add(hit{Proto: "tcp", Port: port, Src: src, Dst: dst, Data: line})
+					}
+				}
+				return
+			}
 			c.SetDeadline(time.Now().Add(5 * time.Second))
 			switch port {
 			case 443, 8443, 10443:
@@ -181,7 +194,7 @@ func httpReply(c net.Conn, dst string) {
 	fmt.Fprintf(c, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
 }
 
-func serveUDP(n *nsListen, c net.PacketConn, port int) {
+func serveUDP(n *nsListen, c net.PacketConn, port int, keep bool) {
 	buf := make([]byte, 1500)
 	local, _, _ := net.SplitHostPort(c.LocalAddr().String())
 	for {
@@ -190,7 +203,11 @@ func serveUDP(n *nsListen, c net.PacketConn, port int) {
 			return
 		}
 		src, _, _ := net.SplitHostPort(from.String())
-		n.add(hit{Proto: "udp", Port: port, Src: src, Dst: local})
+		h := hit{Proto: "udp", Port: port, Src: src, Dst: local}
+		if keep {
+			h.Data = strings.TrimSpace(string(buf[:k]))
+		}
+		n.add(h)
 		if port == 53 {
 			if resp := dnsAnswer(n, buf[:k]); resp != nil {
 				c.WriteTo(resp, from)
@@ -278,5 +295,72 @@ func stopAllListeners() {
 			c.Close()
 		}
 		n.mu.Unlock()
+	}
+}
+
+// ---------------------------------------------------------------- senders
+// A device sending log lines: FortiGate → FortiAnalyzer (TCP, kept open like OFTP) and
+// FortiGate → syslog (UDP, one datagram per line). The socket is opened inside the device's
+// namespace from the configured source address, so routing and policies apply for real.
+var (
+	sndMu   sync.Mutex
+	senders = map[string]net.Conn{}
+)
+
+func sendLines(r req) (map[string]any, error) {
+	ns, proto, dst, src := r.str("ns"), r.str("proto"), r.str("dst"), r.str("src")
+	port := int(r.num("port", 514))
+	if err := checkNS(ns); err != nil {
+		return nil, err
+	}
+	if net.ParseIP(dst) == nil || (proto != "tcp" && proto != "udp") {
+		return nil, fmt.Errorf("bad destination")
+	}
+	key := fmt.Sprintf("%s|%s|%s|%s:%d", ns, proto, src, dst, port)
+	sndMu.Lock()
+	c := senders[key]
+	sndMu.Unlock()
+	if c == nil {
+		err := withNetns(ns, func() error {
+			d := net.Dialer{Timeout: time.Duration(r.num("timeout_ms", 2500)) * time.Millisecond}
+			if src != "" {
+				if proto == "tcp" {
+					d.LocalAddr = &net.TCPAddr{IP: net.ParseIP(src)}
+				} else {
+					d.LocalAddr = &net.UDPAddr{IP: net.ParseIP(src)}
+				}
+			}
+			cc, err := d.Dial(proto+"4", net.JoinHostPort(dst, strconv.Itoa(port)))
+			c = cc
+			return err
+		})
+		if err != nil {
+			return map[string]any{"sent": 0, "error": err.Error()}, nil
+		}
+		sndMu.Lock()
+		senders[key] = c
+		sndMu.Unlock()
+	}
+	sent := 0
+	for _, l := range r.strs("lines") {
+		c.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		if _, err := c.Write([]byte(l + "\n")); err != nil {
+			c.Close()
+			sndMu.Lock()
+			delete(senders, key)
+			sndMu.Unlock()
+			return map[string]any{"sent": sent, "error": err.Error()}, nil
+		}
+		sent++
+	}
+	return map[string]any{"sent": sent}, nil
+}
+
+func stopAllSenders() {
+	sndMu.Lock()
+	defer sndMu.Unlock()
+	for k, c := range senders {
+		c.Close()
+		delete(senders, k)
 	}
 }

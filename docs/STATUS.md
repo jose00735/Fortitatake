@@ -98,6 +98,24 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.8.11 adds (SecOps on real protocols, IPsec on the real network)
+
+Needs an OS rebuild on the PC (and a new phone build): the agent gained log collectors and a sender.
+
+- **Traffic logs from the kernel.** For accept policies with `logtraffic all`, each session that ends in the FortiGate's namespace (conntrack DESTROY events, `-o id`) becomes a FortiOS traffic log: srcip/dstip/ports, srcintf/dstintf, policyid (conntrack mark), sentbyte/rcvdbyte/packets (conntrack accounting), service, `trandisp` snat/dnat with transip/tranip, action `close` for TCP and `accept` for the rest. Closed sessions are reaped within ~2 s (FortiGate-like TCP close timers plus a periodic table walk; Linux otherwise reaps lazily, up to a minute later). Deny policies (unless `logtraffic disable`) and the implicit deny (`fwpolicy-implicit-log enable`) carry an nftables `log prefix "FTKD <fgt> <policy>"`; the kernel log lines (`/dev/kmsg`, `nf_log_all_netns=1`) become deny logs. The simulator's own traffic logs are off while live; scripted story logs (IPS, Windows, EDR) keep their content.
+- **Logs travel for real.** `config log fortianalyzer setting` → a TCP connection from the FortiGate's namespace to the FortiAnalyzer on 514 (from `source-ip` if set), one key=value line per log (an OFTP stand-in: same port and direction, no OFTP TLS framing). `config log syslogd setting` → UDP syslog datagrams (`<189>` + the log) to the server and port, plus a periodic system event log. If routing, a policy, NAT or the tunnel is wrong, nothing arrives, and the FortiGate keeps retrying (FortiAnalyzer lines stay queued until they arrive).
+- **Collectors.** FortiAnalyzer (TCP 514), FortiSIEM (UDP/TCP 514, TCP 443) are compiled as devices on the lab network; the agent keeps each received line. FortiAnalyzer's Device Manager lists a FortiGate when its connection arrives; only authorized devices' logs are stored (Log View, FortiView, handlers). FortiSIEM's analytics, CMDB, rules and incidents run on the syslog that actually arrived.
+- **Connections the consoles report** (FortiAnalyzer/FortiManager registration, Windows agents to FortiSIEM on 443, FortiEDR collectors on 8081) come from real TCP connections from the right namespace, refreshed every few seconds.
+- **IPsec on the real network** (site-to-site, route-based). Each phase1-interface is a Linux xfrm interface; when FortiTatake's IKE check says phase 1 and phase 2 come up (vpn.js: version, proposals, DH groups, PSK, IDs, selectors, reachability), both ends get ESP SAs (AES-GCM, keys derived from the PSK and the tunnel names) and the tunnel routes; otherwise the interface stays down and routes over it don't install. The traffic between the FortiGates is real ESP (the sniffer shows it as ESP); IKE packets themselves aren't exchanged. Dial-up (FortiClient) stays simulated.
+- **Checks that read FortiAnalyzer/FortiSIEM/FortiEDR** wait up to 12 s for real delivery; `action=accept` in a log check also matches `close`/`timeout` (an allowed session's end on a real FortiGate).
+
+### What v0.8.10 adds (FortiTatake OS on the phone)
+
+- **QEMU for Android** in the APK (`jniLibs/arm64-v8a/libqemu.so`): qemu-system-aarch64 11.1.3 as a fully static aarch64 Linux binary (musl, built with zig cc; glib 2.84, pcre2, libffi, zlib, libfdt static; only the `virt` machine, TCG, no graphics; 28 MB). Android runs it from the app's native library folder like the Go engine. `tools/build_qemu_android.sh` builds it from sources on the Ubuntu archive and download.qemu.org.
+- The phone tries KVM when the phone lets apps open `/dev/kvm`, else TCG (multi-threaded, 64 MB translation cache instead of QEMU's default, which can reach 1 GB).
+- Tested here: the Android binary boots the ARM64 FortiTatake OS kernel and the agent answers (under qemu-user on x86, i.e. double emulation, 38 s; native ARM64 TCG is far faster). Not yet tested on Jose's Xiaomi 17T.
+- On the phone the OS tab's "Test the build" is enabled once a phone build has synced, and labs go live exactly as on the PC.
+
 ### What v0.8.9 adds (FortiGate diagnostics from the real network)
 
 With the lab live, these FortiGate commands read the kernel in the FortiGate's namespace and print in FortiOS format (the simulator still answers when the OS isn't running). No OS rebuild needed: the agent is unchanged.
@@ -161,7 +179,7 @@ With the lab live, these FortiGate commands read the kernel in the FortiGate's n
 - **Real-network checks.** With a build installed, a lab shows **Real network** (on by default). Probe checks then run on FortiTatake OS: the kernel decides pass or fail, the simulator still explains which policy and NAT. If they disagree the check says so ("worth reporting"). The lab VM boots on the first check and powers off after 10 idle minutes.
 - **Tests.** `tools/test_labs_linux.mjs` runs every lab's start state and solution through the kernel (`--vm <kernel> <rootfs>` boots the OS in QEMU). All 71 labs: the ones the compiler covers pass on the kernel (79 probe checks in the final full run, plus every start state), 0 disagreements left after fixing the compiler; SD-WAN, IPsec, VDOM-from-start, HA and FAZ/FMG labs stay on the simulator.
 
-Not in v0.8.0 (FortiGate diagnostics: done in v0.8.9; still to do): running the OS on the phone (QEMU for Android in the APK, KVM/LKL paths), the DNS/ICMP relay to the real Internet, and the build steps on Windows that couldn't be tested here (WSL distro creation, the Windows build of the OS itself). The phone already receives and verifies builds.
+Still to do after v0.8.11: the DNS/ICMP relay to the real Internet; dial-up IPsec, SD-WAN, VDOMs and HA on the real network; testing the phone runtime on the Xiaomi 17T.
 
 ### What v0.7.3 fixes
 

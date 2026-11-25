@@ -13,6 +13,8 @@ FLAGS=(-trimpath -ldflags "-s -w")
 GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build "${FLAGS[@]}" -o "$JNI/arm64-v8a/libfortitatake.so" .
 GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build "${FLAGS[@]}" -o "$JNI/armeabi-v7a/libfortitatake.so" .
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build "${FLAGS[@]}" -o "$JNI/x86_64/libfortitatake.so" .
+# QEMU for the phone (tools/build_qemu_android.sh): a static aarch64 binary shipped as a native library
+if [ -f dist/qemu-android/libqemu.so ]; then cp dist/qemu-android/libqemu.so "$JNI/arm64-v8a/libqemu.so"; else echo "note: dist/qemu-android/libqemu.so missing: the APK won't run FortiTatake OS"; fi
 cd android
 if [ -x ./gradlew ]; then G=./gradlew; else G=gradle; fi
 $G --no-daemon -q assembleRelease

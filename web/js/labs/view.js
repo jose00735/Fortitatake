@@ -3,6 +3,7 @@ import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
 import { RealNet } from "./real.js";
+import { RealLogs } from "./reallog.js";
 import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing, traceRules, FlowTrace, parseConntrack, formatSessions, formatRoutes, routeHelpers } from "./realdiag.js";
 import { intToIp, isIp } from "./net.js";
 import { api } from "../core.js";
@@ -275,6 +276,7 @@ function mount(main, run, opts = {}) {
     real.on = true; // always the real network when this device can run it; the simulator is only the fallback
     startLive();
   }).catch(() => {});
+  try { window.ftkLab = { run, real }; } catch { /* no window */ }
   const realCall = async (req, ms) => {
     const r = await api("engine/lab/call", { method: "POST", body: req });
     if (!r.ok) throw new Error(r.err || "engine error");
@@ -288,6 +290,7 @@ function mount(main, run, opts = {}) {
     if (l) { l.textContent = { boot: "starting…", apply: "applying…", live: "live", sim: "simulator only", off: "", err: "offline (hover for why; retrying in 30 s)" }[st] || ""; l.dataset.st = st; l.title = msg || ""; }
     const was = live.shown;
     live.shown = st === "live" || st === "apply";
+    if (!live.shown && run.lab.realLog) { run.lab.realLog.stop(); run.lab.realLog = null; }
     if (!live.shown) for (const d of Object.keys(ui.sh)) ui.sh[d].on = false;
     if (was !== live.shown) { devTabs(); paint(); }
   };
@@ -302,10 +305,20 @@ function mount(main, run, opts = {}) {
         setLive(real.net.c ? "apply" : "boot");
         await real.net.apply(run.lab);
         if (Object.keys(ui.trace).length) await retrace();
-        if (real.net.generation !== live.gen) { live.gen = real.net.generation; for (const sh of Object.values(ui.sh)) if (sh.id) { sh.id = null; sh.text += "\n[the lab network was rebuilt; a new shell starts with your next command]\n"; } }
+        if (run.lab.realLog && real.net.nftReloaded) run.lab.realLog.reloaded = [...(run.lab.realLog.reloaded || []), ...real.net.nftReloaded];
+        if (real.net.generation !== live.gen) {
+          live.gen = real.net.generation;
+          for (const sh of Object.values(ui.sh)) if (sh.id) { sh.id = null; sh.text += "\n[the lab network was rebuilt; a new shell starts with your next command]\n"; }
+          // traces and captures were running in the old namespaces
+          for (const [d, t] of Object.entries(ui.trace)) { realCall({ op: "shell.close", shell: t.id }).catch(() => {}); delete ui.trace[d]; }
+          for (const [d, cp] of Object.entries(ui.cap)) { realCall({ op: "shell.close", shell: cp.id }).catch(() => {}); delete ui.cap[d]; print(d, "[the lab network was rebuilt; run the command again]"); }
+        }
       }
       setLive("live");
       await syncTracers();
+      // SecOps: logs from the kernel, shipped over the lab network, collected where they arrive
+      if (!run.lab.realLog) run.lab.realLog = new RealLogs(run.lab, realCall);
+      if (Date.now() - (live.logAt || 0) > 1500) { live.logAt = Date.now(); await run.lab.realLog.tick(real.net.c, real.net.generation); }
       for (const [dev, c] of Object.entries(ui.cap)) {
         const r = await realCall({ op: "shell.read", shell: c.id, since: c.next });
         c.next = r.next;
@@ -417,7 +430,7 @@ function mount(main, run, opts = {}) {
           else if (sl) {
             const r = await realCall({ op: "ns.exec", ns: dev, argv: ["conntrack", "-L", "-o", "id"] });
             const f = (fg.dbg && fg.dbg.sessFilter) || {};
-            print(dev, formatSessions(parseConntrack(r.stdout || ""), { ...h, age: (x) => Math.max(1, (x.proto === 6 ? 3600 : x.proto === 17 ? 180 : 30) - x.expire) }, f));
+            print(dev, formatSessions(parseConntrack(r.stdout || ""), { ...h, age: (x) => Math.max(1, (x.proto === 6 ? 3600 : x.proto === 17 ? 180 : 10) - x.expire) }, f));
           } else {
             const r = await realCall({ op: "ns.exec", ns: dev, argv: ["ip", "-j", "route", "show"] });
             const { active } = run.lab.fgtRoutes(fg);

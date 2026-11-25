@@ -48,6 +48,7 @@ const baseStore = Lab.prototype.storeLog;
 Lab.prototype.storeLog = function (fg, rec) {
   baseStore.call(this, fg, rec);
   if (!(fg instanceof FortiGate) || fg.product !== "fortios") return;
+  if (this.realLog) { this.realLog.ship(fg, rec); return; } // FortiTatake OS sends it for real (reallog.js)
   const set = fg.cfg.get("log syslogd setting");
   if (!set || fg.one("log syslogd setting", set, "status") !== "enable") return;
   const server = ipToInt(fg.one("log syslogd setting", set, "server") || "");
@@ -61,19 +62,24 @@ Lab.prototype.storeLog = function (fg, rec) {
   siem.siem = siem.siem || { events: [], inc: new Map(), rules: null };
   siem.siem.events.push(siemFromFgt(fg, rec));
 };
+Lab.prototype.siemFromFgt = (fg, r, ip) => ({ ...siemFromFgt(fg, r), reptDevIp: ip || "" });
 function siemFromFgt(fg, r) {
   const et = r.type === "utm" ? `FortiGate-${r.subtype}-${r.subtype === "ips" ? r.severity || "info" : r.action || "log"}` : r.type === "event" ? `FortiGate-event-${r.subtype || "system"}` : `FortiGate-traffic-${r.action || "accept"}`;
   return { eventType: et, time: r.time, date: r.date, reptDevName: fg.hostname(), reptDevIp: "", srcIpAddr: r.srcip, destIpAddr: r.dstip, destIpPort: r.dstport, ipsSignature: r.attack, severity: r.severity, user: r.user, action: r.action, raw: fmtLog(r), seq: r.seq };
 }
 
 // Windows hosts with a FortiSIEM agent ship their security log when they can reach the collector (TCP 443)
+// live on FortiTatake OS: the answer of a real TCP connection, refreshed every few seconds
+export function realOk(lab, from, ip, port) {
+  const r = lab.realReach && lab.realReach.get(`${from}>${intToIp(ip)}:${port}`);
+  return r ? r.ok : undefined;
+}
 function winEvents(lab, siem) {
   const out = [];
   for (const h of lab.devices.values()) {
     if (!h.spec || h.spec.siem_agent !== siem.id || !h.winlog) continue;
-    lab.quiet = (lab.quiet || 0) + 1;
-    let ok;
-    try { ok = lab.probe(h.id, { dst: siem.ip(), proto: 6, dport: 443 }).ok; } finally { lab.quiet--; }
+    let ok = realOk(lab, h.id, siem.ip(), 443);
+    if (ok === undefined) { lab.quiet = (lab.quiet || 0) + 1; try { ok = lab.probe(h.id, { dst: siem.ip(), proto: 6, dport: 443 }).ok; } finally { lab.quiet--; } }
     if (!ok) continue;
     for (const w of h.winlog) out.push({ eventType: `Win-Security-${w.id}`, time: w.time, date: w.date, reptDevName: h.hostname, reptDevIp: intToIp(h.ip() || 0), srcIpAddr: w.src, user: w.user, hostName: w.ws, logonType: w.logon_type, procName: w.process, svcName: w.service, msg: WIN[w.id] || "", raw: `<13>${w.date}T${w.time} ${h.hostname} Microsoft-Windows-Security-Auditing EventID=${w.id} ${WIN[w.id] || ""} TargetUserName=${w.user || "-"} IpAddress=${w.src || "-"} WorkstationName=${w.ws || "-"}${w.process ? " NewProcessName=" + w.process : ""}${w.service ? " ServiceName=" + w.service : ""}`, seq: w.seq });
   }
@@ -82,6 +88,7 @@ function winEvents(lab, siem) {
 // a FortiGate with working syslog keeps sending its own event logs (performance, admin), so it shows up in the CMDB
 function heartbeats(lab, siem) {
   const out = [];
+  if (lab.realLog) return out; // live: the FortiGate's real syslog carries its event logs
   for (const fg of lab.devices.values()) {
     if (!(fg instanceof FortiGate) || fg.product !== "fortios" || fg.parent) continue;
     const set = fg.cfg.get("log syslogd setting");
@@ -216,9 +223,8 @@ Lab.prototype.edrCollectors = function (edr) {
   const out = [];
   for (const h of this.devices.values()) {
     if (!h.spec || !h.spec.edr || h.spec.edr.manager !== edr.id) continue;
-    this.quiet = (this.quiet || 0) + 1;
-    let ok;
-    try { ok = this.probe(h.id, { dst: edr.ip(), proto: 6, dport: 8081, edrMgmt: true }).ok; } finally { this.quiet--; }
+    let ok = realOk(this, h.id, edr.ip(), 8081);
+    if (ok === undefined) { this.quiet = (this.quiet || 0) + 1; try { ok = this.probe(h.id, { dst: edr.ip(), proto: 6, dport: 8081, edrMgmt: true }).ok; } finally { this.quiet--; } }
     out.push({ h, connected: ok, isolated: edrState(this, edr).isolated.has(h.id) });
   }
   return out;

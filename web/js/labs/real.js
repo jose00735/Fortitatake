@@ -2,7 +2,7 @@
 // The simulator still tells the story (which policy, which NAT); the kernel decides pass or fail.
 // When the two disagree, the result says so, so simulator bugs show up instead of hiding.
 import { compile, unsupported } from "./compile.js";
-import { probeCheck, parseFrom, runChecks } from "./grader.js";
+import { probeCheck, parseFrom, runChecks, checkOne } from "./grader.js";
 import { ipToInt, intToIp } from "./net.js";
 
 export class RealNet {
@@ -41,7 +41,13 @@ export class RealNet {
       await this.call({ op: "topo.apply", topo: c.topo }, 60000);
       this.generation = (this.generation || 0) + 1;
     }
-    for (const [ns, ruleset] of Object.entries(c.nft)) if (!topoSame || prev.nft[ns] !== ruleset) await this.call({ op: "ns.nft", ns, ruleset }, 15000);
+    this.nftReloaded = [];
+    for (const [ns, ruleset] of Object.entries(c.nft)) if (!topoSame || prev.nft[ns] !== ruleset) { await this.call({ op: "ns.nft", ns, ruleset }, 15000); this.nftReloaded.push(ns); }
+    // IPsec tunnels and routes through them (ip -force: "link del" of a tunnel that isn't there yet is fine)
+    for (const [ns, lines] of Object.entries(c.extra || {})) {
+      if (!lines.length || (topoSame && prev.extra && JSON.stringify(prev.extra[ns]) === JSON.stringify(lines))) continue;
+      await this.call({ op: "ns.exec", ns, argv: ["ip", "-force", "-batch", "-"], input: lines.join("\n") + "\n" }, 15000);
+    }
     for (const l of c.listen) {
       const old = topoSame && prev.listen.find((x) => x.ns === l.ns);
       if (!old || JSON.stringify(old) !== JSON.stringify(l)) await this.call({ op: "listen.start", ...l }, 10000);
@@ -136,11 +142,34 @@ export async function runChecksReal(lab, checks, answers, real) {
   const out = [];
   for (let i = 0; i < checks.length; i++) {
     const c = checks[i];
-    if (!c.probe) { out.push(simRes[i]); continue; }
-    try { out.push({ id: c.id, text: c.text, ...(await realProbeCheck(lab, real, c.probe)) }); }
+    if (!c.probe && !c.all) { out.push(lab.realLog && isLogCheck(c) ? { id: c.id, text: c.text, ...(await waitLogs(lab, real, c, answers)) } : simRes[i]); continue; }
+    try { out.push({ id: c.id, text: c.text, ...(await realOne(lab, real, c, answers)) }); }
     catch (e) { out.push({ ...simRes[i], engine: "sim", ...(e.unsupported ? { simOnly: e.message } : { engineError: e.message }) }); }
   }
   return out;
+}
+
+// checks that read what FortiAnalyzer/FortiSIEM/FortiEDR received: on the real network logs take a moment
+const isLogCheck = (c) => !!(c.faz || c.siem || c.fazinc || c.edr);
+async function waitLogs(lab, real, c, answers) {
+  let r = checkOne(lab, c, answers);
+  // sessions are logged when they close; give the pipeline up to 12 s to carry them
+  for (let t = Date.now(); !r.pass && Date.now() - t < 12000;) {
+    await new Promise((res) => setTimeout(res, 700));
+    await lab.realLog.tick(real.c, real.generation);
+    r = checkOne(lab, c, answers);
+  }
+  return { ...r, engine: "linux" };
+}
+async function realOne(lab, real, c, answers) {
+  if (c.probe) return realProbeCheck(lab, real, c.probe);
+  if (c.all) {
+    const r = [];
+    for (const x of c.all) r.push(await realOne(lab, real, x, answers));
+    return { pass: r.every((x) => x.pass), detail: r.filter((x) => !x.pass).map((x) => x.detail).join(" ") || r[0].detail, engine: r.some((x) => x.engine === "linux") ? "linux" : "sim" };
+  }
+  if (lab.realLog && isLogCheck(c)) return waitLogs(lab, real, c, answers);
+  return checkOne(lab, c, answers);
 }
 
 export { unsupported };
