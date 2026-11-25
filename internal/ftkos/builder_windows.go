@@ -154,14 +154,20 @@ func (m *Manager) wslMissingParts(ctx context.Context, out string, err error) er
 		return fmt.Errorf("WSL couldn't create the builder: %s (%v)", last, err)
 	}
 	m.emit("step", map[string]any{"label": "WSL 2 needs Windows features turned on: approve the Windows prompt"})
-	m.logLine("Asking Windows for administrator permission to run: wsl --install --no-distribution")
-	res := powershell(`try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; "exit:" + $p.ExitCode } catch { "declined" }`)
+	// One prompt for everything: WSL 2 (Virtual Machine Platform) for the builder, and Windows
+	// Hypervisor Platform so the lab VM runs on hardware virtualization instead of emulation.
+	m.logLine("Asking Windows for administrator permission to turn on Virtual Machine Platform, WSL and Windows Hypervisor Platform")
+	script := `wsl.exe --install --no-distribution; $a = $LASTEXITCODE; ` +
+		`dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null; ` +
+		`dism.exe /online /enable-feature /featurename:HypervisorPlatform /all /norestart | Out-Null; ` +
+		`if ($LASTEXITCODE -eq 3010) { exit 0 } else { exit $LASTEXITCODE }`
+	res := powershell(`try { $p = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-Command','` + strings.ReplaceAll(script, "'", "''") + `' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; "exit:" + $p.ExitCode } catch { "declined" }`)
 	m.logLine("Elevated install: " + res)
 	switch {
 	case res == "declined":
 		return errors.New("WSL 2 is missing parts that need administrator permission, and the Windows prompt was declined. Press Set up again and choose Yes")
-	case res == "exit:0":
-		return errors.New("WSL 2's Windows features are now installed. Restart Windows, then press Set up again (the Ubuntu download is kept)")
+	case res == "exit:0" || res == "exit:3010":
+		return errors.New("Virtual Machine Platform and Windows Hypervisor Platform are now turned on. Restart Windows, then press Set up again (the Ubuntu download is kept)")
 	}
 	return fmt.Errorf("WSL couldn't create the builder: %s. Turning on WSL 2's features also failed (%s); check that virtualization (SVM on your Ryzen) is enabled in the BIOS", last, res)
 }

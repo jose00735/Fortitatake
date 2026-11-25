@@ -100,7 +100,7 @@
 
 ### What v0.8.2 fixes
 
-- When `wsl --import` fails because WSL 2's Windows features (Virtual Machine Platform) are off, the app now asks Windows for administrator permission itself (the UAC prompt) and runs `wsl --install --no-distribution`, then asks for a restart. Other import errors show WSL's own message instead of a generic one, and a half-registered distro is removed. The Ubuntu download is kept between attempts.
+- When `wsl --import` fails because WSL 2's Windows features (Virtual Machine Platform) are off, the app now asks Windows for administrator permission itself (one UAC prompt) and turns on Virtual Machine Platform and WSL (`wsl --install --no-distribution`) plus Windows Hypervisor Platform (so the lab VM uses WHPX instead of TCG), then asks for a restart. Seen on Jose's PC as `HCS_E_SERVICE_NOT_AVAILABLE`. Other import errors show WSL's own message instead of a generic one, and a half-registered distro is removed. The Ubuntu download is kept between attempts.
 
 ### What v0.8.1 fixes
 
