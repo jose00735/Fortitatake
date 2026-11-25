@@ -196,7 +196,6 @@ export async function engineView(main) {
       if (!b || !b.ready) ctl.push(`<button class="primary" data-act="setup">Set up the builder</button>`);
       else {
         ctl.push(`<button class="primary" data-act="build" data-arch="x86_64" data-variant="generic">Build for this PC</button>`);
-        ctl.push(`<button data-act="build" data-arch="x86_64" data-variant="tuned">Build tuned for this CPU</button>`);
         ctl.push(`<button data-act="build" data-arch="aarch64" data-variant="generic">Build for the phone</button>`);
       }
     }

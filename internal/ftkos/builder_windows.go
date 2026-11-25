@@ -284,11 +284,7 @@ func (m *Manager) buildJob(j *job, arch, variant string) error {
 	}
 	opt := ""
 	if variant == "tuned" {
-		if arch == "x86_64" {
-			// Tune scheduling for this CPU but keep the baseline instruction set: under WHPX the
-			// VM sees QEMU's CPU model, not the Ryzen, so -march=native code dies with SIGILL.
-			opt = "-mtune=native"
-		} else {
+		if arch == "aarch64" { // the API never asks for a tuned x86_64 build
 			o, err := m.phoneTuning()
 			if err != nil {
 				return err

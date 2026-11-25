@@ -185,7 +185,11 @@ func (m *Manager) Boot(ctx context.Context, memMB int) (*VM, error) {
 // is skipped until it's rebuilt (its manifest is newer than the failure note).
 func (m *Manager) bootCandidates(arch string) []string {
 	var out []string
-	for _, v := range []string{"tuned", "generic"} {
+	variants := []string{"tuned", "generic"}
+	if arch == "x86_64" {
+		variants = []string{"generic"} // PC builds are generic only (older tuned builds are ignored)
+	}
+	for _, v := range variants {
 		d := filepath.Join(m.Dir, "builds", arch+"-"+v)
 		mf, err := os.Stat(filepath.Join(d, "manifest.json"))
 		if err != nil {
@@ -197,7 +201,7 @@ func (m *Manager) bootCandidates(arch string) []string {
 		out = append(out, d)
 	}
 	if len(out) == 0 { // every build failed once: try them all again
-		for _, v := range []string{"tuned", "generic"} {
+		for _, v := range variants {
 			if d := filepath.Join(m.Dir, "builds", arch+"-"+v); fileExists(filepath.Join(d, "manifest.json")) {
 				out = append(out, d)
 			}

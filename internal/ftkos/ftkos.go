@@ -294,6 +294,9 @@ func (m *Manager) Builds() []map[string]any {
 
 // pickBuild returns the build folder for this device's architecture, tuned first.
 func (m *Manager) pickBuild(arch string) string {
+	if c := m.bootCandidates(arch); len(c) > 0 {
+		return c[0]
+	}
 	for _, v := range []string{"tuned", "generic"} {
 		d := filepath.Join(m.Dir, "builds", arch+"-"+v)
 		if _, err := os.Stat(filepath.Join(d, "manifest.json")); err == nil {
@@ -347,7 +350,8 @@ func (m *Manager) API(w http.ResponseWriter, r *http.Request, sub string) {
 			bad(400, errors.New("arch must be x86_64 or aarch64"))
 			return
 		}
-		if in.Variant != "tuned" {
+		// PC builds are always generic: the VM sees QEMU's CPU model, so tuning for the host gains nothing.
+		if in.Variant != "tuned" || in.Arch == "x86_64" {
 			in.Variant = "generic"
 		}
 		if err := m.startJob("build", func(j *job) error { return m.buildJob(j, in.Arch, in.Variant) }); err != nil {
