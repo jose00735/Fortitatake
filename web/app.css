@@ -453,6 +453,9 @@ details summary { cursor: pointer; }
 .chip.on, .eg .chip.on { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
 .chip.off, .eg .chip.off { border-color: var(--line); color: var(--ink-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ink-3) 60%, transparent); }
 .chip.dim, .eg .chip.dim { opacity: .45; }
+.eg-trims { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.eg-trims li { display: grid; gap: 1px; }
+.eg-trims li b { font-weight: 600; font-size: .92em; }
 .chip.lit, .eg .chip.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
 .eg-main { margin-top: 14px; }
 .pw { margin-bottom: 14px; }

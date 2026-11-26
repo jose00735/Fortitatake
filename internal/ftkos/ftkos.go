@@ -288,7 +288,8 @@ func (m *Manager) Builds() []map[string]any {
 			}
 		}
 		row := map[string]any{"id": filepath.Base(d), "arch": mf.Arch, "variant": mf.Variant, "opt": mf.Opt,
-			"created": mf.Created, "bytes": size, "kernel": mf.Kernel, "seconds": mf.BuildInfo["seconds"]}
+			"created": mf.Created, "bytes": size, "kernel": mf.Kernel, "seconds": mf.BuildInfo["seconds"],
+			"protocols": mf.BuildInfo["protocols"], "trims": mf.BuildInfo["trims"]}
 		if c := m.bootCandidates(mf.Arch); len(c) > 0 && c[0] == d && mf.Arch == hostArch() {
 			row["in_use"] = true
 		} else if mf.Arch == hostArch() {

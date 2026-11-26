@@ -176,12 +176,19 @@ TOOLCHAIN = {"host-gcc-initial", "host-gcc-final", "host-binutils", "musl", "hos
 KERNEL = {"linux", "host-lz4", "host-libelf", "host-zlib", "host-zstd"}
 PROTOCOLS = {"dnsmasq", "lighttpd", "mbedtls", "dropbear", "libcurl", "tcpdump", "libpcap", "mstpd",
              "lldpd", "libevent", "conntrack-tools", "libnetfilter_conntrack", "libnetfilter_cttimeout",
-             "libnetfilter_cthelper", "libnetfilter_queue", "libnfnetlink", "zlib", "pcre2", "xxhash"}
+             "libnetfilter_cthelper", "libnetfilter_queue", "libnfnetlink", "zlib", "pcre2", "xxhash",
+             "iproute2", "nftables", "libnftnl", "libmnl", "frr", "libyang", "protobuf-c", "c-ares", "json-c",
+             "readline", "strongswan", "openssl", "libopenssl", "gmp"}
 WEIGHT = {"host-gcc-final": 14, "host-gcc-initial": 8, "host-binutils": 5, "linux": 14, "musl": 2,
-          "busybox": 2, "host-gmp": 2, "host-mpfr": 2, "host-erofs-utils": 1}
-PROTO_LABEL = {"dnsmasq": "DHCP and DNS", "lighttpd": "HTTPS (lighttpd)", "mbedtls": "TLS",
+          "busybox": 2, "host-gmp": 2, "host-mpfr": 2, "host-erofs-utils": 1, "frr": 6, "strongswan": 4,
+          "libopenssl": 3}
+# what each package gives the labs, in the order the build screen lists them
+PROTO_LABEL = {"iproute2": "Routing and XFRM (iproute2)", "nftables": "Firewall and NAT (nftables)",
+               "conntrack-tools": "Connection tracking", "libnetfilter_queue": "Inline IPS (NFQUEUE)",
+               "frr": "OSPF and BGP (FRR)", "strongswan": "IKEv1/IKEv2 (strongSwan)",
+               "dnsmasq": "DHCP and DNS", "lighttpd": "HTTPS (lighttpd)", "mbedtls": "TLS",
                "dropbear": "SSH", "libcurl": "HTTP client", "tcpdump": "Packet capture",
-               "mstpd": "RSTP", "lldpd": "LLDP", "conntrack-tools": "Connection tracking"}
+               "mstpd": "RSTP", "lldpd": "LLDP"}
 
 RETIRE = [("CONFIG_MODULES", "loadable modules"), ("CONFIG_USB_SUPPORT", "USB"), ("CONFIG_SOUND", "sound"),
           ("CONFIG_DRM", "graphics"), ("CONFIG_FB", "framebuffer"), ("CONFIG_WLAN", "wireless"),
@@ -193,7 +200,9 @@ KEEP = [("CONFIG_NET_NS", "namespaces"), ("CONFIG_VETH", "veth"), ("CONFIG_BRIDG
         ("CONFIG_NF_TABLES", "nftables"), ("CONFIG_NF_CONNTRACK", "conntrack"), ("CONFIG_NF_NAT", "NAT"),
         ("CONFIG_XFRM_INTERFACE", "XFRM"), ("CONFIG_NET_SCH_NETEM", "netem"), ("CONFIG_NET_VRF", "VRF"),
         ("CONFIG_EROFS_FS", "EROFS"), ("CONFIG_VIRTIO_CONSOLE", "virtio console"),
-        ("CONFIG_NF_CONNTRACK_SIP", "SIP helper"), ("CONFIG_VLAN_8021Q", "802.1Q")]
+        ("CONFIG_NF_CONNTRACK_SIP", "SIP helper"), ("CONFIG_VLAN_8021Q", "802.1Q"),
+        ("CONFIG_NFT_QUEUE", "NFQUEUE (IPS)"), ("CONFIG_CGROUPS", "cgroups"), ("CONFIG_TCP_MD5SIG", "TCP MD5 (BGP)"),
+        ("CONFIG_INET_ESP", "ESP"), ("CONFIG_CRYPTO_CHACHA20POLY1305", "IKE ciphers")]
 
 LINE = re.compile(r"^>>> (\S+) (\S*) (.+?)\s*$")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -222,6 +231,72 @@ def kernel_report(path):
     ev("kernel", kept=kept, retired=retired,
        retiring=[label for k, label in RETIRE if k not in on],
        keeping=[label for k, label in KEEP if k in on])
+
+
+def protocols_of(info, done):
+    """Every lab protocol this build includes, and those already built (a resumed build skips them)."""
+    inc = [label for pkg, label in PROTO_LABEL.items() if pkg in info and not info[pkg].get("virtual")]
+    built = [label for pkg, label in PROTO_LABEL.items() if pkg in done]
+    return inc, built
+
+
+def du(path):
+    total = files = 0
+    for root, _, names in os.walk(path):
+        for n in names:
+            fp = os.path.join(root, n)
+            if not os.path.islink(fp):
+                try:
+                    total += os.path.getsize(fp)
+                    files += 1
+                except OSError:
+                    pass
+    return total, files
+
+
+def trims_report(out, kernel_cfg, outputs):
+    """What keeps FortiTatake OS small, measured on this build."""
+    cfg = {}
+    try:
+        for l in open(os.path.join(out, ".config")):
+            m = re.match(r"^(BR2_\w+)=(.*)$", l.strip())
+            if m:
+                cfg[m.group(1)] = m.group(2).strip('"')
+    except OSError:
+        pass
+    tgt_bytes, tgt_files = du(os.path.join(out, "target"))
+    items = []
+    rootfs = outputs.get("rootfs.erofs", {}).get("bytes", 0)
+    if tgt_bytes and rootfs:
+        items.append({"what": "Read-only EROFS image, LZ4HC-compressed",
+                      "detail": "%.1f MB of files (%d) packed into %.1f MB" % (tgt_bytes / 1e6, tgt_files, rootfs / 1e6)})
+    if cfg.get("BR2_TOOLCHAIN_BUILDROOT_MUSL") == "y":
+        items.append({"what": "musl libc instead of glibc", "detail": "a much smaller C library under every program on the image"})
+    if cfg.get("BR2_OPTIMIZE_S") == "y":
+        items.append({"what": "Compiled for size (-Os)", "detail": "every package, toolchain included"})
+    if cfg.get("BR2_STRIP_strip", "y") == "y":
+        items.append({"what": "Binaries stripped", "detail": "no debug symbols on the target"})
+    items.append({"what": "BusyBox for the base tools", "detail": "one binary for the shell and core utilities"})
+    items.append({"what": "No headers, static libraries, man pages or docs", "detail": "removed when the target is finalized"})
+    try:
+        removed = int(open(os.path.join(out, "ftk-init-removed")).read().strip())
+        items.append({"what": "Nothing starts at boot but the agent", "detail": "%d package boot scripts removed; services start on first use" % removed})
+    except (OSError, ValueError):
+        pass
+    try:
+        k = open(kernel_cfg).read()
+        on = len(re.findall(r"^CONFIG_\w+=[ym]", k, re.M))
+        off = len(re.findall(r"^# CONFIG_\w+ is not set", k, re.M))
+        mods = "no loadable modules, " if "# CONFIG_MODULES is not set" in k else ""
+        kb = outputs.get("kernel", {}).get("bytes", 0)
+        items.append({"what": "Kernel shaped for labs", "detail": "%s%d options on, %d retired, %.1f MB LZ4 image" % (mods, on, off, kb / 1e6)})
+    except OSError:
+        pass
+    if cfg.get("BR2_PACKAGE_FRR") == "y" and cfg.get("BR2_PACKAGE_FRR_BFD") != "y":
+        items.append({"what": "FRR without BFD", "detail": "only zebra, staticd, ospfd and bgpd run, per namespace, on demand"})
+    if cfg.get("BR2_PACKAGE_STRONGSWAN") == "y":
+        items.append({"what": "strongSwan charon only where tunnels exist", "detail": "one per namespace with IPsec, started by the agent"})
+    return {"items": items, "target_bytes": tgt_bytes, "target_files": tgt_files, "rootfs_bytes": rootfs}
 
 
 class Tracker:
@@ -340,6 +415,8 @@ def cmd_build(a):
     save(phase="build")
 
     tr = Tracker(info, journal, out)
+    inc, built = protocols_of(info, tr.done)
+    ev("protocols", included=inc, built=built)
     if tr.done:
         ev("resume", phase="build", pct=round(tr.pct(), 1), done=len(tr.done))
     # Buildroot refuses a PATH with spaces (Windows folders) and must not see Windows tools.
@@ -391,11 +468,18 @@ def cmd_build(a):
         os.replace(tmp, os.path.join(a.out, dst))
         outputs[dst] = {"bytes": os.path.getsize(os.path.join(a.out, dst)), "sha256": sha_file(os.path.join(a.out, dst))}
     pkgs = {k: v.get("version", "") for k, v in info.items() if not v.get("virtual") and v.get("type") == "target"}
+    kcfg = os.path.join(out, "build", "linux-" + (info.get("linux", {}).get("version") or ""), ".config")
+    if not tr.kernel_told:
+        kernel_report(kcfg)
+    inc, _ = protocols_of(info, tr.done)
+    ev("protocols", included=inc, built=inc)
+    trims = trims_report(out, kcfg, outputs)
+    ev("trims", **trims)
     build_info = {
         "arch": a.arch, "variant": a.variant, "opt": a.opt, "build_id": a.build_id,
         "buildroot": BUILDROOT, "kernel_version": info.get("linux", {}).get("version"),
         "packages": pkgs, "outputs": outputs, "seconds": round(time.time() - started),
-        "jobs": a.jobs, "host_cpus": os.cpu_count(),
+        "jobs": a.jobs, "host_cpus": os.cpu_count(), "protocols": inc, "trims": trims,
     }
     with open(os.path.join(a.out, "build-info.json"), "w") as f:
         json.dump(build_info, f, indent=1)

@@ -3,9 +3,17 @@
 set -e
 T="$1"
 # Services start on first use, from the agent: drop every init script but ours.
+n=0
 for s in "$T"/etc/init.d/S*; do
-  case "$(basename "$s")" in S99ftkagent) ;; *) rm -f "$s" ;; esac
+  [ -e "$s" ] || continue
+  case "$(basename "$s")" in S99ftkagent) ;; *) rm -f "$s"; n=$((n + 1)) ;; esac
 done
+# the build screen reports it (BASE_DIR is Buildroot's output directory)
+# (an incremental build only reinstalls some packages: keep the larger count)
+if [ -n "$BASE_DIR" ]; then
+  p=$(cat "$BASE_DIR/ftk-init-removed" 2>/dev/null || echo 0)
+  [ "$n" -gt "$p" ] 2>/dev/null && echo "$n" > "$BASE_DIR/ftk-init-removed"
+fi
 # Per-namespace /etc files (ip netns exec binds /etc/netns/NAME/*) live in RAM.
 rm -rf "$T/etc/netns"; ln -s /run/etc-netns "$T/etc/netns"
 # The agent binary is prebuilt by FortiTatake and handed in by the builder.

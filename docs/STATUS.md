@@ -98,6 +98,13 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.16.1 fixes (the OS build screen)
+
+- **Protocols list.** It was a fixed list of nine from v0.8, so FRR, strongSwan, nftables and the IPS queue never appeared, and a chip only lit when that package was compiled in the current run: after an incremental build (only FRR and strongSwan rebuilt) everything else stayed grey. The builder now reports what the build includes and what is already built at the start, and the full list at the end; the screen lights everything in a finished build and shows "Protocols in this build" for the build the labs use, even after a restart. Fourteen entries now: iproute2 (routing and XFRM), nftables, conntrack, NFQUEUE (IPS), FRR, strongSwan, DHCP and DNS, lighttpd, TLS, SSH, HTTP client, packet capture, RSTP, LLDP.
+- **"How it stays light".** At the end of a build the builder measures and lists what keeps the image small: the files packed into the EROFS image (uncompressed size, file count, image size), musl, -Os, stripped binaries, BusyBox, no headers/static libraries/docs, how many package boot scripts were removed (services start on first use), the kernel (no modules, options on and retired, image size), FRR without BFD, strongSwan only where tunnels exist. It's saved in build-info.json and shown with the build.
+- The kernel card now also lists NFQUEUE, cgroups, TCP MD5 and ESP among the options kept, and is reported even when the kernel wasn't rebuilt.
+- The status line under the gauge says "Ready" at the end instead of the last package step ("frr 10.5.1: Installing to target").
+
 ### What v0.16.0 adds (FortiTatake OS stage 6: real IKE with strongSwan, third-party peers, ADVPN)
 
 - **strongSwan in FortiTatake OS** (Buildroot's strongSwan with the OpenSSL backend, charon and swanctl). The agent (0.16) runs one charon per namespace that has tunnels, each in a private mount namespace with its own `/var/run`, its vici socket and log under `/run/ftk/ipsec/<device>`. Kernel: SHA-1, SHA-512, MD5, DES/3DES, CTR, ChaCha20-Poly1305, XCBC and CCM for the proposals third-party peers still use.

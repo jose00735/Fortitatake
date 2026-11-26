@@ -9,11 +9,15 @@ const PHASES = [
 const ORDER = PHASES.map((p) => p[0]);
 
 let timer = null;
+// shown until a build reports its own list (builds from before v0.16 don't)
+const DEFAULT_PROTOS = ["Routing and XFRM (iproute2)", "Firewall and NAT (nftables)", "Connection tracking", "Inline IPS (NFQUEUE)",
+  "OSPF and BGP (FRR)", "IKEv1/IKEv2 (strongSwan)", "DHCP and DNS", "HTTPS (lighttpd)", "TLS", "SSH", "HTTP client", "Packet capture", "RSTP", "LLDP"];
 
 function fresh() {
   return {
     seq: 0, pct: 0, phase: {}, cur: "", dl: null, sources: null, kernel: null, protocols: [],
     cores: [], active: [], log: [], job: null, error: "", resume: null, build: null, test: null, vm: null, step: "",
+    protoIncluded: null, trims: null, lastBuild: null,
   };
 }
 
@@ -73,10 +77,18 @@ function apply(st, e) {
       if (d.protocol && !st.protocols.includes(d.protocol)) st.protocols.push(d.protocol);
       break;
     case "kernel": st.kernel = d; break;
+    case "protocols":
+      st.protoIncluded = d.included || null;
+      for (const p of d.built || []) if (!st.protocols.includes(p)) st.protocols.push(p);
+      break;
+    case "trims": st.trims = d; break;
+    case "done": st.step = "Built: sealing and signing"; break;
     case "cpu": st.cores = d.cores || []; break;
     case "ready":
       for (const p of ORDER) st.phase[p] = "done";
       st.pct = 100; st.cur = "ready"; st.ready = d;
+      st.step = "Ready: signed, sealed and in use for the labs";
+      for (const p of st.protoIncluded || []) if (!st.protocols.includes(p)) st.protocols.push(p);
       break;
     case "error": st.error = d.msg + (d.tail ? "\n" + d.tail.slice(-12).join("\n") : ""); break;
     case "vm": st.vm = d; break;
@@ -115,9 +127,19 @@ function details(st) {
       <div class="chips"><span class="small muted">Retiring:</span> ${st.kernel.retiring.map((x) => `<span class="chip off">${esc(x)}</span>`).join("")}</div>
       <div class="chips"><span class="small muted">Keeping:</span> ${st.kernel.keeping.map((x) => `<span class="chip on">${esc(x)}</span>`).join("")}</div></div>`);
   }
-  const PROTOS = ["DHCP and DNS", "HTTPS (lighttpd)", "TLS", "SSH", "HTTP client", "Packet capture", "RSTP", "LLDP", "Connection tracking"];
-  if (st.phase.protocols || st.protocols.length) {
-    parts.push(`<div class="eg-box"><b>Mounting protocols</b><div class="chips">${PROTOS.map((p) => `<span class="chip ${st.protocols.includes(p) ? "lit" : "dim"}">${esc(p)}</span>`).join("")}</div></div>`);
+  // what the build includes: the builder says so at the start of a build; otherwise the build the labs use
+  const lb = st.lastBuild;
+  const idle = !(st.job && st.job.running);
+  const PROTOS = st.protoIncluded || (lb && lb.protocols) || DEFAULT_PROTOS;
+  const lit = (p) => st.protocols.includes(p) || (st.ready && st.protoIncluded && st.protoIncluded.includes(p)) || (idle && !st.protoIncluded && lb && (lb.protocols || []).includes(p));
+  if (st.phase.protocols || st.protocols.length || st.protoIncluded || (idle && lb && lb.protocols)) {
+    const n = PROTOS.filter(lit).length;
+    parts.push(`<div class="eg-box"><b>${idle && n === PROTOS.length ? "Protocols in this build" : "Mounting protocols"}</b> <span class="muted small">${n} of ${PROTOS.length}${idle ? "" : " mounted"}</span><div class="chips">${PROTOS.map((p) => `<span class="chip ${lit(p) ? "lit" : "dim"}">${esc(p)}</span>`).join("")}</div></div>`);
+  }
+  const tr = st.trims || (idle && lb && lb.trims);
+  if (tr && (tr.items || []).length) {
+    parts.push(`<div class="eg-box"><b>How it stays light</b>${tr.rootfs_bytes ? ` <span class="muted small">${bytes(tr.rootfs_bytes)} root filesystem</span>` : ""}
+      <ul class="eg-trims">${tr.items.map((x) => `<li><b>${esc(x.what)}</b><span class="small muted">${esc(x.detail || "")}</span></li>`).join("")}</ul></div>`);
   }
   if (st.cores.length && st.job && st.job.running) {
     parts.push(`<div class="eg-box"><b>CPU load</b> <span class="muted small">${st.active.length ? "compiling " + esc(st.active.slice(0, 6).join(", ")) + (st.active.length > 6 ? "…" : "") : ""}</span>
@@ -231,6 +253,8 @@ export async function engineView(main) {
     c.innerHTML = ctl.join("");
     c.querySelectorAll("button").forEach((x) => { x.disabled = running && x.dataset.act !== "stop"; });
     const builds = status.builds || [];
+    st.lastBuild = builds.find((x) => x.in_use) || builds[0] || null;
+    if (!(st.job && st.job.running)) $("[data-details]", main).innerHTML = details(st);
     $("[data-builds]", main).innerHTML = builds.length ? `<div class="card"><h3>Builds on this device</h3><table class="kv">${builds.map((x) =>
       `<tr><th>${esc(x.arch)} ${esc(x.variant)}${x.in_use ? ' <span class="chip on">labs use this</span>' : ""}${x.boot_failed ? ' <span class="chip bad" title="' + esc(x.boot_failed) + '">won\'t boot here</span>' : x.unused ? ' <span class="chip">not used</span>' : ""}</th><td>${bytes(x.bytes)} · kernel ${esc(x.kernel || "")} · ${x.seconds ? Math.round(x.seconds / 60) + " min to build" : ""} · ${esc((x.created || "").slice(0, 16).replace("T", " "))}</td><td><button class="ghost small" data-del="${esc(x.id)}">Delete</button></td></tr>`).join("")}</table></div>` : "";
     $("[data-test]", main).innerHTML = testCard(st, report);
