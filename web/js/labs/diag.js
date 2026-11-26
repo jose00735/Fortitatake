@@ -460,13 +460,14 @@ export function routerRun(lab, r, line) {
   { const c = routerConfig(lab, r, line); if (c !== null) { if (typeof c !== "object") return c; const was = r.mode; r.mode = "priv"; try { return routerRun(lab, r, c.exec); } finally { r.mode = was; } } }
   const t = line.trim().toLowerCase();
   if (!t) return "";
-  if (t === "help" || t === "?") return `${ROUTER_CONFIG_HELP}\nCommands: show ip interface brief, show ip route, show interfaces, show arp, show running-config, show version, show access-lists, show logging, show clock, ping <ip>, traceroute <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}, ssh -l <user> <ip>, telnet <ip>`;
+  if (t === "help" || t === "?") return `${ROUTER_CONFIG_HELP}\nCommands: show ip interface brief, show ip route, show interfaces, show arp, show running-config, show version, show access-lists, show logging, show clock, ping <ip>, traceroute <ip>${r.spec && r.spec.ospf ? ", show ip ospf neighbor" : ""}${r.spec && r.spec.bgp ? ", show ip bgp summary, show ip bgp" : ""}${r.spec && r.spec.ipsec ? ", show crypto ikev2 sa, show crypto ipsec sa" : ""}, ssh -l <user> <ip>, telnet <ip>`;
   const w = t.split(/\s+/);
   const is = (f) => { const fw = f.split(" "); return fw.length === w.length && fw.every((x, i) => x.startsWith(w[i])); };
   if (is("show running-config")) {
     const L = ["Building configuration...", "", "Current configuration : 2114 bytes", "!", "version 17.9", "service timestamps log datetime msec", "!", `hostname ${r.hostname || r.id}`, "!", "ip domain name isp.lab", ...((r.dns || []).length ? [`ip name-server ${r.dns.join(" ")}`] : []), "!", "username noc privilege 15 secret 9 $9$ftk$lab", "!"];
     for (const i of r.ifaces) L.push(`interface ${i.name}`, ...(i.description ? [` description ${i.description}`] : []), i.prefix ? ` ip address ${intToIp(i.prefix.ip)} ${maskStr(i.prefix.len)}` : " no ip address", ...(r.dropPrivate && /inet|internet|up/i.test(i.name) ? [" ip access-group ISP-BOGON-FILTER out"] : []), i.up === false ? " shutdown" : " no shutdown", "!");
-    for (const x of r.routes) L.push(`ip route ${intToIp(x.dst.ip)} ${maskStr(x.dst.len)} ${x.via ? intToIp(x.via) : x.dev === "null" ? "Null0" : (r.ifaces.find((i) => /inet|internet|up/i.test(i.name)) || r.ifaces[0]).name}`);
+    for (const x of r.routes) L.push(`ip route ${intToIp(x.dst.ip)} ${maskStr(x.dst.len)} ${x.via ? intToIp(x.via) : x.dev === "null" ? "Null0" : x.dev && x.dev !== "internet" ? x.dev : (r.ifaces.find((i) => /inet|internet|up/i.test(i.name)) || r.ifaces[0]).name}`);
+    if (lab.routerCryptoConfig) L.push(...lab.routerCryptoConfig(r));
     if (r.dropPrivate) L.push("!", "ip access-list extended ISP-BOGON-FILTER", " 10 deny ip 10.0.0.0 0.255.255.255 any", " 20 deny ip 172.16.0.0 0.15.255.255 any", " 30 deny ip 192.168.0.0 0.0.255.255 any", " 40 deny ip 100.64.0.0 0.63.255.255 any", " 1000 permit ip any any");
     L.push("!", "line vty 0 4", " login local", " transport input ssh telnet", "!", "end");
     return L.join("\n");
@@ -479,8 +480,9 @@ export function routerRun(lab, r, line) {
   if (is("show access-lists") || is("show ip access-lists")) return r.dropPrivate ? `Extended IP access list ISP-BOGON-FILTER\n    10 deny ip 10.0.0.0 0.255.255.255 any\n    20 deny ip 172.16.0.0 0.15.255.255 any\n    30 deny ip 192.168.0.0 0.0.255.255 any\n    40 deny ip 100.64.0.0 0.63.255.255 any\n    1000 permit ip any any` : "";
   if (/^tr(a(c(e(r(o(u(te?)?)?)?)?)?)?)? \S+/.test(t)) { const ip = ipToInt(w[1]); if (ip === null) return "% Unrecognized host or address, or protocol not running."; return traceroute(lab, r.id, ip, w[1], "ios"); }
   if (t.startsWith("show ip int")) return r.ifaces.map((i) => `${pad(i.name, 16)}${pad(i.prefix ? intToIp(i.prefix.ip) + "/" + i.prefix.len : "unassigned", 20)}${i.up !== false ? "up" : "administratively down"}`).join("\n");
-  if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] via ${x.via ? intToIp(x.via) : x.dev === "null" ? "Null0" : "Internet uplink"}`)).concat(lab.routerDynamic(r).map((x) => `${x.type.padEnd(5)}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}`)).join("\n");
+  if (t.startsWith("show ip route")) return r.ifaces.filter((i) => i.prefix).map((i) => `C    ${prefixStr(i.prefix)} is directly connected, ${i.name}`).concat(r.routes.map((x) => `S    ${prefixStr(x.dst)} [1/0] ${x.via ? "via " + intToIp(x.via) : x.dev === "null" ? "via Null0" : x.dev && x.dev !== "internet" ? "is directly connected, " + x.dev : "via Internet uplink"}`)).concat(lab.routerDynamic(r).map((x) => `${x.type.padEnd(5)}${prefixStr(x.dst)} [${x.distance}/${x.metric || 0}] via ${intToIp(x.gw)}`)).join("\n");
   { const d = lab.routerShow && lab.routerShow(r, t); if (d !== null && d !== undefined) return d; }
+  { const c = lab.routerCrypto && lab.routerCrypto(r, t); if (c !== null && c !== undefined) return c; }
   if (t.startsWith("ping")) {
     const ip = ipToInt(t.split(/\s+/)[1] || "");
     if (ip === null) return "% Invalid input";

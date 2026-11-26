@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.15.0"
+const agentVersion = "0.16.0"
 
 var started = time.Now()
 
@@ -31,7 +31,7 @@ var opLock sync.RWMutex
 
 var mutating = map[string]bool{
 	"topo.apply": true, "topo.clear": true, "ns.nft": true, "ns.link": true,
-	"service.start": true, "service.stop": true, "bench": true, "listen.start": true, "ips.load": true, "frr.apply": true,
+	"service.start": true, "service.stop": true, "bench": true, "listen.start": true, "ips.load": true, "frr.apply": true, "ipsec.apply": true,
 }
 
 type req map[string]any
@@ -213,6 +213,10 @@ func dispatch(r req) (map[string]any, error) {
 		return frrApply(r)
 	case "frr.show":
 		return frrShow(r)
+	case "ipsec.apply":
+		return ipsecApply(r)
+	case "ipsec.show":
+		return ipsecShow(r)
 	case "edr.start":
 		return edrStart(r)
 	case "edr.emit":
@@ -255,6 +259,8 @@ func hello() map[string]any {
 		"cpus":      runtime.NumCPU(),
 		"uptime_ms": uptimeMS(),
 		"mem":       meminfo(),
+		"frr":       frrAvailable(),
+		"ike":       ipsecAvailable(),
 	}
 }
 

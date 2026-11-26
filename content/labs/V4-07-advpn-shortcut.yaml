@@ -1,0 +1,51 @@
+id: V4.07
+track: vpn
+modules: [M4.09, M8.03]
+tier: 4
+order: 27
+kind: ticket
+title: "\"ADVPN is on, but Cali still calls Medellín through Bogotá\""
+customer: Andes Logistics
+par: 25
+skills: [ADVPN, dial-up hub, shortcuts, traceroute through overlays]
+brief: |
+  **Ticket 5302, priority 3.** Change CHG-0418 enabled ADVPN last week so branch-to-branch softphone calls stop
+  hairpinning through Bogotá. Cali (FGT-CLO) and Medellín (FGT-MDE) are spokes of the hub's dial-up phase1 ADVPN on
+  FGT-BOG. The call quality report still shows every Cali ↔ Medellín packet crossing Bogotá.
+topology:
+  use: andes-advpn
+  devices:
+    FGT-MDE:
+      config: |
+        config vpn ipsec phase1-interface
+        edit HUB
+        set auto-discovery-receiver disable
+        next
+        end
+tasks:
+  - "Show that the traffic hairpins: `execute traceroute` from a branch, or `diagnose vpn tunnel list` on the spokes."
+  - "Find the ADVPN setting the change missed and fix it, without touching the hub's working tunnels."
+checks:
+  - text: "CLO-PC reaches MDE-PC directly over a shortcut, not through FGT-BOG"
+    probe: {from: CLO-PC, to: 10.40.0.20, avoid: FGT-BOG}
+  - text: "MDE-PC reaches CLO-PC directly too"
+    probe: {from: MDE-PC, to: 10.30.0.20, avoid: FGT-BOG}
+  - text: "The hub still offers shortcuts"
+    config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: ADVPN, attr: auto-discovery-sender, equals: enable}
+  - text: "Root cause"
+    answer: {accept: ["~receiver|auto-discovery-receiver|medell|mde"], hint: "A shortcut needs the hub to offer it and both spokes to take part.", why: "FGT-MDE's HUB phase1 had auto-discovery-receiver disabled, so it refused the shortcut Cali tried to build; traffic kept using the hub."}
+hints:
+  - "ADVPN needs three settings: auto-discovery-sender on the hub's phase1 and auto-discovery-receiver on every spoke's phase1."
+  - "Compare `show vpn ipsec phase1-interface HUB` on FGT-CLO and FGT-MDE."
+solution:
+  FGT-MDE: |
+    config vpn ipsec phase1-interface
+    edit HUB
+    set auto-discovery-receiver enable
+    next
+    end
+explain: |
+  With ADVPN the hub forwards the first packets between two spokes and sends the initiating spoke a shortcut offer with
+  the other spoke's public address. The spokes then negotiate a direct tunnel (HUB_0) with their own phase1 settings,
+  and later packets skip the hub. A spoke with auto-discovery-receiver disabled refuses the shortcut silently: the
+  overlay keeps working through the hub, so nothing looks broken except latency and hub load.

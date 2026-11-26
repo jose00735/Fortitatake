@@ -8,6 +8,7 @@ import { trafficCompile } from "./traffic.js";
 import { ipsPlan, ipsNft, ipsLoadReq, ATTACKER_IP } from "./ips.js";
 import { NOT_INTERNET_CIDRS } from "./sim.js";
 import { FortiGate } from "./fgt.js";
+import { fgView, routerViews, viewsAt, swanConf, cname } from "./ike.js";
 import { ipToInt, intToIp, parsePrefix, prefixStr, network, isPrivate } from "./net.js";
 
 // what each kind of device announces in the SSH version exchange
@@ -54,6 +55,8 @@ export function compile(lab) {
   const frr = {}; // ns -> {conf, daemons}: FRR instances (stage 4)
   const frrOn = agentAtLeast(lab, "0.15");
   const extra = {}; // ns -> ip batch lines run after the topology (IPsec tunnels and the routes through them)
+  const ike = {}; // ns -> {conf, up: {conn: [children]}}: strongSwan instances (stage 6)
+  const ikeOn = agentAtLeast(lab, "0.16") && lab.agentIke !== false;
   const nft = {};
   const listen = [];
   const edrLog = {};
@@ -188,9 +191,11 @@ export function compile(lab) {
     }
     const up = segs.find((s) => s.members.some((m) => m.dev === r.id) && s.members.some((m) => (lab.dev(m.dev) || {}).kind === "cloud"));
     const upIf = up && up.members.find((m) => m.dev === r.id).port;
+    const rTun = ikeOn ? routerIpsec(lab, r, extra, ike) : new Set();
     for (const rt of r.routes) {
       const dst = rt.dst.len === 0 ? "default" : prefixStr(rt.dst);
-      if (rt.dev === "null") topo.routes.push({ dev: r.id, dst, type: "blackhole" });
+      if (rTun.has(rt.dev)) (extra[r.id] = extra[r.id] || []).push(`route replace ${dst} dev ${rt.dev}`);
+      else if (rt.dev === "null") topo.routes.push({ dev: r.id, dst, type: "blackhole" });
       else if (rt.dev === "internet" || rt.via === null) { if (up && cloudIp.has(up.id)) topo.routes.push({ dev: r.id, dst, via: intToIp(cloudIp.get(up.id)) }); }
       else topo.routes.push({ dev: r.id, dst, via: intToIp(rt.via) });
     }
@@ -230,7 +235,7 @@ export function compile(lab) {
       if (i.prefix) { topo.addrs.push({ dev: fg.id, if: i.name, cidr: `${intToIp(i.prefix.ip)}/${i.prefix.len}` }); where[i.prefix.ip] = fg.id; }
       if (i.srcCheck) dev.sysctl[`net.ipv4.conf.${i.name}.rp_filter`] = "0"; // FortiOS's RPF is looser than Linux strict mode
     }
-    const tunnels = fg.kind === "fortigate" ? ipsec(lab, fg, intfs, extra) : new Set();
+    const tunnels = fg.kind === "fortigate" ? (ikeOn ? fgIpsec(lab, fg, intfs, extra, ike) : ipsec(lab, fg, intfs, extra)) : new Set();
     const { active } = lab.fgtRoutes(fg);
     const seen = new Set();
     const fgFrr = frrOn && fg.kind === "fortigate" ? lab.frrConf(fg) : { conf: "" };
@@ -273,7 +278,7 @@ export function compile(lab) {
     // the lab Internet's attacker address, for the attack runner
     if (topo.internet) topo.addrs.push({ dev: topo.internet.ns, if: "lo", cidr: ATTACKER_IP + "/32" });
   }
-  return { topo, nft, listen, where, notes, extra, ips, frr, ver: lab.ver };
+  return { topo, nft, listen, where, notes, extra, ips, frr, ike, ver: lab.ver };
 }
 
 // ---------------------------------------------------------------- IPsec
@@ -308,6 +313,55 @@ function ipsec(lab, fg, intfs, extra) {
       `xfrm policy add src 0.0.0.0/0 dst 0.0.0.0/0 dir fwd if_id ${ifId} tmpl src ${peer} dst ${me} proto esp reqid ${ifId} mode tunnel`);
   });
   if (names.size) L.unshift("xfrm state flush", "xfrm policy flush");
+  return names;
+}
+
+// Stage 6 (agent 0.16+): the same xfrm interfaces, but the SAs come from strongSwan. Each FortiGate's
+// phase1/phase2 entries (and a router's ipsec spec) become swanctl connections, so IKE really runs between
+// the namespaces and a mismatch keeps the tunnel down on the kernel too, for the same reason.
+function peerIds(lab, views) {
+  const out = {};
+  for (const vw of views) out[vw.name] = viewsAt(lab, vw.remoteGw).filter((w) => w.remoteGw === vw.local && w.localid).map((w) => w.localid);
+  return out;
+}
+function ikeUp(lab, fg, name) {
+  const info = lab.tunnelInfo(fg, name);
+  return info && info.up ? info.p2.filter((x) => x.up).map((x) => cname(x.name)) : [];
+}
+function fgIpsec(lab, fg, intfs, extra, ike) {
+  const names = new Set();
+  const L = (extra[fg.id] = extra[fg.id] || []);
+  const views = [];
+  const up = {};
+  for (const p1 of fg.entries("vpn ipsec phase1-interface")) {
+    const vw = fgView(lab, fg, p1);
+    names.add(vw.name);
+    L.push(`link del ${vw.name}`, `link add ${vw.name} type xfrm dev ${vw.wan} if_id ${vw.ifId}`);
+    const ti = intfs.find((x) => x.name === vw.name);
+    if (ti && ti.prefix) L.push(`addr add ${intToIp(ti.prefix.ip)}/32 dev ${vw.name}`);
+    L.push(`link set ${vw.name} up`);
+    views.push(vw);
+    up[cname(vw.name)] = ikeUp(lab, fg, vw.name);
+  }
+  const conf = swanConf(views, peerIds(lab, views));
+  if (conf) ike[fg.id] = { conf, up };
+  return names;
+}
+function routerIpsec(lab, r, extra, ike) {
+  const views = routerViews(lab, r);
+  const names = new Set();
+  if (!views.length) return names;
+  const L = (extra[r.id] = extra[r.id] || []);
+  const up = {};
+  for (const vw of views) {
+    if (!IFOK.test(vw.name) || !vw.wan) continue;
+    names.add(vw.name);
+    L.push(`link del ${vw.name}`, `link add ${vw.name} type xfrm dev ${vw.wan} if_id ${vw.ifId}`, `link set ${vw.name} up`);
+    const t = lab.routerTunnel ? lab.routerTunnel(r, vw.name) : null;
+    up[cname(vw.name)] = t && t.info.up ? t.info.p2.filter((x) => x.up).map((x) => cname(x.peer)) : [];
+  }
+  const conf = swanConf(views.filter((v) => names.has(v.name)), peerIds(lab, views));
+  if (conf) ike[r.id] = { conf, up };
   return names;
 }
 
@@ -461,6 +515,8 @@ function fgtRules(lab, fg, intfs, notes) {
   for (const e of fg.entries("system dns-server")) { dns = true; inp.push(`  iifname ${q(e.key)} udp dport 53 accept`); }
   // routing protocols the FortiGate runs (FRR in its namespace): OSPF from its neighbours, BGP from configured peers
   if (fg.cfg.get("router ospf")) inp.push(`  ip protocol 89 accept`);
+  // IKE on the interfaces a phase1 is bound to (strongSwan runs IKE for real with agent 0.16+)
+  { const ikeIf = [...new Set(fg.entries("vpn ipsec phase1-interface").map((p) => fg.one("vpn ipsec phase1-interface", p, "interface")).filter(Boolean))]; if (ikeIf.length) inp.push(`  iifname ${set(ikeIf.map(q))} udp dport { 500, 4500 } accept`); }
   const bgpRoot = fg.cfg.get("router bgp");
   if (bgpRoot) { const nb = bgpRoot.children.get("neighbor"); const peers = nb ? nb.list().map((e) => e.key).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x)) : []; if (peers.length) inp.push(`  ip saddr { ${peers.join(", ")} } tcp dport 179 accept`); }
   for (const s of fg.entries("system dhcp server")) { const i = fg.one("system dhcp server", s, "interface"); if (i) inp.push(`  iifname ${q(i)} udp dport 67 accept`); }

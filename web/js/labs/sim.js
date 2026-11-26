@@ -554,6 +554,7 @@ export class Lab {
     const rt = cands[0];
     if (!rt || (r.dropPrivate && isPrivate(pkt.dst) && rt.dst.len === 0)) { res.drop = { dev: r.id, reason: `no route to ${intToIp(pkt.dst)}` }; return null; }
     if (rt.dev === "null") { res.drop = { dev: r.id, reason: `route to Null0 for ${prefixStr(rt.dst)}` }; return null; }
+    if (rt.dev && r.spec && (r.spec.ipsec || []).some((t) => t.name === rt.dev)) return this.routerTunnelOut(r, rt.dev, pkt, res);
     if (rt.dev === "internet" || rt.via === null) {
       const seg = this.segments.find((s) => s.members.some((m) => m.dev === r.id) && s.members.some((m) => this.dev(m.dev) instanceof Cloud));
       if (!seg) { res.drop = { dev: r.id, reason: "no uplink" }; return null; }
@@ -846,7 +847,7 @@ export class Lab {
       answers = h ? (got.proto === ICMP ? h.services.has("icmp") : h.services.has(`${PNAME[got.proto]}/${got.dport}`))
         : realInternet(got.dst) && (got.proto === ICMP || (got.proto === TCP && (got.dport === 80 || got.dport === 443)) || (got.proto === UDP && got.dport === 53));
     }
-    else if (target instanceof Router) answers = got.proto === ICMP || (got.proto === TCP && (got.dport === 22 || got.dport === 23)); // vty lines: SSH and Telnet
+    else if (target instanceof Router) answers = got.proto === ICMP || (got.proto === TCP && (got.dport === 22 || got.dport === 23)) || (got.proto === UDP && (got.dport === 500 || got.dport === 4500) && !!(target.spec && target.spec.ipsec)); // vty lines: SSH and Telnet; IKE on a crypto router
     out.reached = target.id;
     out.seenSrc = got.src;
     out.seenDst = got.dst;

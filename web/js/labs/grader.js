@@ -195,6 +195,8 @@ function probeInner(lab, pr, id, src, dst) {
     dst = r.ip;
   } else dst = ipToInt(dst);
   const proto = PROTO[pr.proto || "icmp"];
+  // `avoid: DEV` (ADVPN shortcuts and the like): the first packets may take the long way, so send once before measuring
+  if (pr.avoid) { lab.quiet = (lab.quiet || 0) + 1; try { lab.probe(id, { dst, proto, dport: pr.port || 0, src }); } finally { lab.quiet--; } }
   const res = lab.probe(id, { dst, proto, dport: pr.port || 0, src });
   const fgEv = (res.fwd && res.fwd.fgt || []).filter((e) => !e.reply);
   const ev = pr.on ? fgEv.find((e) => e.dev === pr.on) : fgEv[0];
@@ -214,6 +216,7 @@ function probeInner(lab, pr, id, src, dst) {
   if (pr.egress && ev && ev.out !== pr.egress) probs.push(`it left through ${ev.out} instead of ${pr.egress}`);
   if (pr.seen_src && res.seenSrc !== P(pr.seen_src)) probs.push(`the server saw the client as ${intToIp(res.seenSrc)} instead of ${pr.seen_src}`);
   if (pr.reach && res.reached !== pr.reach) probs.push(`it was answered by ${res.reached}, not ${pr.reach}`);
+  if (pr.avoid && ((res.fwd && res.fwd.path) || []).includes(pr.avoid)) probs.push(`it still goes through ${pr.avoid}`);
   if (probs.length) return { pass: false, detail: `${what} works, but ${probs.join("; ")}.` };
   return { pass: true, detail: `${what} works${ev && ev.policy && ev.policy !== "0" ? ` (policy ${ev.policy}${ev.snat !== undefined ? `, SNAT to ${intToIp(ev.snat)}` : ""}${ev.dnat !== undefined ? `, DNAT to ${intToIp(ev.dnat)}` : ""})` : ""}.` };
 }

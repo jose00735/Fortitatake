@@ -34,8 +34,9 @@ export class RealNet {
     const k = this.stateKey(lab);
     if (k === this.key && this.c) return this.c;
     const t = Date.now();
-    if (this.agentVer === undefined) { const h = await this.call({ op: "hello" }, 5000).catch(() => ({})); this.agentVer = h.ver || "0"; }
+    if (this.agentVer === undefined) { const h = await this.call({ op: "hello" }, 5000).catch(() => ({})); this.agentVer = h.ver || "0"; this.agentIke = h.ike !== false; }
     lab.agentVer = this.agentVer;
+    lab.agentIke = this.agentIke;
     const c = compile(lab);
     const prev = this.c;
     const topoSame = prev && JSON.stringify(prev.topo) === JSON.stringify(c.topo);
@@ -67,6 +68,17 @@ export class RealNet {
       this.frrPending = Date.now();
     }
     if (topoSame && prev.frr) for (const ns of Object.keys(prev.frr)) if (!(c.frr || {})[ns]) await this.call({ op: "frr.apply", ns, conf: "" }, 15000).catch(() => {});
+    // strongSwan (stage 6): any IKE change restarts every charon in the lab, so both ends start from a clean slate
+    this.ikeErr = null;
+    const ikeKey = JSON.stringify(Object.entries(c.ike || {}).map(([ns, x]) => [ns, x.conf]));
+    const prevKey = topoSame && prev.ike ? JSON.stringify(Object.entries(prev.ike).map(([ns, x]) => [ns, x.conf])) : null;
+    if (ikeKey !== prevKey) {
+      if (topoSame && prev.ike) for (const ns of Object.keys(prev.ike)) if (!(c.ike || {})[ns]) await this.call({ op: "ipsec.apply", ns, conf: "" }, 15000).catch(() => {});
+      for (const [ns, x] of Object.entries(c.ike || {})) {
+        try { const r = await this.call({ op: "ipsec.apply", ns, conf: x.conf }, 25000); if (r.error) this.ikeErr = `${ns}: ${r.error}`; } catch (e) { this.ikeErr = `${ns}: ${e.message}`; }
+      }
+      if (Object.keys(c.ike || {}).length) this.ikePending = Date.now();
+    }
     this.c = c;
     this.key = k;
     this.applyMs = Date.now() - t;
@@ -100,9 +112,28 @@ export class RealNet {
     this.frrPending = 0;
   }
 
+  // IKE needs a moment too: wait until every child SA the simulator expects up is installed (15 s at most)
+  async ikeSettle(maxMs = 15000) {
+    if (!this.ikePending || !this.c || !this.c.ike) return;
+    const until = this.ikePending + maxMs;
+    while (Date.now() < until) {
+      let missing = 0;
+      for (const [ns, x] of Object.entries(this.c.ike)) {
+        const want = Object.entries(x.up || {}).filter(([, ch]) => ch.length);
+        if (!want.length) continue;
+        const r = await this.call({ op: "ipsec.show", ns }, 8000).catch(() => ({ sas: {} }));
+        for (const [conn, ch] of want) for (const n of ch) if (!(r.sas && r.sas[conn] && r.sas[conn].children && r.sas[conn].children[n] === "INSTALLED")) missing++;
+      }
+      if (!missing) break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    this.ikePending = 0;
+  }
+
   async probe(lab, from, dst, proto, port) {
     const c = await this.apply(lab);
     await this.frrSettle(lab);
+    await this.ikeSettle();
     const since = proto === "icmp" ? 0 : (await this.call({ op: "listen.log", ns: "-" }, 3000)).seq;
     const base = { op: "probe", ns: from, dst: intToIp(dst), timeout_ms: 1500 };
     let r;

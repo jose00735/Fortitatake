@@ -42,3 +42,9 @@ BR2_LINUX_KERNEL_NEEDS_HOST_LIBELF=y
 # stage 4: FRR (OSPF and BGP for lab routers and FortiGates), started by the agent per namespace
 BR2_PACKAGE_FRR=y
 # BR2_PACKAGE_FRR_BFD is not set
+# stage 6: strongSwan (IKEv1/IKEv2), one charon per namespace started by the agent, loaded with swanctl
+BR2_PACKAGE_STRONGSWAN=y
+BR2_PACKAGE_STRONGSWAN_OPENSSL=y
+BR2_PACKAGE_STRONGSWAN_CHARON=y
+BR2_PACKAGE_STRONGSWAN_VICI=y
+BR2_PACKAGE_STRONGSWAN_SWANCTL=y

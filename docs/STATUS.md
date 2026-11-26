@@ -98,6 +98,17 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.16.0 adds (FortiTatake OS stage 6: real IKE with strongSwan, third-party peers, ADVPN)
+
+- **strongSwan in FortiTatake OS** (Buildroot's strongSwan with the OpenSSL backend, charon and swanctl). The agent (0.16) runs one charon per namespace that has tunnels, each in a private mount namespace with its own `/var/run`, its vici socket and log under `/run/ftk/ipsec/<device>`. Kernel: SHA-1, SHA-512, MD5, DES/3DES, CTR, ChaCha20-Poly1305, XCBC and CCM for the proposals third-party peers still use.
+- **IKE for real.** A FortiGate's `phase1-interface` and `phase2-interface` entries become swanctl connections: IKE version, IKEv1 main/aggressive mode, each proposal with its DH groups (FortiOS names mapped to strongSwan's), the PSK, `localid`/`peerid`, phase 2 selectors and ESP proposals with PFS groups. The tunnel interface is still a Linux xfrm interface, but its SAs now come from a real IKE exchange between the namespaces instead of keys FortiTatake derived and installed. A wrong PSK, a missing DH group or an identity the peer doesn't accept keeps the kernel tunnel down for the same reason the simulator gives. The FortiGate's local-in accepts IKE (UDP 500/4500) only on interfaces with a phase1. One end initiates (the lower address); any IKE change restarts every charon in the lab so both ends start clean, and grading waits until the expected child SAs are installed (15 s at most).
+- **Third-party peers.** Lab routers take an `ipsec:` spec (tunnel name, interface, peer, IKE version, proposals, DH groups, PSK, IDs, phase 2 selectors with PFS). In the lab they are Cisco IOS-XE routers: `show running-config` shows the matching IKEv2 proposal, policy, keyring, profile, transform set and VTI (or a crypto map for specific selectors), and `show crypto ikev2 sa`, `show crypto isakmp sa` and `show crypto ipsec sa` show the state. On FortiTatake OS the router side is a real strongSwan, so FortiGate ↔ "Cisco" negotiation is real IKE between two different implementations.
+- **Simulator fix:** IKEv2 builds the first child SA inside IKE_AUTH without a key exchange, so a PFS or phase 2 DH mismatch no longer keeps an IKEv2 tunnel down (it would fail at the first rekey, as on a FortiGate). IKEv1 still fails at quick mode. Phase 2 failures log NO_PROPOSAL_CHOSEN or TS_UNACCEPTABLE as appropriate.
+- **Hub-and-spoke on one dial-up phase1, and ADVPN** (simulator). FortiGate spokes can dial in to a hub's `type dynamic` phase1; the hub forwards to the spoke whose phase 2 covers the destination (`get vpn ipsec tunnel summary` and `diagnose vpn tunnel list` show `ADVPN_0`, `ADVPN_1`). With `auto-discovery-sender` on the hub and `auto-discovery-receiver` on both spokes, spoke-to-spoke traffic through the hub triggers a shortcut offer; the spokes negotiate a direct tunnel (`HUB_0`, `parent=HUB`) with their own phase1 settings and later packets skip the hub. The IKE debug shows the offer and the shortcut. New probe option `avoid: <device>` (sends once first, so a shortcut can form).
+- **Labs:** V4.06 "B2B tunnel to a partner's Cisco router" (2 parts: DH group from the partner's IOS-XE proposal, then the IKEv2 identity its profile matches; runs on the real engine against strongSwan), V4.07 "ADVPN is on, but Cali still calls Medellín through Bogotá" (a spoke with the receiver off).
+- Tested in QEMU: every VPN lab on the real engine with strongSwan (V2.01, V2.02, V4.01–V4.06) and the full tier run (48 probe checks in 17 labs, before and after each fix): 0 disagreements with the simulator. Checked in the app: V4.06 live on the real network, V4.07 on the simulator (traceroute drops from four hops to three once the shortcut forms).
+- Not yet: ADVPN and dial-up tunnels stay on the simulator (the real engine runs static tunnels only); the FortiGate's IKE debug and `diagnose vpn` output are the simulator's even when strongSwan negotiates (charon's own log is in `/run/ftk/ipsec/<device>/charon.log` in the VM); the partner router's `show crypto` comes from the simulator's view of the same negotiation.
+
 ### What v0.15.0 adds (FortiTatake OS stage 4: real OSPF and BGP with FRR)
 
 - **FRR in FortiTatake OS** (Buildroot's FRR 10.x package; BFD off). The agent (0.15) starts zebra, staticd, ospfd and bgpd inside each speaker's namespace, one instance per device, with its sockets under `/run/ftk/frr/<device>` and its log readable there. FRR's own boot service stays off.
@@ -334,7 +345,7 @@ Still to do after v0.8.12: the DNS/ICMP relay to the real Internet; SSH hops (a 
 - Grader: `fsw` check; `sdwan` checks take `hc` and `sla`; `dhcp` takes `expect: fail`.
 - Topology: viewBox fits every device; switch access ports labelled at the device end; FortiSwitch glyph.
 - Labs: D2.01 (3 parts), D4.01, W2.01 (3 parts), W4.01, W4.02, X3.02 (3 parts). Modules: M7.01, M7.02, M7.03, M8.05, M4.01, M4.02, M2.03.
-- Not built: ADVPN emulation (dial-up FortiGate spokes and shortcuts); covered in M2.03 and M8.03 content instead.
+- Not built then: ADVPN emulation (dial-up FortiGate spokes and shortcuts); added in v0.16.0.
 
 ### What v0.6.3 adds (dynamic routing)
 
@@ -479,9 +490,9 @@ Its `why_wrong` names the misconception it targets. No option that a practitione
 
 ### v0.11.0–v0.14.0: FortiTatake OS stages 4–7 (v0.11.0 done: kernel, cgroups, office traffic; v0.12.0 done: threat packs and the inline IPS)
 
-Before any FortiSASE engine work. Stage 4 (done in v0.15.0): FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Decided by Jose (2026-11-25): the Range screen is its own app section; the EDR console follows FortiEDR's screens and workflow, adapted for phones, in FortiTatake's own style (no Fortinet logos, artwork or copied screens). Dropped by Jose (2026-11-25): stage 5 (one FRR across routers as VRFs, memory balloon, warm snapshot) and stage 7 (Android KVM/AVF and LKL paths, CPU-tuned builds). Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
+Before any FortiSASE engine work. Stage 4 (done in v0.15.0): FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 6 (done in v0.16.0): strongSwan-backed IPsec with third-party peers on the real engine; ADVPN shortcuts in the simulator. Decided by Jose (2026-11-25): the Range screen is its own app section; the EDR console follows FortiEDR's screens and workflow, adapted for phones, in FortiTatake's own style (no Fortinet logos, artwork or copied screens). Dropped by Jose (2026-11-25): stage 5 (one FRR across routers as VRFs, memory balloon, warm snapshot) and stage 7 (Android KVM/AVF and LKL paths, CPU-tuned builds). Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
 
-### v0.15.0: FortiSASE on the real engine
+### Next: FortiSASE on the real engine
 
 PoP namespaces, the FortiClient agent tunnel (IPsec), SPA hubs with BGP per overlay, ZTNA with posture tags, log forwarding to the lab FortiAnalyzer/FortiSIEM. Blueprint: "Labs on the real engine — SOC, SecOps and SASE" doc.
 

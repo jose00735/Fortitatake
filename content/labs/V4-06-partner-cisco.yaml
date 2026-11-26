@@ -1,0 +1,134 @@
+id: V4.06
+track: vpn
+modules: [M4.09, M11.03]
+tier: 4
+order: 26
+kind: project
+title: "B2B tunnel to a partner's Cisco router"
+customer: Andes Logistics
+par: 35
+skills: [third-party IPsec interop, IKEv2 proposals, IKE identities, reading the other vendor's config]
+brief: |
+  **SOW 2026-188.** Transportes del Valle (TDV) moves Andes' freight orders over EDI. Their network team runs a Cisco
+  IOS-XE edge router and sent this sheet:
+
+  | | Andes HQ (FGT-BOG) | TDV (TDV-EDGE) |
+  | --- | --- | --- |
+  | Public IP | port1 200.31.20.2 | Gi1 198.51.100.42 |
+  | Protected network | 10.20.10.0/24 | 10.99.0.0/24 (EDI server 10.99.0.10) |
+
+  "Route-based (VTI), 0.0.0.0/0 selectors. IKEv2, PSK `TdV-Andes-B2B-2026` (sent by phone). Our IKEv2 profile matches
+  the peer identity, so set yours as we agreed in the kickoff."
+
+  A colleague started the FortiGate side from the Andes template and went on leave. TDV-EDGE is not yours: you can read
+  its configuration (TDV gave you a read-only login) but not change it.
+topology:
+  use: andes-partner
+  devices:
+    FGT-BOG:
+      config: |
+          config vpn ipsec phase1-interface
+          edit TDV
+          set interface port1
+          set ike-version 2
+          set peertype any
+          set net-device disable
+          set proposal aes256-sha256
+          set dhgrp 20 21
+          set remote-gw 198.51.100.42
+          set psksecret TdV-Andes-B2B-2026
+          next
+          end
+          config vpn ipsec phase2-interface
+          edit TDV-P2
+          set phase1name TDV
+          set proposal aes256-sha256
+          set dhgrp 14
+          set auto-negotiate enable
+          next
+          end
+          config router static
+          edit 5
+          set dst 10.99.0.0/24
+          set device TDV
+          next
+          edit 6
+          set dst 10.99.0.0/24
+          set blackhole enable
+          set distance 254
+          next
+          end
+          config firewall policy
+          edit 5
+          set name HQ-to-TDV-EDI
+          set srcintf port2
+          set dstintf TDV
+          set srcaddr all
+          set dstaddr all
+          set action accept
+          set schedule always
+          set service SSH HTTPS
+          next
+          end
+parts:
+  - id: a
+    title: Phase 1 against the partner's proposal
+    tasks:
+      - "Read what TDV-EDGE offers: `show running-config` and `show crypto ikev2 sa` on TDV-EDGE."
+      - "Watch FGT-BOG negotiate: `diagnose debug application ike -1`, `diagnose debug enable`, `diagnose vpn ike gateway clear`."
+      - "Change only what the partner's IKEv2 proposal requires on FGT-BOG."
+    checks:
+      - text: "FGT-BOG offers what TDV accepts (aes256-sha256, DH 14)"
+        all:
+          - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: TDV, attr: proposal, has: aes256-sha256}
+          - config: {dev: FGT-BOG, path: vpn ipsec phase1-interface, key: TDV, attr: dhgrp, has: "14"}
+      - text: "Why did the first attempt fail?"
+        answer: {accept: ["~proposal|dh|group|no_proposal|modp|14"], hint: "Which IKE notify did FGT-BOG receive?", why: "FGT-BOG offered DH 20 and 21 only; TDV's IKEv2 proposal is aes-cbc-256 / sha256 / group 14, so TDV answered NO_PROPOSAL_CHOSEN."}
+    hints:
+      - "On IOS-XE the IKEv2 proposal block lists encryption, integrity and group. FortiOS calls group 14 `dhgrp 14`."
+      - "`config vpn ipsec phase1-interface` / `edit TDV` / `set dhgrp 14` / `end`, then `diagnose vpn ike gateway clear`."
+    solution:
+      FGT-BOG: |
+        diagnose debug application ike -1
+        diagnose debug enable
+        diagnose vpn ike gateway clear
+        config vpn ipsec phase1-interface
+        edit TDV
+        set dhgrp 14
+        next
+        end
+    explain: |
+      An IKEv2 responder answers NO_PROPOSAL_CHOSEN when none of the initiator's proposals matches all of its own transforms:
+      encryption, integrity, PRF and DH group. FGT-BOG's template offered DH 20 and 21; TDV only takes group 14.
+  - id: b
+    title: The identity the partner expects
+    tasks:
+      - "The proposal now matches but the tunnel still doesn't come up. Find out why from both sides."
+      - "Make FGT-BOG present the identity TDV's IKEv2 profile matches."
+      - "Prove the EDI path: SSH from HQ-PC to 10.99.0.10."
+    checks:
+      - text: "TDV is up on FGT-BOG"
+        tunnel: {dev: FGT-BOG, name: TDV}
+      - text: "HQ-PC reaches the EDI server over SSH through the tunnel"
+        probe: {from: HQ-PC, to: 10.99.0.10, proto: tcp, port: 22, seen_src: 10.20.10.50}
+      - text: "Why did IKE_AUTH fail?"
+        answer: {accept: ["~id|identity|fqdn|localid|andes-hq|authentication_failed|auth"], hint: "Look at `match identity remote` in TDV-EDGE's IKEv2 profile.", why: "TDV's profile matches the remote identity fqdn andes-hq. FGT-BOG sent its IP address as its ID, so TDV found no matching profile and answered AUTHENTICATION_FAILED."}
+    hints:
+      - "AUTHENTICATION_FAILED with a correct PSK usually means the identity: what the peer sends versus what the profile matches."
+      - "`config vpn ipsec phase1-interface` / `edit TDV` / `set localid andes-hq` / `end`."
+    solution:
+      FGT-BOG: |
+        config vpn ipsec phase1-interface
+        edit TDV
+        set localid andes-hq
+        next
+        end
+    explain: |
+      With the proposal agreed, IKE_AUTH carries the identities. Cisco picks the IKEv2 profile by `match identity remote`;
+      a FortiGate sends its interface IP unless `localid` is set. No matching profile means AUTHENTICATION_FAILED, the same
+      notify a wrong PSK gives, so check the identity before you rotate keys.
+explain: |
+  Third-party tunnels are two configurations written in two vocabularies. Translate the partner's sheet line by line:
+  IOS `encryption aes-cbc-256` + `integrity sha256` is FortiOS `aes256-sha256`, `group 14` is `dhgrp 14`, and
+  `match identity remote fqdn andes-hq` means FortiOS must send `localid andes-hq`. The FortiGate debug only tells you what
+  the partner refused; the partner's config tells you why.

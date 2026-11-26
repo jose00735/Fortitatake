@@ -26,6 +26,7 @@ var labOps = map[string]time.Duration{
 	"dns.query": 6 * time.Second,
 	"edr.start": 5 * time.Second, "edr.emit": 5 * time.Second, "edr.status": 5 * time.Second, "edr.kill": 5 * time.Second, "edr.block": 8 * time.Second,
 	"frr.apply": 30 * time.Second, "frr.show": 12 * time.Second,
+	"ipsec.apply": 25 * time.Second, "ipsec.show": 12 * time.Second,
 	"ips.load": 10 * time.Second, "ips.log": 5 * time.Second, "attack.run": 30 * time.Second,
 	"gen.start": 5 * time.Second, "gen.stop": 5 * time.Second, "gen.stats": 5 * time.Second, "cg.stat": 5 * time.Second, "cg.set": 5 * time.Second,
 	"remote.open": 15 * time.Second, "remote.send": 5 * time.Second, "remote.read": 5 * time.Second, "remote.close": 5 * time.Second,
