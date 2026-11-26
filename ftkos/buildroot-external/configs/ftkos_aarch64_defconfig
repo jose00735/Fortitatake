@@ -37,3 +37,6 @@ BR2_TARGET_ROOTFS_EROFS_LZ4HC=y
 # BR2_TARGET_ROOTFS_TAR is not set
 BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_FTKOS_PATH)/board/ftkos/linux-aarch64.config"
 BR2_LINUX_KERNEL_IMAGE=y
+# stage 4: FRR (OSPF and BGP for lab routers and FortiGates), started by the agent per namespace
+BR2_PACKAGE_FRR=y
+# BR2_PACKAGE_FRR_BFD is not set

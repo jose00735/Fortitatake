@@ -511,3 +511,114 @@ Lab.prototype.routerShow = function (r, t) {
   }
   return null;
 };
+
+// ---------- FRR (FortiTatake OS stage 4): the same configuration, as FRR runs it ----------
+// One frr.conf per speaker. The real network then learns its OSPF and BGP routes from real
+// protocol exchanges between the namespaces; compile.js stops installing the simulator's.
+function frrPrefixLists(fg, names) {
+  const out = [];
+  for (const name of names) {
+    const pl = fg.entry("router prefix-list", name);
+    if (!pl) continue;
+    const rules = pl.children.get("rule");
+    let seq = 5;
+    for (const r of rules ? rules.list() : []) {
+      const v = (a) => fg.val("router prefix-list", r, a, ["rule"])[0];
+      const p = parsePrefix(String(fg.val("router prefix-list", r, "prefix", ["rule"]).join(" ") || "0.0.0.0 0.0.0.0").replace(/^any$/, "0.0.0.0/0"));
+      if (!p) continue;
+      const ge = v("ge"), le = v("le");
+      out.push(`ip prefix-list ${name} seq ${seq} ${v("action") || "permit"} ${prefixStr(pfx(p))}${ge ? ` ge ${ge}` : ""}${le ? ` le ${le}` : ""}`);
+      seq += 5;
+    }
+    if (seq === 5) out.push(`ip prefix-list ${name} seq 5 deny any`);
+  }
+  return out;
+}
+function frrRouteMaps(fg, names, pls) {
+  const out = [];
+  for (const name of names) {
+    const rm = fg.entry("router route-map", name);
+    if (!rm) { out.push(`route-map ${name} deny 10`); continue; }
+    const rules = rm.children.get("rule");
+    let n = 10;
+    for (const r of rules ? rules.list() : []) {
+      const v = (a) => fg.val("router route-map", r, a, ["rule"]);
+      out.push(`route-map ${name} ${v("action")[0] || "permit"} ${n}`);
+      const pl = v("match-ip-address")[0];
+      if (pl) { out.push(` match ip address prefix-list ${pl}`); pls.add(pl); }
+      const lp = v("set-local-preference")[0]; if (lp) out.push(` set local-preference ${lp}`);
+      const w = v("set-weight")[0]; if (w) out.push(` set weight ${w}`);
+      const m = v("set-metric")[0]; if (m) out.push(` set metric ${m}`);
+      const pre = v("set-aspath"); if (pre.length) out.push(` set as-path prepend ${pre.join(" ")}`);
+      n += 10;
+    }
+  }
+  return out;
+}
+
+// the frr.conf for one device, or "" when it speaks neither protocol
+Lab.prototype.frrConf = function (dev) {
+  const sp = dev instanceof FortiGate ? fgSpeaker(this, dev) : dev.kind === "router" ? routerSpeaker(this, dev) : null;
+  if (!sp) return { conf: "", daemons: [] };
+  const o = ospfCfg(this, sp), b = bgpCfg(this, sp);
+  if (!o && !b) return { conf: "", daemons: [] };
+  const L = [`frr defaults traditional`, `hostname ${dev.id}`, `log syslog warnings`, `service integrated-vtysh-config`, `!`];
+  const daemons = [];
+  const pls = new Set(), rms = new Set();
+  if (o) {
+    daemons.push("ospfd");
+    for (const i of o.ifs) {
+      L.push(`interface ${i.name}`, ` ip ospf area ${i.area}`, ` ip ospf hello-interval ${i.hello}`, ` ip ospf dead-interval ${i.dead}`, ` ip ospf cost ${i.cost}`, ` ip ospf priority ${i.prio}`);
+      if (i.type === "point-to-point") L.push(` ip ospf network point-to-point`);
+      if (i.mtuIgnore) L.push(` ip ospf mtu-ignore`);
+      if (i.auth === "text") L.push(` ip ospf authentication`, ` ip ospf authentication-key ${String(i.key).slice(0, 8)}`);
+      if (i.auth === "message-digest") { L.push(` ip ospf authentication message-digest`); for (const k of String(i.key).split("|").filter(Boolean)) { const [id, ...key] = k.split(":"); L.push(` ip ospf message-digest-key ${Number(id) || 1} md5 ${key.join(":").slice(0, 16)}`); } }
+      if (i.passive) L.push(` ip ospf passive`);
+      L.push(`!`);
+    }
+    L.push(`router ospf`, ` ospf router-id ${intToIp(o.rid)}`);
+    for (const [a, ar] of o.areas) { if (ar.type === "stub") L.push(` area ${a} stub`); else if (ar.type === "nssa") L.push(` area ${a} nssa`); }
+    for (const i of o.ifs) { if (i.areaType === "stub" && !o.areas.has(i.area)) L.push(` area ${i.area} stub`); }
+    for (const [k, r] of o.redis) if (r.on && ["connected", "static", "bgp"].includes(k)) L.push(` redistribute ${k} metric ${r.metric} metric-type ${r.mtype}`);
+    if (o.dio && o.dio !== "disable") L.push(` default-information originate${o.dio === "always" ? " always" : ""} metric ${o.dioMetric} metric-type ${o.dioType}`);
+    L.push(`!`);
+  }
+  if (b) {
+    daemons.push("bgpd");
+    L.push(`router bgp ${b.as}`, ` bgp router-id ${intToIp(b.rid)}`, ` no bgp ebgp-requires-policy`, ` no bgp default ipv4-unicast`, ` bgp bestpath as-path multipath-relax`);
+    if (!b.importCheck) L.push(` no bgp network import-check`);
+    for (const n of b.nbrs) {
+      const ip = intToIp(n.ip);
+      L.push(` neighbor ${ip} remote-as ${n.remoteAs}`);
+      if (n.pw) L.push(` neighbor ${ip} password ${n.pw}`);
+      if (n.updSrc) L.push(` neighbor ${ip} update-source ${n.updSrc}`);
+      if (n.multihop) L.push(` neighbor ${ip} ebgp-multihop 255`);
+      if (n.shut) L.push(` neighbor ${ip} shutdown`);
+      L.push(` neighbor ${ip} timers 3 9`, ` neighbor ${ip} timers connect 5`);
+    }
+    L.push(` address-family ipv4 unicast`);
+    for (const n of b.nets) L.push(`  network ${prefixStr(pfx(n.prefix))}${n.rm ? ` route-map ${n.rm}` : ""}`), n.rm && rms.add(n.rm);
+    for (const [k, r] of b.redis || []) if (r.on && ["connected", "static", "ospf"].includes(k)) { L.push(`  redistribute ${k}${r.rm ? ` route-map ${r.rm}` : ""}`); if (r.rm) rms.add(r.rm); }
+    for (const n of b.nbrs) {
+      const ip = intToIp(n.ip);
+      L.push(`  neighbor ${ip} activate`);
+      if (n.nhs) L.push(`  neighbor ${ip} next-hop-self`);
+      if (n.rrc) L.push(`  neighbor ${ip} route-reflector-client`);
+      if (n.allowas) L.push(`  neighbor ${ip} allowas-in`);
+      if (n.defOrig || b.originateDefault) L.push(`  neighbor ${ip} default-originate`);
+      if (n.weight) L.push(`  neighbor ${ip} weight ${n.weight}`);
+      if (n.max) L.push(`  neighbor ${ip} maximum-prefix ${n.max}`);
+      if (n.plIn) { L.push(`  neighbor ${ip} prefix-list ${n.plIn} in`); pls.add(n.plIn); }
+      if (n.plOut) { L.push(`  neighbor ${ip} prefix-list ${n.plOut} out`); pls.add(n.plOut); }
+      if (n.rmIn) { L.push(`  neighbor ${ip} route-map ${n.rmIn} in`); rms.add(n.rmIn); }
+      if (n.rmOut) { L.push(`  neighbor ${ip} route-map ${n.rmOut} out`); rms.add(n.rmOut); }
+    }
+    L.push(` exit-address-family`, `!`);
+  }
+  if (sp.fg) {
+    const maps = frrRouteMaps(dev, [...rms], pls);
+    L.push(...frrPrefixLists(dev, [...pls]), ...maps);
+  }
+  L.push(`line vty`, `!`);
+  return { conf: L.join("\n") + "\n", daemons };
+};

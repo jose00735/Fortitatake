@@ -39,3 +39,6 @@ BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_FTKOS_PATH)/board/ftkos/linu
 BR2_LINUX_KERNEL_BZIMAGE=y
 BR2_LINUX_KERNEL_LZ4=y
 BR2_LINUX_KERNEL_NEEDS_HOST_LIBELF=y
+# stage 4: FRR (OSPF and BGP for lab routers and FortiGates), started by the agent per namespace
+BR2_PACKAGE_FRR=y
+# BR2_PACKAGE_FRR_BFD is not set

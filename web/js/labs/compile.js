@@ -50,7 +50,9 @@ export function agentAtLeast(lab, v) {
 }
 
 export function compile(lab) {
-  const topo = { devices: [], links: [], bridges: [], addrs: [], routes: [], vlans: [], dummies: [], proxies: [] };
+  const topo = { devices: [], links: [], bridges: [], addrs: [], routes: [], vlans: [], dummies: [], proxies: [], mtus: [] };
+  const frr = {}; // ns -> {conf, daemons}: FRR instances (stage 4)
+  const frrOn = agentAtLeast(lab, "0.15");
   const extra = {}; // ns -> ip batch lines run after the topology (IPsec tunnels and the routes through them)
   const nft = {};
   const listen = [];
@@ -192,7 +194,9 @@ export function compile(lab) {
       else if (rt.dev === "internet" || rt.via === null) { if (up && cloudIp.has(up.id)) topo.routes.push({ dev: r.id, dst, via: intToIp(cloudIp.get(up.id)) }); }
       else topo.routes.push({ dev: r.id, dst, via: intToIp(rt.via) });
     }
-    // routes the simulator's OSPF/BGP gave this router (FRR takes over in a later stage)
+    // routes the simulator's OSPF/BGP gave this router (with FRR, agent 0.15+, the router learns them for real)
+    if (r.mtu && r.mtu !== 1500) for (const i of r.ifaces) if (i.prefix && IFOK.test(i.name)) topo.mtus.push({ dev: r.id, if: i.name, mtu: r.mtu });
+    if (frrOn) { const f = lab.frrConf(r); if (f.conf) { frr[r.id] = f; continue; } }
     for (const x of lab.routerDynamic(r) || []) {
       const dst = x.dst.len === 0 ? "default" : prefixStr(x.dst);
       if (x.gw && !r.routes.some((y) => y.dst && prefixStr(y.dst) === prefixStr(x.dst))) topo.routes.push({ dev: r.id, dst, via: intToIp(x.gw) });
@@ -229,8 +233,12 @@ export function compile(lab) {
     const tunnels = fg.kind === "fortigate" ? ipsec(lab, fg, intfs, extra) : new Set();
     const { active } = lab.fgtRoutes(fg);
     const seen = new Set();
+    const fgFrr = frrOn && fg.kind === "fortigate" ? lab.frrConf(fg) : { conf: "" };
+    if (fgFrr.conf) frr[fg.id] = fgFrr;
+    for (const i of intfs) if (i.mtu && i.mtu !== 1500 && i.prefix && IFOK.test(i.name) && i.type !== "tunnel") topo.mtus.push({ dev: fg.id, if: i.name, mtu: i.mtu });
     for (const r of active) {
       if (r.type === "C" || r.inactive) continue;
+      if (fgFrr.conf && /^(O|B)/.test(r.type)) continue; // FRR learns these
       const dst = r.dst.len === 0 ? "default" : prefixStr(r.dst);
       if (seen.has(dst)) continue; // ECMP: Linux gets the first path
       seen.add(dst);
@@ -265,7 +273,7 @@ export function compile(lab) {
     // the lab Internet's attacker address, for the attack runner
     if (topo.internet) topo.addrs.push({ dev: topo.internet.ns, if: "lo", cidr: ATTACKER_IP + "/32" });
   }
-  return { topo, nft, listen, where, notes, extra, ips, ver: lab.ver };
+  return { topo, nft, listen, where, notes, extra, ips, frr, ver: lab.ver };
 }
 
 // ---------------------------------------------------------------- IPsec
@@ -451,6 +459,10 @@ function fgtRules(lab, fg, intfs, notes) {
     }
   }
   for (const e of fg.entries("system dns-server")) { dns = true; inp.push(`  iifname ${q(e.key)} udp dport 53 accept`); }
+  // routing protocols the FortiGate runs (FRR in its namespace): OSPF from its neighbours, BGP from configured peers
+  if (fg.cfg.get("router ospf")) inp.push(`  ip protocol 89 accept`);
+  const bgpRoot = fg.cfg.get("router bgp");
+  if (bgpRoot) { const nb = bgpRoot.children.get("neighbor"); const peers = nb ? nb.list().map((e) => e.key).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x)) : []; if (peers.length) inp.push(`  ip saddr { ${peers.join(", ")} } tcp dport 179 accept`); }
   for (const s of fg.entries("system dhcp server")) { const i = fg.one("system dhcp server", s, "interface"); if (i) inp.push(`  iifname ${q(i)} udp dport 67 accept`); }
 
   const rules = `table ip ftk {

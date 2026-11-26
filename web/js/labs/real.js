@@ -59,6 +59,14 @@ export class RealNet {
       if (!this.nftReloaded.includes(ns) && prev && prev.ips && JSON.stringify(prev.ips[ns]) === JSON.stringify(rq)) continue;
       try { await this.call(rq, 10000); this.ipsErr = null; } catch (e) { this.ipsErr = `${ns}: ${e.message}`; }
     }
+    // FRR (stage 4): OSPF and BGP for real; a config change restarts that device's FRR, sessions come back in seconds
+    this.frrErr = null;
+    for (const [ns, f] of Object.entries(c.frr || {})) {
+      if (topoSame && prev.frr && prev.frr[ns] && prev.frr[ns].conf === f.conf) continue;
+      try { const r = await this.call({ op: "frr.apply", ns, conf: f.conf, daemons: f.daemons }, 30000); if (r.error) this.frrErr = `${ns}: ${r.error}`; } catch (e) { this.frrErr = `${ns}: ${e.message}`; }
+      this.frrPending = Date.now();
+    }
+    if (topoSame && prev.frr) for (const ns of Object.keys(prev.frr)) if (!(c.frr || {})[ns]) await this.call({ op: "frr.apply", ns, conf: "" }, 15000).catch(() => {});
     this.c = c;
     this.key = k;
     this.applyMs = Date.now() - t;
@@ -67,8 +75,34 @@ export class RealNet {
   }
 
   // one probe from a device; returns {pass, error, reached, seenSrc, seenDst}
+  // FRR needs a moment after a (re)start: OSPF waits a dead interval before electing a DR, BGP
+  // retries every few seconds. Wait until every route the simulator expects is in the kernel (60 s at most).
+  async frrSettle(lab, maxMs = 60000) {
+    if (!this.frrPending || !this.c || !this.c.frr) return;
+    const expect = {};
+    for (const ns of Object.keys(this.c.frr)) {
+      const d = lab.dev(ns);
+      const dyn = d && d.kind === "router" ? lab.routerDynamic(d) : d ? lab.fgtRoutes(d).active.filter((r) => /^(O|B)/.test(r.type) && !r.inactive) : [];
+      expect[ns] = [...new Set(dyn.map((r) => (r.dst.len === 0 ? "default" : `${intToIp(r.dst.ip)}/${r.dst.len}`).replace(/\/32$/, "")))];
+    }
+    const until = this.frrPending + maxMs;
+    while (Date.now() < until) {
+      let missing = 0;
+      for (const [ns, want] of Object.entries(expect)) {
+        if (!want.length) continue;
+        const r = await this.call({ op: "ns.exec", ns, argv: ["ip", "-4", "route", "show"] }, 8000).catch(() => ({ stdout: "" }));
+        const have = new Set((r.stdout || "").split("\n").map((l) => l.split(" ")[0]));
+        missing += want.filter((p) => !have.has(p)).length;
+      }
+      if (!missing) break;
+      await new Promise((res) => setTimeout(res, 1500));
+    }
+    this.frrPending = 0;
+  }
+
   async probe(lab, from, dst, proto, port) {
     const c = await this.apply(lab);
+    await this.frrSettle(lab);
     const since = proto === "icmp" ? 0 : (await this.call({ op: "listen.log", ns: "-" }, 3000)).seq;
     const base = { op: "probe", ns: from, dst: intToIp(dst), timeout_ms: 1500 };
     let r;

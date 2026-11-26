@@ -48,6 +48,12 @@ type topoSpec struct {
 		If   string `json:"if"`
 		CIDR string `json:"cidr"`
 	} `json:"addrs"`
+	// per-interface MTU (a FortiGate's mtu-override, a router's ip mtu): OSPF compares it
+	Mtus []struct {
+		Dev string `json:"dev"`
+		If  string `json:"if"`
+		MTU int    `json:"mtu"`
+	} `json:"mtus"`
 	Internet *inetCfg `json:"internet"` // the namespace whose exit relays DNS and ICMP to the real Internet
 	Routes   []struct {
 		Dev    string `json:"dev"`
@@ -223,6 +229,7 @@ func topoClear() (map[string]any, error) {
 	stopAllGens()
 	stopAllIPS()
 	edrStopAll()
+	frrStopAll()
 	stopAllServices()
 	stopAllCaptures()
 	t := time.Now()
@@ -364,6 +371,11 @@ func topoApply(r req) (map[string]any, error) {
 		per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link add link %s name %s type vlan id %d", v.Parent, v.If, v.ID))
 		if !v.Down {
 			per[v.Dev] = append(per[v.Dev], fmt.Sprintf("link set %s up", v.If))
+		}
+	}
+	for _, m := range t.Mtus {
+		if m.MTU >= 576 && m.MTU <= 9000 && checkIf(m.If) == nil {
+			per[m.Dev] = append(per[m.Dev], fmt.Sprintf("link set %s mtu %d", m.If, m.MTU))
 		}
 	}
 	for _, a := range t.Addrs {

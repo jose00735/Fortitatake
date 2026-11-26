@@ -98,6 +98,15 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.15.0 adds (FortiTatake OS stage 4: real OSPF and BGP with FRR)
+
+- **FRR in FortiTatake OS** (Buildroot's FRR 10.x package; BFD off). The agent (0.15) starts zebra, staticd, ospfd and bgpd inside each speaker's namespace, one instance per device, with its sockets under `/run/ftk/frr/<device>` and its log readable there. FRR's own boot service stays off.
+- **Routing configs compiled to FRR.** A FortiGate's `router ospf` (networks, areas and stub/NSSA, ospf-interface cost, hello/dead, priority, network type, text and MD5 authentication, mtu-ignore, passive interfaces, redistribution, default-information originate) and `router bgp` (neighbours, remote-as, password, update-source, multihop, shutdown, next-hop-self, route reflection, allowas-in, default-originate, weight, prefix lists and route maps with local preference, weight, MED and AS-path prepend, networks, redistribution, network-import-check), and lab routers' `ospf:`/`bgp:` specs, become each device's `frr.conf`.
+- **Learned, not installed.** On the real network the simulator's OSPF and BGP routes are no longer written into the kernel: FRR learns them from real hellos, LSAs and BGP updates between the namespaces. Interface MTUs (a FortiGate's mtu-override, a router's MTU) are set on the real interfaces, so an MTU mismatch really stops the adjacency at ExStart. The FortiGate's local-in accepts OSPF and BGP from its configured peers only.
+- **Kernel:** `CONFIG_TCP_MD5SIG` for BGP neighbour passwords.
+- Grading and the tier check wait for convergence (up to 60 s after a restart: OSPF waits a dead interval before electing a DR). Tested in QEMU with FRR on every routing lab (G2.01 BGP over MPLS with prefix lists, O2.01 campus OSPF, O4.01 MTU, O4.02 hello timers, O4.03 static beating OSPF): 0 disagreements with the simulator, before and after each fix.
+- Not yet: the FortiGate CLI's `get router info ospf/bgp` still shows the simulator's view; a config change restarts that device's FRR (sessions come back in seconds, OSPF adjacencies in up to a dead interval).
+
 ### What v0.14.0 adds (attack sequences, the Range, capstone K6.03)
 
 - **Four attack sequences** (`content/sequences/`, format in its README), each a chain of five steps with the ATT&CK technique and the controls that can stop it:
@@ -470,7 +479,7 @@ Its `why_wrong` names the misconception it targets. No option that a practitione
 
 ### v0.11.0–v0.14.0: FortiTatake OS stages 4–7 (v0.11.0 done: kernel, cgroups, office traffic; v0.12.0 done: threat packs and the inline IPS)
 
-Before any FortiSASE engine work. Stage 4: FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Decided by Jose (2026-11-25): the Range screen is its own app section; the EDR console follows FortiEDR's screens and workflow, adapted for phones, in FortiTatake's own style (no Fortinet logos, artwork or copied screens). Dropped by Jose (2026-11-25): stage 5 (one FRR across routers as VRFs, memory balloon, warm snapshot) and stage 7 (Android KVM/AVF and LKL paths, CPU-tuned builds). Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
+Before any FortiSASE engine work. Stage 4 (done in v0.15.0): FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Decided by Jose (2026-11-25): the Range screen is its own app section; the EDR console follows FortiEDR's screens and workflow, adapted for phones, in FortiTatake's own style (no Fortinet logos, artwork or copied screens). Dropped by Jose (2026-11-25): stage 5 (one FRR across routers as VRFs, memory balloon, warm snapshot) and stage 7 (Android KVM/AVF and LKL paths, CPU-tuned builds). Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
 
 ### v0.15.0: FortiSASE on the real engine
 
