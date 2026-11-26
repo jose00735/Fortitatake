@@ -1,0 +1,38 @@
+id: S3
+name: "Password spray on the edge: hands-on ransomware"
+environment: andes-range
+summary: >-
+  An affiliate sprays passwords at the FortiGate's management/VPN port on the Internet, gets in with
+  a reused password, reaches HQ-PC, deletes the shadow copies, encrypts the shares and pushes the
+  stolen files to its server. The pattern behind many Akira and LockBit intrusions.
+steps:
+  - id: spray
+    title: Password spray on the edge port
+    tactic: Credential Access
+    attack: T1110.003 Password Spraying
+    do: {logins: {from: "@attacker", to: FGT-BOG, port: 10443, attempts: 40, user: jgomez}}
+    controls: [No admin or VPN portal on the WAN (allowaccess, trusted hosts, local-in policy)]
+  - id: hands
+    title: The attacker works on HQ-PC
+    tactic: Lateral Movement
+    attack: T1021.001 Remote Desktop Protocol
+    do: {proc: {host: HQ-PC, name: rdpclip.exe, parent: svchost.exe, cmd: "rdpclip.exe"}}
+    controls: [FortiEDR isolation of HQ-PC]
+  - id: shadows
+    title: Shadow copies are deleted
+    tactic: Impact
+    attack: T1490 Inhibit System Recovery
+    do: {proc: {host: HQ-PC, name: vssadmin.exe, parent: cmd.exe, path: "C:\\Windows\\System32\\vssadmin.exe", cmd: "vssadmin.exe delete shadows /all /quiet"}}
+    controls: [FortiEDR Ransomware Prevention]
+  - id: encrypt
+    title: Files are encrypted
+    tactic: Impact
+    attack: T1486 Data Encrypted for Impact
+    do: {files: {host: HQ-PC, count: 400, ext: .andes, process: svchost32.exe}}
+    controls: [FortiEDR Ransomware Prevention]
+  - id: exfil
+    title: Stolen files go to the attacker
+    tactic: Exfiltration
+    attack: T1041 Exfiltration Over C2 Channel
+    do: {connect: {from: HQ-PC, to: "c2:4", port: 443, process: rclone.exe}}
+    controls: [FortiGate C2 feed, FortiEDR Exfiltration Prevention]

@@ -8,6 +8,8 @@ import "./utm.js";
 import "./ips.js";
 import "./intel.js";
 import "./edrlive.js";
+import "./seq.js";
+import { seqReport } from "./seq.js";
 import "./mgmt.js";
 import "./auth.js";
 import "./routing.js";
@@ -96,6 +98,11 @@ export class LabRun {
 
   // run a line on a device console; returns the text to print (async debug output appended)
   exec(devId, line, record = true) {
+    if (devId === "@sequence") { // an attack sequence from the Sequences panel, replayed so its events come back
+      if (record) this.log.push({ dev: devId, line });
+      const r = this.lab.sequenceSim ? this.lab.sequenceSim(String(line).trim()) : { error: "no sequences" };
+      return seqReport(r);
+    }
     if (devId === "@edrtest") { // an endpoint test from the Attacks panel (simulated telemetry; live runs are real)
       const [host, kind] = String(line).split(" ");
       if (record) this.log.push({ dev: devId, line });

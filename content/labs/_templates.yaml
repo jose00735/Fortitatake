@@ -1497,3 +1497,77 @@ andes-secops:
     - {id: CONTRACTOR-LT, kind: host, os: windows, hostname: LT-CONTRATISTA, nic: {ip: 10.20.10.66/24, gw: 10.20.10.1, dns: [8.8.8.8]}}
   segment_members: {bog-srv: [FSIEM-01, FEDR-01], bog-lan: [CONTRACTOR-LT]}
   layout: {FSIEM-01: [-60, 400], FEDR-01: [-60, 300], DC-01: [25, 500], ERP-SRV: [150, 500], seg:bog-srv: [90, 425], CONTRACTOR-LT: [480, 500], seg:bog-lan: [380, 425], HQ-PC: [300, 500], FIN-PC: [390, 500]}
+
+# The Range and the capstone K6.03: andes-secops plus a Linux app server with a FortiEDR collector,
+# reachable from the HQ LAN, and servers allowed out to the Internet (the gaps the sequences use).
+andes-range:
+  extends: andes-secops
+  add_devices:
+    - id: APP-01
+      kind: server
+      os: linux
+      hostname: app-transportes
+      nic: {ip: 10.20.40.30/24, gw: 10.20.40.1, dns: [10.20.40.10]}
+      services: [tcp/8080, tcp/22, tcp/443]
+      edr: {manager: FEDR-01}
+  segment_members:
+    bog-srv: [APP-01]
+  devices:
+    FGT-BOG:
+      config: |
+        config system global
+        set admin-sport 10443
+        end
+        config system interface
+        edit port1
+        set allowaccess ping https
+        next
+        end
+        config firewall address
+        edit APP-01
+        set subnet 10.20.40.30 255.255.255.255
+        next
+        edit SERVERS
+        set subnet 10.20.40.0 255.255.255.0
+        next
+        end
+        config firewall service custom
+        edit APP-8080
+        set tcp-portrange 8080
+        next
+        end
+        config firewall policy
+        edit 30
+        set name "HQ-to-APP"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr APP-01
+        set action accept
+        set schedule always
+        set service APP-8080 SSH
+        next
+        edit 31
+        set name "Servers-Internet"
+        set srcintf port4
+        set dstintf port1
+        set srcaddr SERVERS
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ALL
+        set nat enable
+        next
+        edit 32
+        set name "EDR-collectors"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr FEDR-01
+        set action accept
+        set schedule always
+        set service FortiEDR-Collector
+        next
+        end
+  layout:
+    APP-01: [80, 560]

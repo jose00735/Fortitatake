@@ -148,15 +148,46 @@ def main():
             for s in p["signatures"]:
                 if matches(s, req):
                     errors.append(f"{p['id']}/{s['id']} trips on normal request {i + 1}: {n.splitlines()[0]}")
+    # attack sequences (content/sequences): the Range and the capstones run them
+    seqs = []
+    pack_ids = {p["id"] for p in packs}
+    kinds = {"connect", "attack", "proc", "cpu", "files", "logins"}
+    for path in sorted(glob.glob(os.path.join(ROOT, "content", "sequences", "S*.yaml"))):
+        name = os.path.basename(path)
+        q = yaml.safe_load(open(path, encoding="utf-8"))
+        for k in ("id", "name", "environment", "summary", "steps"):
+            if k not in q:
+                errors.append(f"{name}: missing {k}")
+        ids = set()
+        for st in q.get("steps", []):
+            sid = st.get("id")
+            if sid in ids:
+                errors.append(f"{name}: duplicate step {sid}")
+            ids.add(sid)
+            for k in ("id", "title", "tactic", "attack", "do", "controls"):
+                if k not in st:
+                    errors.append(f"{name}/{sid}: missing {k}")
+            do = st.get("do") or {}
+            if len(do) != 1 or next(iter(do)) not in kinds:
+                errors.append(f"{name}/{sid}: do must be one of {sorted(kinds)}")
+                continue
+            kind, a = next(iter(do.items()))
+            if kind == "attack" and a.get("pack") not in pack_ids:
+                errors.append(f"{name}/{sid}: unknown pack {a.get('pack')}")
+            to = str(a.get("to", ""))
+            if re.fullmatch(r"(c2|url|phish):\d+", to) and int(to.split(":")[1]) > 5:
+                errors.append(f"{name}/{sid}: feed pick {to} is out of range (0-5)")
+        seqs.append(q)
     if errors:
         print("\n".join(errors))
         sys.exit(1)
     nsig = sum(len(p["signatures"]) for p in packs)
     nvar = sum(len(p["generator"]["variants"]) for p in packs)
+    print(f"sequences: {len(seqs)} ({sum(len(q['steps']) for q in seqs)} steps)")
     print(f"threats: {len(packs)} packs, {nsig} signatures, {nvar} attack variants; {len(NORMAL) + len(NORMAL_HEX)} normal requests stay quiet")
     if not check_only:
         out = os.path.join(ROOT, "web", "content", "threats.json")
-        json.dump({"packs": packs}, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+        json.dump({"packs": packs, "sequences": seqs}, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
 
 
 if __name__ == "__main__":

@@ -98,6 +98,19 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.14.0 adds (attack sequences, the Range, capstone K6.03)
+
+- **Four attack sequences** (`content/sequences/`, format in its README), each a chain of five steps with the ATT&CK technique and the controls that can stop it:
+  - **S1** invoice phishing: phishing link, Office starting PowerShell, loader download, QakBot-style beaconing, domain reconnaissance.
+  - **S2** Log4Shell on APP-01's portal, the Java process starting a shell, the shell calling home, an LSASS dump on DC-01, exfiltration.
+  - **S3** password spray on the FortiGate's edge port, hands-on work on HQ-PC, shadow-copy deletion, encryption, exfiltration.
+  - **S4** SSH guessing on APP-01, miner download, cron persistence in /tmp, the miner itself, the mining pool.
+- **Every step can be stopped by something you configure:** a FortiGate policy, an IPS sensor (Log4Shell on the app port), an external threat feed (C2 and malware-URL egress), no admin port on the WAN, FortiEDR prevention policies or isolation. A run ends at the first stopped step and names the control (policy, signature, FortiEDR rule and event).
+- **On the real network** the steps are real: the exploit is the threat pack's requests through the real IPS, connections are real `wget`s from the host's namespace seen by its collector, the spray is real connections to the edge port, the miner is a real CPU loop. Windows process and file steps (PowerShell, rundll32 MiniDump, vssadmin, the encryptor) are emulated events sent through the real collector. In the simulator the same decisions run on the lab model with nominal telemetry; grading uses that, without leaving events behind.
+- **The Range** is its own section in the app (between Labs and OS): free-play environments, the sequence catalogue and your recent runs. The first environment is the Andes network with a new Linux app server (APP-01, with a FortiEDR collector), reachable from the HQ LAN, servers allowed out to the Internet and the admin GUI on the WAN: the gaps the sequences use.
+- **Capstone K6.03, "Andes red-team week"** (2 parts): make S2, S3 and S4 die at their first step with controls a customer would keep, then make each later step die on its own (feed-driven egress deny, FortiEDR prevention). New `sequence:` check type (`expect`, `by_step`, `by`, `from_step`).
+- Tested in the app with the real network: S2 ran end to end (IPS off, FortiEDR in simulation) with every step really happening and FortiEDR seeing the lineage, the C2 contacts and the LSASS dump; with Execution Prevention on, the same run stopped at the shell step.
+
 ### What v0.13.0 adds (threat feeds, FortiEDR on real telemetry, the EDR console)
 
 - **Threat-intel feeds.** The app downloads abuse.ch Feodo Tracker, ThreatFox and URLhaus and the OpenPhish community feed once a day (and on demand from the OS screen) into dated snapshots on this device, with each source's terms. Snapshots never go into the repository. Each lab picks 8 C2 addresses, 6 C2 domains, 6 malware URLs and 4 phishing URLs from the newest snapshot with its seed; without a snapshot it uses clearly labelled stand-ins in 192.0.2.0/24.

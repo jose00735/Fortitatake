@@ -1,0 +1,23 @@
+id: R.01
+track: range
+modules: [M13.02]
+tier: 5
+order: 1
+kind: range
+title: "Range: Andes Logistics"
+customer: Andes Logistics
+par: 0
+skills: [attack sequences, FortiGate IPS and feeds, FortiEDR, FortiSIEM]
+brief: |
+  A free-play copy of the Andes network: HQ LAN (HQ-PC, FIN-PC, CONTRACTOR-LT), the server segment (DC-01, ERP-SRV,
+  APP-01, FortiSIEM, FortiEDR) and the Internet. Nothing is graded. Configure the FortiGate, FortiEDR and FortiSIEM
+  however you like, then press **Sequences** and run an attack against your configuration. Each run shows where the
+  attack stopped and which control stopped it, or that it got all the way through.
+topology: {use: andes-range}
+sequences: [S1, S2, S3, S4]
+parts:
+  - id: free
+    title: Free play
+    tasks:
+      - "Harden the environment, then run sequences. Run them again after each change."
+    checks: []

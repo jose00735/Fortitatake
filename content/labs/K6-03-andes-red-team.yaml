@@ -1,0 +1,117 @@
+id: K6.03
+track: secops
+modules: [M13.02, M10.03, M10.04, M4.08]
+tier: 6
+order: 30
+kind: capstone
+title: "Andes red-team week: stop S2 and S3 at the first step you can"
+customer: Andes Logistics
+par: 90
+skills: [IPS on internal policies, edge exposure, egress control with threat feeds, FortiEDR prevention, attack chains]
+brief: |
+  **Purple-team exercise, week 48.** Andes hired a red team that will replay two intrusions it saw this year at other
+  logistics companies: **S2** (Log4Shell on the contractor-facing app server, then credential theft on the domain
+  controller) and **S3** (a password spray on the edge, then hands-on ransomware). Your job: make each chain die as early
+  as possible, with a control a customer would actually keep. Defence in depth counts: each later step must also be
+  stopped on its own.
+
+  Press **Sequences** to run S1–S4 against your current configuration as often as you like; each run tells you where it
+  stopped and why. The environment is the Range's Andes network (APP-01 is the Java portal for contractors on TCP 8080).
+topology: {use: andes-range}
+sequences: [S1, S2, S3, S4]
+parts:
+  - id: a
+    title: First steps die at the FortiGate
+    tasks:
+      - "Run S2 and S3 once to see them get all the way through."
+      - "S3 starts with a password spray on FGT-BOG's WAN, port 10443: nothing on port1 should answer it."
+      - "S2 starts with Log4Shell from the HQ LAN to APP-01:8080: put an IPS sensor on HQ-to-APP (policy 30) that blocks critical and high server signatures."
+      - "While you're there: SSH to APP-01 from the whole HQ LAN is how S4 starts. Keep only the portal."
+    checks:
+      - text: "S3 dies at the password spray"
+        sequence: {id: S3, expect: stopped, by_step: spray}
+      - text: "S2 dies at the exploit, stopped by the IPS"
+        sequence: {id: S2, expect: stopped, by_step: exploit, by: IPS}
+      - text: "S4 dies at the SSH brute force"
+        sequence: {id: S4, expect: stopped, by_step: brute}
+      - text: "Contractors still reach the portal"
+        probe: {from: CONTRACTOR-LT, to: 10.20.40.30, proto: tcp, port: 8080, expect: reach}
+    hints:
+      - "`config system interface` / `edit port1` / `set allowaccess ping`: the admin GUI on 10443 was the spray's target."
+      - "`config ips sensor` / `edit APP-IPS` / `config entries` / `edit 1` / `set location server` / `set severity critical high` / `set action block`, then on policy 30 `set utm-status enable` and `set ips-sensor APP-IPS`. The portal is plain HTTP on 8080, so no deep inspection is needed."
+    solution:
+      FGT-BOG: |
+        config system interface
+        edit port1
+        set allowaccess ping
+        next
+        end
+        config ips sensor
+        edit APP-IPS
+        config entries
+        edit 1
+        set location server
+        set severity critical high
+        set action block
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 30
+        set service APP-8080
+        set utm-status enable
+        set ips-sensor APP-IPS
+        next
+        end
+    explain: |
+      Each chain's first step was an exposure, not a zero-day: an admin port on the Internet, a vulnerable app reachable
+      with no inspection, SSH open to a whole LAN. Closing those makes the rest of the chain irrelevant, which is why a
+      Professional Services design starts with the attack surface before tuning detections.
+  - id: b
+    title: If the first step gets through anyway
+    tasks:
+      - "Assume the exploit or the spray succeeds next time. Each later step must die on its own."
+      - "Servers may reach the Internet (policy 31), but not the C2 feed: an external threat feed of type address (name it C2-FEED, resource https://feodotracker.abuse.ch/downloads/ipblocklist.txt) and a deny policy from port4 to it, above policy 31."
+      - "On FEDR-01, Execution Prevention and Ransomware Prevention in Prevention mode."
+    checks:
+      - text: "S2's shell can't call home (blocked at the FortiGate)"
+        sequence: {id: S2, from_step: callback, expect: stopped, by_step: callback, by: network}
+      - text: "S2's LSASS dump on DC-01 is stopped by FortiEDR"
+        sequence: {id: S2, from_step: lsass, expect: stopped, by_step: lsass, by: FortiEDR}
+      - text: "S3's shadow-copy deletion is stopped by FortiEDR"
+        sequence: {id: S3, from_step: shadows, expect: stopped, by_step: shadows, by: FortiEDR}
+      - text: "S3's encryption is stopped by FortiEDR"
+        sequence: {id: S3, from_step: encrypt, expect: stopped, by_step: encrypt, by: FortiEDR}
+    hints:
+      - "`config system external-resource` / `edit C2-FEED` / `set type address` / `set resource \"https://feodotracker.abuse.ch/downloads/ipblocklist.txt\"`. A policy can use C2-FEED as its destination like any address."
+      - "Policies match top-down: `config firewall policy` / `move 33 before 31`. On FEDR-01: `policy \"Execution Prevention\" prevention`, same for Ransomware Prevention."
+    solution:
+      FGT-BOG: |
+        config system external-resource
+        edit C2-FEED
+        set type address
+        set resource "https://feodotracker.abuse.ch/downloads/ipblocklist.txt"
+        next
+        end
+        config firewall policy
+        edit 33
+        set name "Servers-to-C2"
+        set srcintf port4
+        set dstintf port1
+        set srcaddr SERVERS
+        set dstaddr C2-FEED
+        set action deny
+        set schedule always
+        set service ALL
+        set logtraffic all
+        next
+        move 33 before 31
+        end
+      FEDR-01: |
+        policy "Execution Prevention" prevention
+        policy "Ransomware Prevention" prevention
+    explain: |
+      The feed-driven deny policy works for every server, with or without an EDR collector, and it updates as the feed
+      changes. FortiEDR's prevention policies stop what happens on the host itself: the LSASS dump and the destruction
+      steps that no network control can see. Together they are the defence in depth the red team was testing.

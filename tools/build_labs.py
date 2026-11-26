@@ -12,9 +12,9 @@ import json, sys, glob, os, copy
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TRACKS = {"routing", "identity", "fortiswitch", "fortigate", "fortimanager", "fortianalyzer", "fortiswitch", "fortisiem", "fortiedr", "secops", "integration", "sdwan", "vpn", "ha"}
-KINDS = {"project", "ticket", "drill", "capstone", "investigation"}
-CHECK_TYPES = {"probe", "config", "dhcp", "route", "ran", "backup", "answer", "all", "state", "soc", "tunnel", "ha", "client", "sdwan", "web", "faz", "fmg", "login", "authserver", "fsso", "ospf", "bgp", "fsw", "siem", "edr", "fazinc", "attack"}
+TRACKS = {"routing", "identity", "fortiswitch", "fortigate", "fortimanager", "fortianalyzer", "fortiswitch", "fortisiem", "fortiedr", "secops", "integration", "sdwan", "vpn", "ha", "range"}
+KINDS = {"project", "ticket", "drill", "capstone", "investigation", "range"}
+CHECK_TYPES = {"probe", "config", "dhcp", "route", "ran", "backup", "answer", "all", "state", "soc", "tunnel", "ha", "client", "sdwan", "web", "faz", "fmg", "login", "authserver", "fsso", "ospf", "bgp", "fsw", "siem", "edr", "fazinc", "attack", "sequence"}
 
 
 def merge_topology(t, templates, lab_id):
@@ -103,7 +103,7 @@ def lint(labs):
         for d in lab["topology"].get("devices", []):
             if d["id"] not in lab["topology"].get("layout", {}):
                 errs.append(f"{lid}: device {d['id']} has no layout position")
-        for p in lab.get("parts", []):
+        for p in lab.get("parts", []) if lab.get("kind") != "range" else []:  # a range is free play: nothing graded
             if not p.get("checks"):
                 errs.append(f"{lid}/{p['id']}: no checks")
             if not p.get("tasks"):

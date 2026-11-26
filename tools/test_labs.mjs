@@ -7,7 +7,9 @@ import { LabRun } from "../web/js/labs/runtime.js";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const schemas = Object.fromEntries(["fortios", "fortianalyzer", "fortimanager"].map((p) => [p, JSON.parse(fs.readFileSync(path.join(root, `web/schema/${p}-8.0.2.json`)))]));
-schemas.threats = JSON.parse(fs.readFileSync(path.join(root, "web/content/threats.json"))).packs;
+const th = JSON.parse(fs.readFileSync(path.join(root, "web/content/threats.json")));
+schemas.threats = th.packs;
+schemas.sequences = th.sequences;
 const { labs } = JSON.parse(fs.readFileSync(path.join(root, "web/content/labs.json")));
 const only = process.argv.slice(2);
 let bad = 0;
@@ -20,6 +22,7 @@ for (const def of labs) {
   console.warn = origWarn;
   if (warnings.length) { bad++; console.log(`✗ ${def.id}: start config errors\n  ${warnings.join("\n  ")}`); continue; }
   let ok = true;
+  if (def.kind === "range") { console.log(`✓ ${def.id} (range: start config loads)`); continue; }
   def.parts.forEach((p, i) => {
     run.goto(i);
     // answers: fill with the first accepted value for the solution run

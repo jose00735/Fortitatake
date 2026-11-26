@@ -51,7 +51,7 @@ Lab.prototype.installIntel = function (snap) {
     for (const s of services) h.services.add(s);
     if (name) this.names.set(name.toLowerCase(), n);
   };
-  for (const c of this.intel.c2) add("", c.ip, [`tcp/${c.port}`, "tcp/80", "tcp/443"]);
+  for (const c of this.intel.c2) add("", c.ip, [`tcp/${c.port}`, "tcp/80", "tcp/443", "tcp/3333", "tcp/8080"]); // the feed port plus what loaders, shells and miners use
   // feed domains resolve to the picked C2 addresses, in turn
   this.intel.domains.forEach((d, i) => { const c = this.intel.c2[i % Math.max(1, this.intel.c2.length)]; if (c) this.names.set(d.domain, ipToInt(c.ip)); });
   add("", SINKHOLE_WEB, ["tcp/80", "tcp/443"]);

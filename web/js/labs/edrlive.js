@@ -107,7 +107,7 @@ Lab.prototype.edrIngest = function (mgr, ev) {
 
 // a rule fired: one security event per host, rule and process every 5 minutes
 Lab.prototype.edrFire = function (mgr, h, ht, r, info, ev) {
-  const key = `${r.id}|${info.process}|${info.dstIp || ""}`;
+  const key = r.id === "feed" || r.id === "beacon" ? `${r.id}|${info.dstIp}` : `${r.id}|${info.process}`; // one per destination, or per process
   if (ht.fired.has(key) && ev.t - ht.fired.get(key) < 300000) return;
   ht.fired.set(key, ev.t);
   const st = this.edrStateOf(mgr);

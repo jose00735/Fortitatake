@@ -1,0 +1,38 @@
+id: S4
+name: "SSH brute force: download, cron persistence, miner"
+environment: andes-range
+summary: >-
+  From the contractor laptop, a bot guesses SSH passwords on APP-01, downloads a miner from a
+  malware host, installs a cron job in /tmp and mines against a pool. Common on any Linux server
+  with password SSH reachable.
+steps:
+  - id: brute
+    title: SSH password guessing on APP-01
+    tactic: Credential Access
+    attack: T1110.001 Password Guessing
+    do: {logins: {from: CONTRACTOR-LT, to: APP-01, port: 22, attempts: 20, user: admin}}
+    controls: [FortiGate policy (SSH to servers only from admins)]
+  - id: download
+    title: The miner is downloaded
+    tactic: Command and Control
+    attack: T1105 Ingress Tool Transfer
+    do: {connect: {from: APP-01, to: "url:1", port: 80, process: wget}}
+    controls: [FortiGate egress policy for servers, FortiGate threat feed (malware URLs), FortiEDR Exfiltration Prevention]
+  - id: cron
+    title: A cron job keeps it running
+    tactic: Persistence
+    attack: T1053.003 Cron
+    do: {proc: {host: APP-01, name: crontab, parent: bash, path: /usr/bin/crontab, cmd: "crontab - (*/5 * * * * /tmp/.x/kswapd0 -o pool:3333)"}}
+    controls: [FortiEDR Execution Prevention]
+  - id: mine
+    title: The miner runs
+    tactic: Impact
+    attack: T1496 Resource Hijacking
+    do: {cpu: {host: APP-01}}
+    controls: [FortiEDR Execution Prevention]
+  - id: pool
+    title: It talks to the mining pool
+    tactic: Command and Control
+    attack: T1071 Application Layer Protocol
+    do: {connect: {from: APP-01, to: "c2:5", port: 3333, process: kswapd0}}
+    controls: [FortiGate egress policy for servers, FortiGate C2 feed, FortiEDR Exfiltration Prevention]

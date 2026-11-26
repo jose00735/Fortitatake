@@ -27,6 +27,7 @@ function one(lab, c, answers) {
   if (c.sdwan) return sdwanCheck(lab, c.sdwan);
   if (c.web) return webCheck(lab, c.web);
   if (c.attack) return attackCheck(lab, c.attack);
+  if (c.sequence) return sequenceCheck(lab, c.sequence);
   if (c.faz) return fazCheck(lab, c.faz);
   if (c.fmg) return fmgCheck(lab, c.fmg);
   if (c.login) return loginCheck(lab, c.login);
@@ -421,4 +422,18 @@ function attackCheck(lab, a) {
   if (!bad.length) return { pass: true, detail: `${r.pack.id}: ${r.results.map((x) => `${x.variant} ${x.outcome}`).join(", ")}.` };
   const x = bad[0];
   return { pass: false, detail: `${r.pack.id} ${x.variant}: ${x.outcome} (${x.detail}); expected ${want}.` };
+}
+
+// an attack sequence against the current config: stopped (by a given step, by a given control) or complete
+function sequenceCheck(lab, q) {
+  const r = lab.sequenceDry(q.id, q.from_step);
+  if (r.error) return { pass: false, detail: r.error };
+  const last = r.steps[r.steps.length - 1];
+  if ((q.expect || "stopped") === "complete") return r.complete ? { pass: true, detail: `${q.id} ran to the end.` } : { pass: false, detail: `${q.id} stopped at "${last.title}" by ${last.by}.` };
+  if (r.complete) return { pass: false, detail: `${q.id} got all the way through: nothing stopped it.` };
+  const seq = lab.sequences.find((s) => s.id === q.id);
+  const limit = q.by_step ? seq.steps.findIndex((s) => s.id === q.by_step) : seq.steps.length - 1;
+  if (seq.steps.findIndex((s) => s.id === last.id) > limit) return { pass: false, detail: `${q.id} was stopped only at "${last.title}" (by ${last.by}); it should stop by "${seq.steps[limit].title}".` };
+  if (q.by && !String(last.by).toLowerCase().includes(String(q.by).toLowerCase())) return { pass: false, detail: `${q.id} stopped at "${last.title}", but by ${last.by}, not ${q.by}.` };
+  return { pass: true, detail: `${q.id} stopped at "${last.title}" by ${last.by}.` };
 }

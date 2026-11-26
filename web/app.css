@@ -583,3 +583,6 @@ button.danger { color: var(--bad); border-color: var(--bad); }
   .edr-raw { grid-template-columns: minmax(0, 1fr); } .edr-raw dt { margin-top: 6px; }
   .edr-main { padding: 10px; }
 }
+.lr-seqs { width: min(620px, 94vw); height: min(560px, 80vh); }
+.range-home .seq-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.range-home .seq-list ol { padding-left: 1.2em; margin: 6px 0 0; }
