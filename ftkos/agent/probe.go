@@ -2,10 +2,10 @@ package main
 
 import (
 	"bufio"
-	"io"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"regexp"

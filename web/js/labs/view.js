@@ -1,4 +1,5 @@
 // Labs screens: the catalogue and the lab runner (ticket, topology, consoles, checks).
+import { trafficPlan, BASELINE_RATE, BASELINE_HOURS, virtualTime, summarize, fmtBytes } from "./traffic.js";
 import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
 import { LabRun } from "./runtime.js";
@@ -155,10 +156,12 @@ function mount(main, run, opts = {}) {
     const liveOn = typeof live !== "undefined" && (live.state === "live" || live.state === "apply");
     $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${shOn(d.id) ? " $" : ""}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("") +
       `<span class="lr-tools">` + (ui.pcap[ui.dev] && liveOn ? `<button class="lr-shellbtn" data-pcap title="The last diagnose sniffer packet capture on this FortiGate, for Wireshark">Download .pcap</button>` : "") +
+      `<button class="lr-shellbtn${ui.traffic && ui.traffic.on ? " on" : ""}" data-traffic ${liveOn ? "" : "hidden"} title="Everyday office traffic on the real lab network: browsing, DNS, file share, mail, voice">Office traffic</button>` +
       `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button></span>`;
     $$(".lr-devtabs [data-dev]", el).forEach((b) => (b.onclick = () => selectDev(b.dataset.dev)));
     const sb = $(".lr-devtabs [data-shell]", el); if (sb) sb.onclick = () => { toggleShell(ui.dev); devTabs(); };
     const pb = $(".lr-devtabs [data-pcap]", el); if (pb) pb.onclick = () => downloadPcap(ui.dev);
+    const tb = $(".lr-devtabs [data-traffic]", el); if (tb) tb.onclick = () => openTraffic();
   };
   const paint = () => {
     const sh = ui.sh[ui.dev];
@@ -344,6 +347,7 @@ function mount(main, run, opts = {}) {
       if (Date.now() - (live.conAt || 0) > 1500) { live.conAt = Date.now(); await remPoll(); if (Object.keys(ui.hub).some((x) => ui.hub[x] instanceof ServerSession)) remFast(); }
       await syncTracers();
       await pollWires();
+      await trafficTick();
       // SecOps: logs from the kernel, shipped over the lab network, collected where they arrive
       if (!run.lab.realLog) run.lab.realLog = new RealLogs(run.lab, realCall);
       if (Date.now() - (live.logAt || 0) > 1500) { live.logAt = Date.now(); await run.lab.realLog.tick(real.net.c, real.net.generation); }
@@ -636,6 +640,14 @@ function mount(main, run, opts = {}) {
 
   // ----- click a wire: a live sniffer in a square picture-in-picture window -----
   ui.wires = ui.wires || {};
+  const dragBy = (head, pip) => head.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, select, label")) return;
+    const r = pip.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    head.setPointerCapture(e.pointerId);
+    const mv = (ev) => { pip.style.left = Math.max(0, Math.min(window.innerWidth - r.width, ev.clientX - dx)) + "px"; pip.style.top = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy)) + "px"; pip.style.right = "auto"; pip.style.bottom = "auto"; };
+    const up = () => { head.removeEventListener("pointermove", mv); head.removeEventListener("pointerup", up); };
+    head.addEventListener("pointermove", mv); head.addEventListener("pointerup", up);
+  });
   const openWire = (w) => {
     const key = `${w.cap}|${w.port}|${w.seg}`;
     if (ui.wires[key]) { ui.wires[key].pip.focus(); return; }
@@ -665,16 +677,7 @@ function mount(main, run, opts = {}) {
       else { wd.paused = !wd.paused; b.textContent = wd.paused ? "Resume" : "Pause"; }
     }));
     pip.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-    // drag by the header
-    const head = $(".pip-head", pip);
-    head.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button")) return;
-      const r = pip.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
-      head.setPointerCapture(e.pointerId);
-      const mv = (ev) => { pip.style.left = Math.max(0, Math.min(window.innerWidth - r.width, ev.clientX - dx)) + "px"; pip.style.top = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy)) + "px"; pip.style.right = "auto"; pip.style.bottom = "auto"; };
-      const up = () => { head.removeEventListener("pointermove", mv); head.removeEventListener("pointerup", up); };
-      head.addEventListener("pointermove", mv); head.addEventListener("pointerup", up);
-    });
+    dragBy($(".pip-head", pip), pip);
     if (live.state === "live" && real.on) {
       st.textContent = "real network";
       (async () => {
@@ -704,6 +707,109 @@ function mount(main, run, opts = {}) {
       for (const l of lines) { const pk = parseTcpdump(l); const txt = pk && snifferLine(wd.s, pk); if (txt) wd.add(txt); }
       if (!r.alive) { wd.add(`\n${wd.n} packets received by filter\n0 packets dropped by kernel`); wd.shell = null; }
     }
+  };
+
+  // ----- office traffic: the five generators, run by the agent in each client's namespace -----
+  ui.traffic = ui.traffic || { on: false, rate: 1, next: 0, events: [], running: [], gen: -1, rec: null, pollAt: 0 };
+  const trafficStop = async () => { await realCall({ op: "gen.stop" }).catch(() => {}); };
+  const trafficSet = async (on) => {
+    const T = ui.traffic;
+    T.on = on; T.gen = -1;
+    run.lab.traffic = { on };
+    run.lab.dirty();
+    if (!on) { T.rec = null; await trafficStop(); }
+    devTabs(); renderTraffic();
+  };
+  const trafficTick = async () => {
+    const T = ui.traffic;
+    if (!T.on || !real.net) return;
+    if (T.gen !== real.net.generation || T.rateSent !== T.rate) {
+      await trafficStop();
+      const plan = trafficPlan(run.lab, T.rec ? BASELINE_RATE : T.rate);
+      T.planned = plan.length; T.failed = [];
+      for (const g of plan) {
+        const r = await realCall({ op: "gen.start", ...g }).catch((e) => ({ err: e.message }));
+        if (r && r.err) { if (/unknown op|not allowed/.test(r.err)) { T.failed = ["This FortiTatake OS image is older than office traffic (agent 0.11). Rebuild it on the OS screen."]; break; } T.failed.push(`${g.id}: ${r.err}`); }
+      }
+      T.gen = real.net.generation; T.rateSent = T.rate;
+      renderTraffic();
+    }
+    if (Date.now() - T.pollAt < 1500) return;
+    T.pollAt = Date.now();
+    const r = await realCall({ op: "gen.stats", since: T.next }).catch(() => null);
+    if (!r) return;
+    T.next = r.next; T.running = r.running || [];
+    for (const e of r.events || []) {
+      T.events.push(e);
+      if (T.rec) T.rec.events.push({ ...e, vt: virtualTime(T.rec.start, e.t) });
+    }
+    if (T.events.length > 400) T.events.splice(0, T.events.length - 400);
+    if (T.rec && Date.now() - T.rec.start >= T.rec.ms) finishBaseline();
+    renderTraffic();
+  };
+  const blKey = () => `ftk-baseline-${run.def.id}`;
+  const loadBaseline = () => { try { return JSON.parse(localStorage.getItem(blKey()) || "null"); } catch (e) { return null; } };
+  const finishBaseline = () => {
+    const T = ui.traffic, rec = T.rec;
+    T.rec = null; T.rateSent = -1; // back to the chosen rate
+    const bl = { lab: run.def.id, recorded: new Date().toISOString(), rate: BASELINE_RATE, hours: BASELINE_HOURS, events: rec.events.map(({ vt, ns, kind, what, dst, port, proto, bytes, ok }) => ({ vt, ns, kind, what, dst, port, proto, bytes, ok })) };
+    try { localStorage.setItem(blKey(), JSON.stringify(bl)); } catch (e) { /* too big for this browser: still offered as a download */ }
+    T.baseline = bl;
+  };
+  const downloadBaseline = () => {
+    const bl = ui.traffic.baseline || loadBaseline();
+    if (!bl) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(bl, null, 1)], { type: "application/json" }));
+    a.download = `baseline-${run.def.id}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const renderTraffic = () => {
+    const T = ui.traffic, pip = T.pip;
+    if (!pip) return;
+    $("[data-a=toggle]", pip).textContent = T.on ? "Stop" : "Start";
+    $("[data-a=rec]", pip).disabled = !T.on || !!T.rec;
+    $(".pip-state", pip).textContent = T.rec ? `recording a workday: ${Math.min(100, Math.round((Date.now() - T.rec.start) / T.rec.ms * 100))} %` : T.on ? `${T.running.length} generators` : "stopped";
+    const rows = T.running.slice().sort((a, b) => a.id.localeCompare(b.id)).map((g) => `${g.ns.padEnd(12)} ${g.kind.padEnd(6)} ${String(g.flows).padStart(5)} flows ${String(g.errors).padStart(4)} failed ${fmtBytes(g.bytes).padStart(9)}`);
+    const bl = T.baseline || loadBaseline();
+    const sum = bl ? Object.entries(summarize(bl.events)).map(([k, v]) => `  ${k.padEnd(6)} ${String(v.flows).padStart(5)} flows, ${v.ok} ok, ${fmtBytes(v.bytes)}`).join("\n") : "";
+    const evs = T.events.slice(-120).map((e) => `${localStamp(e.t).slice(11, 19)} ${e.ns} ${e.kind} ${e.what} -> ${e.dst}:${e.port}/${e.proto} ${e.ok ? fmtBytes(e.bytes) : "FAILED " + (e.err || "")}`);
+    $(".pip-sum", pip).textContent = [
+      T.on ? "" : "Stopped. Start runs browsing, DNS, file share, mail and voice from the lab PCs, for real: the flows cross your policies, NAT, the session list, the sniffer and the logs.",
+      ...(T.failed && T.failed.length ? ["Could not start:", ...T.failed.map((f) => "  " + f)] : []),
+      ...(rows.length ? ["Device       Gen    Flows", ...rows] : []),
+      ...(bl ? [`Baseline workday recorded ${bl.recorded.slice(0, 16).replace("T", " ")} (${bl.events.length} flows):`, sum] : []),
+    ].filter((x) => x).join("\n");
+    $(".pip-out", pip).textContent = evs.join("\n");
+    const o = $(".pip-out", pip); o.scrollTop = o.scrollHeight;
+  };
+  const openTraffic = () => {
+    const T = ui.traffic;
+    if (T.pip) { T.pip.focus(); return; }
+    const pip = h(`<section class="lr-pip lr-traffic" role="dialog" aria-label="Office traffic" tabindex="-1" style="right:16px;bottom:16px">
+      <header class="pip-head"><span class="pip-title">Office traffic</span><span class="pip-state"></span><button data-a="close" aria-label="Close">\u2715</button></header>
+      <div class="pip-cmd pip-ctl"><button data-a="toggle">Start</button>
+        <label>Speed <select data-a="rate"><option value="1">1\u00d7 (real time)</option><option value="10">10\u00d7</option><option value="60">60\u00d7</option></select></label>
+        <button data-a="rec" title="Run a 9-hour office day at ${BASELINE_RATE}\u00d7 (about 4.5 minutes) and keep its flows as this lab's baseline">Record a workday</button>
+        <button data-a="dl" title="The recorded baseline as JSON">Baseline .json</button></div>
+      <pre class="pip-sum"></pre>
+      <pre class="pip-out" aria-live="off"></pre>
+    </section>`);
+    document.body.appendChild(pip);
+    T.pip = pip;
+    $("[data-a=rate]", pip).value = String(T.rate);
+    $("[data-a=rate]", pip).onchange = (e) => { T.rate = Number(e.target.value); renderTraffic(); };
+    $("[data-a=toggle]", pip).onclick = () => trafficSet(!T.on);
+    $("[data-a=rec]", pip).onclick = () => { T.rec = { start: Date.now(), ms: (BASELINE_HOURS * 3600000) / BASELINE_RATE, events: [] }; T.rateSent = -1; renderTraffic(); };
+    $("[data-a=dl]", pip).onclick = downloadBaseline;
+    const close = () => { pip.remove(); T.pip = null; };
+    $("[data-a=close]", pip).onclick = close;
+    pip.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    dragBy($(".pip-head", pip), pip);
+    if (!ui.trafficNav) { ui.trafficNav = true; window.addEventListener("hashchange", () => { ui.trafficNav = false; if (T.pip) close(); if (T.on) { T.on = false; trafficStop(); } }, { once: true }); }
+    renderTraffic();
+    pip.focus();
   };
 
   // wait until the real network matches the lab (after an address or route change)

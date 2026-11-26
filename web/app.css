@@ -527,3 +527,13 @@ button.danger { color: var(--bad); border-color: var(--bad); }
 .lr-pip .pip-head button { padding: 2px 7px; font: .7rem var(--mono); background: transparent; color: inherit; border: 1px solid currentColor; min-height: 0; }
 .lr-pip .pip-cmd { padding: 4px 10px; color: var(--term-prompt); border-bottom: 1px solid rgba(255, 255, 255, .08); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr-pip .pip-out { margin: 0; padding: 6px 10px; overflow: auto; white-space: pre; background: transparent; color: inherit; font: inherit; border: 0; }
+.lr-traffic { width: min(520px, 94vw); height: min(420px, 72vh); }
+.lr-pip .pip-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; white-space: normal; color: var(--term-ink); }
+.lr-pip .pip-ctl button, .lr-pip .pip-ctl select { padding: 2px 8px; font: .72rem var(--mono); min-height: 0; background: rgba(255, 255, 255, .08); color: var(--term-ink); border: 1px solid rgba(255, 255, 255, .2); }
+.lr-pip .pip-ctl button:disabled { opacity: .45; }
+.lr-pip .pip-ctl label { display: inline-flex; gap: 4px; align-items: center; }
+.lr-traffic { display: flex; flex-direction: column; }
+.lr-traffic .pip-sum { flex: 0 0 auto; max-height: 45%; }
+.lr-traffic .pip-out { flex: 1 1 0; min-height: 0; }
+.lr-pip .pip-sum { margin: 0; padding: 6px 10px; max-height: 42%; overflow: auto; white-space: pre; background: rgba(255, 255, 255, .04); color: inherit; font: inherit; border: 0; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.lr-pip .pip-sum:empty { padding: 0; border: 0; }

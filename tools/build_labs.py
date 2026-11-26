@@ -3,6 +3,7 @@
 
 A lab file holds one lab. Topologies can come from content/labs/_templates.yaml:
   topology: {use: clinic, devices: {FGT: {config: "..."}}, add_devices: [...], add_segments: [...], layout: {...}}
+  (optional) topology.traffic: {rate: 1, hosts: {RECEPCION: [web, dns, mail, smb], PHONE-1: [voice]}}: office traffic generators per device; without it a profile is derived from the devices
 Single-part labs may put tasks/checks/hints/solution at the top level; they become parts[0].
 Usage: python3 tools/build_labs.py [--check]
 """
@@ -26,7 +27,7 @@ def merge_topology(t, templates, lab_id):
     if not t.get("use") and isinstance(t.get("devices"), list):
         base = {k: v for k, v in t.items() if k not in ("devices", "segments", "layout")}
         base["devices"], base["segments"], base["layout"] = t["devices"], t.get("segments", []), t.get("layout", {})
-        t = {k: v for k, v in t.items() if k in ("clock", "dns", "title")}
+        t = {k: v for k, v in t.items() if k in ("clock", "dns", "title", "traffic")}
     devs = {d["id"]: d for d in base.get("devices", [])}
     order = [d["id"] for d in base.get("devices", [])]
     for did, over in (t.get("devices") or {}).items():
@@ -58,7 +59,7 @@ def merge_topology(t, templates, lab_id):
     layout = dict(base.get("layout", {}))
     layout.update(t.get("layout") or {})
     out = {k: v for k, v in base.items() if k not in ("devices", "segments", "layout")}
-    for k in ("clock", "dns", "title", "story"):
+    for k in ("clock", "dns", "title", "story", "traffic"):
         if k in t:
             out[k] = t[k]
     out["devices"] = [devs[i] for i in order]

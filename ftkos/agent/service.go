@@ -58,8 +58,17 @@ func serviceStart(r req) (map[string]any, error) {
 	cmd.Dir = dir
 	log, _ := os.Create(filepath.Join(dir, "service.log"))
 	cmd.Stdout, cmd.Stderr = log, log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
+	attr, cgf := cgAttr(ns, &syscall.SysProcAttr{Setpgid: true})
+	cmd.SysProcAttr = attr
+	err := cmd.Start()
+	if err != nil && cgf != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		err = cmd.Start()
+	}
+	if cgf != nil {
+		cgf.Close()
+	}
+	if err != nil {
 		return nil, err
 	}
 	svcMu.Lock()

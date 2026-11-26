@@ -4,6 +4,7 @@
 // FortiGate (policies, VIPs, NAT, allowaccess) and the servers each device runs.
 // The simulator still explains what happened (policy ids, trace lines); the kernel decides whether
 // packets get through.
+import { trafficCompile } from "./traffic.js";
 import { NOT_INTERNET_CIDRS } from "./sim.js";
 import { FortiGate } from "./fgt.js";
 import { ipToInt, intToIp, parsePrefix, prefixStr, network, isPrivate } from "./net.js";
@@ -240,6 +241,7 @@ export function compile(lab) {
     const ap = adminPorts(fg);
     listen.push({ ns: fg.id, binds: [...new Set([ap.https[1], 80, ap.ssh[1], 23])].map((port) => ({ proto: "tcp", port, ...(port === ap.ssh[1] ? { mode: "ssh", banner: SSH_BANNER.fortios } : port === 23 && port !== ap.https[1] ? { mode: "telnet" } : {}) })).concat(out.dns ? [{ proto: "udp", port: 53 }] : []), names: out.dns ? Object.fromEntries([...lab.names].map(([n, ip]) => [n, intToIp(ip)])) : undefined });
   }
+  trafficCompile(lab, { topo, listen });
   return { topo, nft, listen, where, notes, extra, ver: lab.ver };
 }
 

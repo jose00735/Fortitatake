@@ -98,6 +98,21 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.11.0 adds (OS stage 4 kernel, office traffic generators, per-device cgroups)
+
+- **FortiTatake OS kernel:** cgroup v2 with the cpu, memory and pids controllers, and NFQUEUE (`CONFIG_NETFILTER_NETLINK_QUEUE`, `CONFIG_NFT_QUEUE`) for the inline IPS that comes next. Tested in QEMU: a busy loop in a lab shell is throttled to half a core (`nr_throttled` climbs, `cpu.max` 50000/100000), and an nft `queue flags bypass` rule loads in a FortiGate namespace. **Rebuild FortiTatake OS** to get it; the app keeps working on an older image, without caps and without office traffic.
+- **Per-device cgroups.** Lab shells and services start inside `/sys/fs/cgroup/ftk/<device>` (clone3 into the cgroup, so children can't escape): half a core, 96 MB, 256 processes per device, and 60 % of the VM's memory for the whole lab. `cg.stat` returns CPU time, throttling, memory, peak and OOM kills per device, which the EDR collectors read in v0.13.
+- **Office traffic** (button next to "Linux shell" when the real network is live). Five generators run inside the PCs' namespaces and talk to stand-in servers, all real connections through your FortiGate:
+  - **web:** a DNS lookup through the PC's own resolver, then HTTP/HTTPS pages of 1-6 objects with browser headers over keep-alive, to real site names (answered by the Internet stand-in) and the lab's published servers.
+  - **dns:** A and AAAA lookups, about 3 % for names that don't exist, NTP to a lab time server.
+  - **smb:** SMB2 negotiate, session setup, tree connect, create, then reads or writes of 4 KB-2 MB to the NAS (its stand-in logs each command and file).
+  - **mail:** SMTP submission on 587 with STARTTLS, IMAPS polls on 993, HTTPS API calls to a SaaS name; the mail and SaaS stand-ins live in the lab Internet on 198.51.100.0/24 (documentation space, never routed out).
+  - **voice:** SIP REGISTER, INVITE and BYE on UDP 5060 and an RTP stream at 50 packets/s (172-byte G.711 frames) to a PBX.
+  - Speeds 1×, 10× and 60×; seeded from the lab, so a run repeats. A PC behind an ISP router (a teleworker) browses and reads mail but doesn't use the office file share or PBX. Labs can set their own profile with `topology.traffic: {rate, hosts: {DEVICE: [web, dns, mail, smb, voice]}}`; otherwise PCs get web, dns and mail, plus smb when a NAS exists and voice when a PBX exists (no current lab has a PBX or phones, so voice only runs where a lab profile asks for it).
+  - The panel lists each generator's flows, failures and bytes and a live log of every flow; failures are named (timeout, refused, NXDOMAIN), so a missing policy or DNS setting shows up at once.
+- **Baseline recorder.** "Record a workday" runs a 9-hour office day at 120× (about 4.5 minutes) and keeps its flows, with virtual 08:00-17:00 timestamps, as the lab's baseline (in the browser, and as a JSON download). The SIEM `test_rule` replay still uses the scripted normal week; switching it to recorded traffic comes with the EDR and SIEM work in v0.13.
+- Tested in QEMU on the clinic lab: 16 generators, 285 FortiGate sessions in 25 s at 60×, SMB commands and SMTP/IMAPS sessions logged by the stand-ins, SIP and RTP to a PBX stand-in, and the live wire sniffer showing the generated packets.
+
 ### What v0.10.2 adds (wire sniffer, man pages, sessions that stay visible)
 
 - **Click a link on the lab map to sniff it.** Each wire opens a small square window, like `diagnose sniffer packet <port> 'none' 4 0 l`: local timestamps, the port, in/out and the packet. It captures at the better-placed end (FortiGate, then router, then server, then PC); on a LAN switch it sees what crosses that device's port. Pause, Clear and close; drag it by the title bar and resize it from the corner; up to a few at once. On the real network it runs tcpdump in that device's namespace; in the simulator it taps the packet walk, including unanswered ARP requests.
@@ -406,7 +421,7 @@ Its `why_wrong` names the misconception it targets. No option that a practitione
 - Each module has at least one output-based or best-first-step question at tier 3+.
 - STATUS records the before/after counts and blind-guess scores per stage.
 
-### v0.11.0–v0.14.0: FortiTatake OS stages 4–7
+### v0.11.0–v0.14.0: FortiTatake OS stages 4–7 (v0.11.0 done: kernel, cgroups, office traffic)
 
 Before any FortiSASE engine work. Stage 4: FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 5: one FRR across routers as VRFs, memory balloon and warm snapshot. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Stage 7: Android KVM/AVF and LKL paths, CPU-tuned builds. Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
 

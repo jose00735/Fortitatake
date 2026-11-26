@@ -74,8 +74,17 @@ func shellOpen(r req) (map[string]any, error) {
 		return nil, err
 	}
 	cmd.Stdout, cmd.Stderr = slave, slave
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 1}
-	if err := cmd.Start(); err != nil {
+	attr, cgf := cgAttr(ns, &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 1})
+	cmd.SysProcAttr = attr
+	err = cmd.Start()
+	if err != nil && cgf != nil { // a kernel without clone3 into a cgroup: run uncapped
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 1}
+		err = cmd.Start()
+	}
+	if cgf != nil {
+		cgf.Close()
+	}
+	if err != nil {
 		master.Close()
 		slave.Close()
 		return nil, err

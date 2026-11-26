@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.10.2"
+const agentVersion = "0.11.0"
 
 var started = time.Now()
 
@@ -205,6 +205,16 @@ func dispatch(r req) (map[string]any, error) {
 		return remoteRead(r)
 	case "remote.close":
 		return remoteClose(r)
+	case "cg.stat":
+		return cgStat(r)
+	case "cg.set":
+		return cgSet(r)
+	case "gen.start":
+		return genStart(r)
+	case "gen.stop":
+		return genStop(r)
+	case "gen.stats":
+		return genStats(r)
 	case "bench":
 		return bench(r)
 	case "mem":

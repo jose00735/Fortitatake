@@ -187,6 +187,9 @@ func serveTCP(n *nsListen, l net.Listener, port int, keep bool) {
 				return
 			}
 			c.SetDeadline(time.Now().Add(5 * time.Second))
+			if officeTCP(n, c, port, src, dst) {
+				return
+			}
 			switch port {
 			case 443, 8443, 10443:
 				tc := tls.Server(c, labTLS())
@@ -288,6 +291,22 @@ func serveUDP(n *nsListen, c net.PacketConn, port int, keep bool) {
 		h := hit{Proto: "udp", Port: port, Src: src, Dst: local}
 		if keep {
 			h.Data = strings.TrimSpace(string(buf[:k]))
+		}
+		if port == rtpPort { // 50 packets a second: one hit per stream every 10 s
+			if !rtpSeen(src) {
+				h.Data = "RTP stream"
+				n.add(h)
+			}
+			continue
+		}
+		if r := officeUDP(port, buf[:k]); r != nil {
+			h.Data = strings.SplitN(string(buf[:k]), "\r\n", 2)[0]
+			if port == 123 {
+				h.Data = "NTP client request"
+			}
+			n.add(h)
+			c.WriteTo(r, from)
+			continue
 		}
 		n.add(h)
 		if port == 53 {
