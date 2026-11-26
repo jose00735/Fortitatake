@@ -436,7 +436,7 @@ Its `why_wrong` names the misconception it targets. No option that a practitione
 
 ### v0.11.0–v0.14.0: FortiTatake OS stages 4–7 (v0.11.0 done: kernel, cgroups, office traffic; v0.12.0 done: threat packs and the inline IPS)
 
-Before any FortiSASE engine work. Stage 4: FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 5: one FRR across routers as VRFs, memory balloon and warm snapshot. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Stage 7: Android KVM/AVF and LKL paths, CPU-tuned builds. Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
+Before any FortiSASE engine work. Stage 4: FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Dropped by Jose (2026-11-25): stage 5 (one FRR across routers as VRFs, memory balloon, warm snapshot) and stage 7 (Android KVM/AVF and LKL paths, CPU-tuned builds). Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
 
 ### v0.15.0: FortiSASE on the real engine
 
