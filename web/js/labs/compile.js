@@ -5,6 +5,7 @@
 // The simulator still explains what happened (policy ids, trace lines); the kernel decides whether
 // packets get through.
 import { trafficCompile } from "./traffic.js";
+import { ipsPlan, ipsNft, ipsLoadReq, ATTACKER_IP } from "./ips.js";
 import { NOT_INTERNET_CIDRS } from "./sim.js";
 import { FortiGate } from "./fgt.js";
 import { ipToInt, intToIp, parsePrefix, prefixStr, network, isPrivate } from "./net.js";
@@ -40,6 +41,12 @@ export function unsupported(lab) {
     } else if (d.kind === "fortiswitch") { /* cabled through: switchSegments() already gives the broadcast domains */ }
   }
   return why;
+}
+
+export function agentAtLeast(lab, v) {
+  const a = String(lab.agentVer || "0").split(".").map(Number), b = v.split(".").map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
+  return true;
 }
 
 export function compile(lab) {
@@ -242,7 +249,19 @@ export function compile(lab) {
     listen.push({ ns: fg.id, binds: [...new Set([ap.https[1], 80, ap.ssh[1], 23])].map((port) => ({ proto: "tcp", port, ...(port === ap.ssh[1] ? { mode: "ssh", banner: SSH_BANNER.fortios } : port === 23 && port !== ap.https[1] ? { mode: "telnet" } : {}) })).concat(out.dns ? [{ proto: "udp", port: 53 }] : []), names: out.dns ? Object.fromEntries([...lab.names].map(([n, ip]) => [n, intToIp(ip)])) : undefined });
   }
   trafficCompile(lab, { topo, listen });
-  return { topo, nft, listen, where, notes, extra, ver: lab.ver };
+  // IPS (agent 0.12+, a kernel with NFQUEUE): one queue per policy with a sensor, read by the agent
+  const ips = {};
+  if (agentAtLeast(lab, "0.12")) {
+    for (const fg of devs.filter((d) => d instanceof FortiGate && d.kind === "fortigate" && nft[d.id])) {
+      const plan = ipsPlan(lab, fg);
+      const t = ipsNft(lab, fg, plan);
+      if (t) nft[fg.id] += "\n" + t;
+      ips[fg.id] = ipsLoadReq(fg, plan);
+    }
+    // the lab Internet's attacker address, for the attack runner
+    if (topo.internet) topo.addrs.push({ dev: topo.internet.ns, if: "lo", cidr: ATTACKER_IP + "/32" });
+  }
+  return { topo, nft, listen, where, notes, extra, ips, ver: lab.ver };
 }
 
 // ---------------------------------------------------------------- IPsec

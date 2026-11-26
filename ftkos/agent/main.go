@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.11.0"
+const agentVersion = "0.12.0"
 
 var started = time.Now()
 
@@ -31,7 +31,7 @@ var opLock sync.RWMutex
 
 var mutating = map[string]bool{
 	"topo.apply": true, "topo.clear": true, "ns.nft": true, "ns.link": true,
-	"service.start": true, "service.stop": true, "bench": true, "listen.start": true,
+	"service.start": true, "service.stop": true, "bench": true, "listen.start": true, "ips.load": true,
 }
 
 type req map[string]any
@@ -209,6 +209,12 @@ func dispatch(r req) (map[string]any, error) {
 		return cgStat(r)
 	case "cg.set":
 		return cgSet(r)
+	case "ips.load":
+		return ipsLoad(r)
+	case "ips.log":
+		return ipsLogs(r)
+	case "attack.run":
+		return attackRun(r)
 	case "gen.start":
 		return genStart(r)
 	case "gen.stop":

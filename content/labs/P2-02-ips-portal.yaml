@@ -1,0 +1,98 @@
+id: P2.02
+track: fortigate
+modules: [M4.08, M4.07, M3.05]
+tier: 2
+order: 31
+kind: project
+title: "Clínica San Rafael: IPS for the published portal"
+customer: Clínica San Rafael
+par: 45
+skills: [IPS sensors, deep inspection for a published server, admin exposure, threat packs]
+brief: |
+  **SOW 2026-118, phase 3 (intrusion prevention).** The appointment portal **citas.clinicasanrafael.co** (WEB-CITAS, a
+  Java app behind VIP-CITAS-443) is on the Internet. The clinic's insurer sent a list of attacks that hit small clinics
+  this year and wants proof the FortiGate stops them. A contractor also left HTTPS admin open on the WAN "to help remotely".
+
+  Use **Attacks** (next to the device tabs) to send each threat pack from the lab Internet at the portal and watch what
+  happens before and after your changes. With the real network on, the requests and the IPS verdicts are real packets:
+  look at `execute log filter category 4` then `execute log display`, the sniffer, and the session list.
+topology:
+  use: clinic-live
+  devices:
+    FGT-SR:
+      config: |
+        config system interface
+        edit wan1
+        set allowaccess ping https
+        next
+        end
+        config system global
+        set admin-sport 10443
+        end
+parts:
+  - id: a
+    title: Stop exploit traffic aimed at the portal
+    tasks:
+      - "Launch TP-2021-44228 (Log4Shell) from the Internet attacker at citas.clinicasanrafael.co first: it reaches the server."
+      - "IPS sensor PORTAL-IPS with one entry: location server, severity critical and high, action block."
+      - "On Citas-Publish (policy 2): UTM on, PORTAL-IPS, and SSL profile deep-inspection (the portal is HTTPS)."
+    checks:
+      - text: "Log4Shell requests to the portal are blocked"
+        attack: {pack: TP-2021-44228, to: citas.clinicasanrafael.co, port: 443, expect: blocked, policy: 2}
+      - text: "The Ivanti-style path traversal is blocked too"
+        attack: {pack: TP-2023-46805, to: citas.clinicasanrafael.co, port: 443, expect: blocked}
+      - text: "Patients still reach the portal"
+        web: {from: HOME-PC, url: "https://citas.clinicasanrafael.co/", expect: allowed}
+    hints:
+      - "`config ips sensor` / `edit PORTAL-IPS` / `config entries` / `edit 1` / `set location server` / `set severity critical high` / `set action block` / `end`."
+      - "The IPS can only match what it can read. The attack is HTTPS: with certificate inspection (or none) the sensor sees ciphertext and lets it pass. Try the attack before and after `set ssl-ssh-profile deep-inspection`."
+    solution:
+      FGT-SR: |
+        config ips sensor
+        edit PORTAL-IPS
+        config entries
+        edit 1
+        set location server
+        set severity critical high
+        set action block
+        next
+        end
+        next
+        end
+        config firewall policy
+        edit 2
+        set utm-status enable
+        set ips-sensor PORTAL-IPS
+        set ssl-ssh-profile deep-inspection
+        next
+        end
+    explain: |
+      An IPS sensor is a filter over the signature database: here every critical or high server-side signature, blocked.
+      On a policy that publishes an HTTPS server, the FortiGate needs to decrypt to see the request line and headers the
+      signatures key on; FortiOS does that with the server's own certificate on the SSL profile ("protecting SSL server").
+      Without it the sensor is on the policy and still blind.
+  - id: b
+    title: Close the admin door the contractor left open
+    tasks:
+      - "Launch TP-2022-40684 from the Internet attacker at 203.0.113.2 on port 10443: the FortiGate's own admin answers."
+      - "Remove HTTPS from wan1's allowaccess (keep ping). The insurer asked for no admin on the WAN at all."
+    checks:
+      - text: "The admin-API bypass from the Internet gets nowhere"
+        attack: {pack: TP-2022-40684, to: 203.0.113.2, port: 10443, expect: stopped}
+      - text: "Staff can still manage the FortiGate from the LAN"
+        probe: {from: ADMIN-PC, to: 10.10.10.1, proto: tcp, port: 10443, expect: reach}
+      - text: "The portal stays protected"
+        attack: {pack: TP-2021-44228, to: citas.clinicasanrafael.co, port: 443, expect: blocked}
+    hints:
+      - "`config system interface` / `edit wan1` / `set allowaccess ping` / `end`."
+      - "No IPS sensor applies to traffic aimed at the FortiGate itself through a firewall policy: the fix for an exposed admin interface is not exposing it (allowaccess, trusted hosts, local-in policies)."
+    solution:
+      FGT-SR: |
+        config system interface
+        edit wan1
+        set allowaccess ping
+        next
+        end
+    explain: |
+      CVE-2022-40684 abused the admin REST API itself. Exposure is the root cause: admin access on an Internet-facing
+      interface. Removing it (or restricting it with trusted hosts and a local-in policy) stops the whole class, patched or not.

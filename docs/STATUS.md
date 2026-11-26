@@ -98,6 +98,19 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.12.0 adds (threat packs and a real inline IPS)
+
+- **Threat packs** (`content/threats/`, format in its README): one YAML file per CVE with our own dotted attack name, severity, targets, the IPS signatures and the generator requests. `python3 tools/build_threats.py` checks every pack: each attack variant trips its own signatures, ten ordinary office and admin requests trip none, and requests may only aim at `{{target_host}}`. A newer CVE is one new file. The packs are the only signatures the lab IPS knows.
+- **Three packs:** TP-2021-44228 (Log4Shell: JNDI lookups in headers, URI and nested-lookup obfuscation), TP-2022-40684 (FortiOS admin API with `User-Agent: Report Runner` and a loopback `Forwarded` header, as in Horizon3.ai's write-up), TP-2023-46805 (Ivanti Connect Secure `/api/v1/totp/user-backup-code/../../` traversal and the keys-status command separator, per Rapid7's analysis). Requests carry only the shape the signatures key on and go to lab stand-ins.
+- **Real inline IPS (agent 0.12, needs the v0.11 kernel).** Each accept policy with `utm-status enable` and an `ips-sensor` gets an NFQUEUE rule in the FortiGate's namespace for the first 12 packets of its sessions on the signatures' ports; the agent (a small netlink client, no libraries) matches the request and gives the verdict inline: accept, drop (block, and the rest of the session with it) or a TCP reset. `config ips global` `fail-open enable` adds the queue bypass. Matching is a literal/regex scan over the HTTP buffers (method, URI, headers, body, raw), the same in the agent, the simulator and the build check.
+- **Sensors as on FortiOS:** entries pick signatures by rule id, severity, location, OS, application, protocol or CVE, first matching entry wins, actions pass, block, reset or default (critical and high block). Built-in names (`default`, `high_security`, `protect_http_server`, ...) work without a config entry.
+- **HTTPS needs deep inspection.** FortiTatake doesn't re-sign certificates: the lab's attack runner hands the FortiGate engine the plaintext of each TLS request, and the IPS reads it only when the policy's SSL profile is deep-inspection. With certificate inspection the sensor sees ciphertext and the attack gets through, as on a real FortiGate.
+- **IPS logs:** every hit becomes a FortiOS-style `utm/ips` log (attack, attackid, severity, CVE, action dropped/reset/detected, policy, interfaces, URL) that flows to FortiAnalyzer and FortiSIEM like the others. `execute log filter category <0-4>` and `execute log display` on the FortiGate now show its memory log (traffic, event, virus, webfilter, IPS).
+- **Attacks panel** (next to the device tabs): pick a pack, a source (the lab Internet's attacker at 198.51.100.66 or a lab device), a target and a port; each request shows whether it was answered, dropped or reset and which policy and signature acted. In the simulator the same packs and sensors give the same verdicts.
+- **New lab P2.02, "IPS for the published portal"** (clinic, 2 parts): a sensor with deep inspection on the VIP policy, then closing the HTTPS admin a contractor left on the WAN (the CVE-2022-40684 lesson: exposure, not signatures). New `attack:` check type (`expect: blocked | reset | allowed | stopped`).
+- Tested in QEMU and in the app with the real network: no sensor → the server answers; sensor with certificate inspection → still answered; with deep inspection → every request dropped and logged; action reset → connection reset; ordinary HTTPS through the same policy unaffected.
+- Not yet: the 12-packet window means requests split across many segments aren't reassembled; client-side packs and non-HTTP protocols come with later packs.
+
 ### What v0.11.0 adds (OS stage 4 kernel, office traffic generators, per-device cgroups)
 
 - **FortiTatake OS kernel:** cgroup v2 with the cpu, memory and pids controllers, and NFQUEUE (`CONFIG_NETFILTER_NETLINK_QUEUE`, `CONFIG_NFT_QUEUE`) for the inline IPS that comes next. Tested in QEMU: a busy loop in a lab shell is throttled to half a core (`nr_throttled` climbs, `cpu.max` 50000/100000), and an nft `queue flags bypass` rule loads in a FortiGate namespace. **Rebuild FortiTatake OS** to get it; the app keeps working on an older image, without caps and without office traffic.
@@ -421,7 +434,7 @@ Its `why_wrong` names the misconception it targets. No option that a practitione
 - Each module has at least one output-based or best-first-step question at tier 3+.
 - STATUS records the before/after counts and blind-guess scores per stage.
 
-### v0.11.0–v0.14.0: FortiTatake OS stages 4–7 (v0.11.0 done: kernel, cgroups, office traffic)
+### v0.11.0–v0.14.0: FortiTatake OS stages 4–7 (v0.11.0 done: kernel, cgroups, office traffic; v0.12.0 done: threat packs and the inline IPS)
 
 Before any FortiSASE engine work. Stage 4: FRR routers and BGP/OSPF on the real engine for every routing lab. Stage 5: one FRR across routers as VRFs, memory balloon and warm snapshot. Stage 6: strongSwan-backed IPsec interop with third-party peers and ADVPN shortcuts. Stage 7: Android KVM/AVF and LKL paths, CPU-tuned builds. Each stage ships with the tier-run probe check (simulator vs kernel, 0 disagreements).
 

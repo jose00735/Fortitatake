@@ -4,6 +4,8 @@ import { pick, tokenize } from "./fgt.js";
 import { ipToInt, intToIp, prefixStr, maskStr, hex, inPrefix, parsePrefix } from "./net.js";
 import { FortiGate } from "./fgt.js";
 import { hostConfig, routerConfig, ROUTER_CONFIG_HELP } from "./netcfg.js";
+import { fmtLog } from "./utm.js";
+const LOGCAT = { 0: (x) => x.type === "traffic", 1: (x) => x.type === "event", 2: (x) => x.subtype === "virus", 3: (x) => x.subtype === "webfilter", 4: (x) => x.subtype === "ips" };
 
 const NOT_SIM = "This command exists in FortiOS 8.0.2 but is not simulated in FortiTatake.";
 const pad = (s, n) => (String(s).length >= n ? String(s) + " " : String(s) + " ".repeat(n - String(s).length));
@@ -265,7 +267,15 @@ function execCmd(lab, fg, r0, raw) {
     return out.join("\n") || "";
   }
   if (match(r, ["reboot"]) || match(r, ["factoryreset"]) || match(r, ["shutdown"])) return "Rebooting or resetting is disabled in FortiTatake labs: it would wipe the scenario.";
-  if (match(r, ["log", "display"])) return "0 logs found.\n0 logs returned.";
+  // execute log filter category <n> / execute log display: the FortiGate's own memory log
+  if (match(r, ["log", "filter", "category"])) { const n = Number(raw[3]); if (!(n in LOGCAT)) return "Invalid category. Valid: 0 traffic, 1 event, 2 virus, 3 webfilter, 4 ips"; fg.logCat = n; return ""; }
+  if (match(r, ["log", "filter", "reset"])) { fg.logCat = 0; return ""; }
+  if (match(r, ["log", "display"])) {
+    const want = LOGCAT[fg.logCat || 0];
+    const rows = (fg.logs || []).filter((x) => want(x)).slice(-10).reverse();
+    const total = (fg.logs || []).filter((x) => want(x)).length;
+    return `${total} logs found.\n${rows.length} logs returned.\n` + rows.map((x, i) => `\n${i + 1}: ${fmtLog(x)}`).join("\n");
+  }
   if (fg.schema.cmds.some((c) => c.startsWith("execute " + r.slice(0, 1).join(" ")))) return NOT_SIM;
   return `command parse error before '${raw[0] || ""}'\nCommand fail. Return code -61`;
 }

@@ -26,6 +26,7 @@ function one(lab, c, answers) {
   if (c.client) return clientCheck(lab, c.client);
   if (c.sdwan) return sdwanCheck(lab, c.sdwan);
   if (c.web) return webCheck(lab, c.web);
+  if (c.attack) return attackCheck(lab, c.attack);
   if (c.faz) return fazCheck(lab, c.faz);
   if (c.fmg) return fmgCheck(lab, c.fmg);
   if (c.login) return loginCheck(lab, c.login);
@@ -399,4 +400,18 @@ function fmgCheck(lab, c) {
   const st = lab.fmgStatus(fmg, fg);
   if (c.status && !st.startsWith(c.status)) return { pass: false, detail: `${c.device} on ${c.dev}: ${st}.` };
   return { pass: true, detail: `${c.device} on ${c.dev}: ${st}.` };
+}
+
+// an attack from a threat pack: every request blocked (or reset), or every one reaching the server
+function attackCheck(lab, a) {
+  lab.quiet = (lab.quiet || 0) + 1;
+  let r;
+  try { r = lab.attackSim(a.from || "@attacker", a.to, a.pack, a.port); } finally { lab.quiet--; }
+  if (r.error) return { pass: false, detail: r.error };
+  const want = a.expect || "blocked";
+  const okFor = { allowed: ["reached"], reset: ["reset"], blocked: ["blocked", "reset"], stopped: ["blocked", "reset", "failed"] }[want] || ["blocked", "reset"];
+  const bad = r.results.filter((x) => !okFor.includes(x.outcome) || (a.policy && x.policy !== undefined && String(x.policy) !== String(a.policy)));
+  if (!bad.length) return { pass: true, detail: `${r.pack.id}: ${r.results.map((x) => `${x.variant} ${x.outcome}`).join(", ")}.` };
+  const x = bad[0];
+  return { pass: false, detail: `${r.pack.id} ${x.variant}: ${x.outcome} (${x.detail}); expected ${want}.` };
 }

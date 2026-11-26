@@ -34,6 +34,8 @@ export class RealNet {
     const k = this.stateKey(lab);
     if (k === this.key && this.c) return this.c;
     const t = Date.now();
+    if (this.agentVer === undefined) { const h = await this.call({ op: "hello" }, 5000).catch(() => ({})); this.agentVer = h.ver || "0"; }
+    lab.agentVer = this.agentVer;
     const c = compile(lab);
     const prev = this.c;
     const topoSame = prev && JSON.stringify(prev.topo) === JSON.stringify(c.topo);
@@ -51,6 +53,11 @@ export class RealNet {
     for (const l of c.listen) {
       const old = topoSame && prev.listen.find((x) => x.ns === l.ns);
       if (!old || JSON.stringify(old) !== JSON.stringify(l)) await this.call({ op: "listen.start", ...l }, 10000);
+    }
+    // the IPS engine reads the queues the ruleset just made (a reload of the ruleset drops its block set)
+    for (const [ns, rq] of Object.entries(c.ips || {})) {
+      if (!this.nftReloaded.includes(ns) && prev && prev.ips && JSON.stringify(prev.ips[ns]) === JSON.stringify(rq)) continue;
+      try { await this.call(rq, 10000); this.ipsErr = null; } catch (e) { this.ipsErr = `${ns}: ${e.message}`; }
     }
     this.c = c;
     this.key = k;

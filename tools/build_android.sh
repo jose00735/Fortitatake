@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 tools/build_content.py
 python3 tools/build_labs.py
+python3 tools/build_threats.py
 if command -v node >/dev/null; then node tools/test_labs.mjs >/dev/null || { echo 'lab tests failed: run node tools/test_labs.mjs'; exit 1; }; fi
 JNI=android/app/src/main/jniLibs
 rm -rf "$JNI" && mkdir -p "$JNI"/{arm64-v8a,armeabi-v7a,x86_64}

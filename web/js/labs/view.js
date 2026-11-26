@@ -1,4 +1,5 @@
 // Labs screens: the catalogue and the lab runner (ticket, topology, consoles, checks).
+import { ipsLogRec, ATTACKER_IP, attackSource, attackTarget, attackRequests, attackPort } from "./ips.js";
 import { trafficPlan, BASELINE_RATE, BASELINE_HOURS, virtualTime, summarize, fmtBytes } from "./traffic.js";
 import { h, $, $$, esc, md, inline, icon } from "../core.js";
 import { S, record } from "../state.js";
@@ -24,7 +25,7 @@ async function loadCatalog() {
   return catalog;
 }
 async function loadSchemas() {
-  if (!schemas) schemas = Promise.all(["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json()))).then(([fortios, fortianalyzer, fortimanager]) => ({ fortios, fortianalyzer, fortimanager }));
+  if (!schemas) schemas = Promise.all([...["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json())), fetch("content/threats.json").then((r) => r.json()).catch(() => ({ packs: [] }))]).then(([fortios, fortianalyzer, fortimanager, th]) => ({ fortios, fortianalyzer, fortimanager, threats: th.packs || [] }));
   return schemas;
 }
 const key = (id) => "ft-lab-" + id;
@@ -156,12 +157,14 @@ function mount(main, run, opts = {}) {
     const liveOn = typeof live !== "undefined" && (live.state === "live" || live.state === "apply");
     $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${shOn(d.id) ? " $" : ""}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("") +
       `<span class="lr-tools">` + (ui.pcap[ui.dev] && liveOn ? `<button class="lr-shellbtn" data-pcap title="The last diagnose sniffer packet capture on this FortiGate, for Wireshark">Download .pcap</button>` : "") +
+      `<button class="lr-shellbtn" data-attack ${(run.lab.threats || []).length ? "" : "hidden"} title="Send a threat pack's attack traffic at a lab server and see what your IPS does">Attacks</button>` +
       `<button class="lr-shellbtn${ui.traffic && ui.traffic.on ? " on" : ""}" data-traffic ${liveOn ? "" : "hidden"} title="Everyday office traffic on the real lab network: browsing, DNS, file share, mail, voice">Office traffic</button>` +
       `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button></span>`;
     $$(".lr-devtabs [data-dev]", el).forEach((b) => (b.onclick = () => selectDev(b.dataset.dev)));
     const sb = $(".lr-devtabs [data-shell]", el); if (sb) sb.onclick = () => { toggleShell(ui.dev); devTabs(); };
     const pb = $(".lr-devtabs [data-pcap]", el); if (pb) pb.onclick = () => downloadPcap(ui.dev);
     const tb = $(".lr-devtabs [data-traffic]", el); if (tb) tb.onclick = () => openTraffic();
+    const ab = $(".lr-devtabs [data-attack]", el); if (ab) ab.onclick = () => openAttacks();
   };
   const paint = () => {
     const sh = ui.sh[ui.dev];
@@ -348,6 +351,7 @@ function mount(main, run, opts = {}) {
       await syncTracers();
       await pollWires();
       await trafficTick();
+      await ipsTick();
       // SecOps: logs from the kernel, shipped over the lab network, collected where they arrive
       if (!run.lab.realLog) run.lab.realLog = new RealLogs(run.lab, realCall);
       if (Date.now() - (live.logAt || 0) > 1500) { live.logAt = Date.now(); await run.lab.realLog.tick(real.net.c, real.net.generation); }
@@ -809,6 +813,89 @@ function mount(main, run, opts = {}) {
     dragBy($(".pip-head", pip), pip);
     if (!ui.trafficNav) { ui.trafficNav = true; window.addEventListener("hashchange", () => { ui.trafficNav = false; if (T.pip) close(); if (T.on) { T.on = false; trafficStop(); } }, { once: true }); }
     renderTraffic();
+    pip.focus();
+  };
+
+  // ----- IPS hits from the real engine become FortiGate utm/ips logs -----
+  const ipsTick = async () => {
+    if (!real.net || !real.net.c || !Object.keys(real.net.c.ips || {}).length) return;
+    if (Date.now() - (live.ipsAt || 0) < 1200) return;
+    live.ipsAt = Date.now();
+    const r = await realCall({ op: "ips.log", since: ui.ipsNext === undefined ? 1e12 : ui.ipsNext }).catch(() => null);
+    if (!r) return;
+    ui.ipsNext = r.next;
+    for (const h of r.hits || []) {
+      const fg = run.lab.dev(h.ns);
+      const rec = fg && ipsLogRec(run.lab, fg, h);
+      if (rec) run.lab.storeLog(fg, { ...run.lab.ipsStamp(), devname: fg.hostname(), devid: fg.serial, vd: "root", ...rec, seq: h.seq });
+      ui.ipsHits = [...(ui.ipsHits || []), h].slice(-200);
+    }
+  };
+
+  // ----- attacks: a threat pack's requests from the lab Internet (or a lab device) at a target -----
+  const openAttacks = () => {
+    if (ui.atkPip) { ui.atkPip.focus(); return; }
+    const packs = run.lab.threats || [];
+    const srcs = [{ v: "@attacker", l: `Internet attacker (${ATTACKER_IP})` }, ...devs.filter((d) => ["host", "server"].includes(d.kind) && d.ip && d.ip()).map((d) => ({ v: d.id, l: `${d.id} (${intToIp(d.ip())})` }))];
+    const tg = [...new Set([...run.lab.names.keys()].filter((n) => !/^(dns\.google|one\.one|www\.google|update\.microsoft)/.test(n)))];
+    const tgts = [...tg.map((n) => ({ v: n, l: n })), ...devs.filter((d) => d.kind === "server" && d.ip && d.ip()).map((d) => ({ v: d.id, l: `${d.id} (${intToIp(d.ip())})` }))];
+    const opt = (xs) => xs.map((x) => `<option value="${esc(x.v)}">${esc(x.l)}</option>`).join("");
+    const pip = h(`<section class="lr-pip lr-traffic lr-attack" role="dialog" aria-label="Attacks" tabindex="-1" style="left:16px;bottom:16px">
+      <header class="pip-head"><span class="pip-title">Attacks (threat packs)</span><span class="pip-state"></span><button data-a="close" aria-label="Close">\u2715</button></header>
+      <div class="pip-cmd pip-ctl">
+        <label>Pack <select data-a="pack">${packs.map((p) => `<option value="${esc(p.id)}">${esc(p.id)} ${esc(p.name)}</option>`).join("")}</select></label>
+        <label>From <select data-a="src">${opt(srcs)}</select></label>
+        <label>At <select data-a="dst">${opt(tgts)}</select></label>
+        <label>Port <select data-a="port"><option value="">pack default</option><option>80</option><option>443</option><option>8443</option><option>10443</option></select></label>
+        <button data-a="go">Launch</button></div>
+      <pre class="pip-sum"></pre>
+      <pre class="pip-out" aria-live="polite"></pre>
+    </section>`);
+    document.body.appendChild(pip);
+    ui.atkPip = pip;
+    const sumEl = $(".pip-sum", pip), outEl = $(".pip-out", pip);
+    const showPack = () => { const p = packs.find((x) => x.id === $("[data-a=pack]", pip).value); sumEl.textContent = p ? `${p.cve.join(", ")} \u00b7 ${p.severity} \u00b7 port ${p.generator.port}${p.generator.tls ? " (HTTPS)" : ""}\n${p.summary}\nLesson: ${p.lesson}` : ""; };
+    $("[data-a=pack]", pip).onchange = showPack;
+    showPack();
+    const say = (t) => { outEl.textContent += t + "\n"; outEl.scrollTop = outEl.scrollHeight; };
+    $("[data-a=go]", pip).onclick = async () => {
+      const packId = $("[data-a=pack]", pip).value, from = $("[data-a=src]", pip).value, to = $("[data-a=dst]", pip).value, portSel = $("[data-a=port]", pip).value;
+      const pack = packs.find((x) => x.id === packId);
+      const src = attackSource(run.lab, from), dst = attackTarget(run.lab, to);
+      if (!pack || !src || !dst) { say("Pick a pack, a source with an address and a target."); return; }
+      const { port, tls } = attackPort(pack, portSel);
+      say(`\n${localStamp(Date.now()).slice(11, 19)} ${pack.id} from ${src.label} at ${dst.host} (${dst.ip}:${port}${tls ? ", HTTPS" : ""})`);
+      if (live.state === "live" && real.on) {
+        try {
+          await catchUp();
+          const since = (await realCall({ op: "ips.log", since: 1e12 })).next;
+          const reqs = attackRequests(pack, dst.host, "ftk-" + Math.random().toString(36).slice(2, 8));
+          const r = await realCall({ op: "attack.run", ns: src.id, src: src.ip, dst: dst.ip, port, tls, sni: dst.host, requests: reqs.map((x) => x.raw), timeout_ms: 2500 }, 30000);
+          await new Promise((x) => setTimeout(x, 400));
+          const hits = (await realCall({ op: "ips.log", since })).hits || [];
+          await ipsTick();
+          r.results.forEach((x, i) => {
+            const hh = hits.find((y) => x.local && x.local.endsWith(":" + y.sport));
+            const ips = hh ? ` \u2190 IPS ${hh.action} on ${hh.ns} policy ${hh.policy}, signature ${hh.sig}${hh.tls ? " (decrypted)" : ""}` : "";
+            say(`  ${reqs[i].name.padEnd(22)} ${x.status ? "answered: " + x.status : x.kind === "timeout" ? "no answer (dropped)" : x.kind === "reset" ? "connection reset" : x.kind || "failed"}${ips}${x.error && !x.status && x.kind !== "timeout" && x.kind !== "reset" ? " (" + x.error + ")" : ""}`);
+          });
+          if (real.net && real.net.ipsErr) say(`  [FortiTatake OS: the IPS engine didn't start: ${real.net.ipsErr}]`);
+          else if (real.net && !Object.keys(real.net.c.ips || {}).length && real.net.agentVer && !/^0\.(1[2-9]|[2-9]\d)/.test(real.net.agentVer)) say("  [This FortiTatake OS image predates the IPS engine (agent 0.12). Rebuild it on the OS screen.]");
+        } catch (e) { say(`  [real network: ${e.message}]`); }
+      } else {
+        const r = run.lab.attackSim(from, to, packId, port);
+        if (r.error) { say("  " + r.error); return; }
+        for (const x of r.results) say(`  ${x.variant.padEnd(22)} ${x.outcome}: ${x.detail}`);
+        pump();
+      }
+      run.log.push({ dev: "@attack", line: `${packId} ${from} ${to} ${port}` });
+      store(run, k);
+    };
+    const close = () => { pip.remove(); ui.atkPip = null; };
+    $("[data-a=close]", pip).onclick = close;
+    pip.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    dragBy($(".pip-head", pip), pip);
+    window.addEventListener("hashchange", () => { if (ui.atkPip) close(); }, { once: true });
     pip.focus();
   };
 

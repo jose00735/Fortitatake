@@ -7,6 +7,7 @@ import { LabRun } from "../web/js/labs/runtime.js";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const schemas = Object.fromEntries(["fortios", "fortianalyzer", "fortimanager"].map((p) => [p, JSON.parse(fs.readFileSync(path.join(root, `web/schema/${p}-8.0.2.json`)))]));
+schemas.threats = JSON.parse(fs.readFileSync(path.join(root, "web/content/threats.json"))).packs;
 const { labs } = JSON.parse(fs.readFileSync(path.join(root, "web/content/labs.json")));
 const only = process.argv.slice(2);
 let bad = 0;
