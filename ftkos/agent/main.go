@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.12.0"
+const agentVersion = "0.12.1"
 
 var started = time.Now()
 

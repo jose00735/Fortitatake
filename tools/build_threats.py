@@ -47,6 +47,8 @@ def buffers(payload):
 
 def cond_ok(c, bufs):
     b = bufs.get(c["buf"], "")
+    if "hex" in c:
+        return bytes.fromhex(c["hex"]).decode("latin-1") in b
     if "contains" in c:
         if c.get("nocase"):
             return c["contains"].lower() in b.lower()
@@ -73,6 +75,16 @@ NORMAL = [
     "POST /login HTTP/1.1\nHost: citas.clinicasanrafael.co\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0\nContent-Type: application/x-www-form-urlencoded\n\nuser=maria&pass=%24%7Bsecret%7D",
     "GET /search?q=%24%7Bnombre%7D+java+naming HTTP/1.1\nHost: www.google.com\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0",
     "GET /docs/jndi-lookup.html HTTP/1.1\nHost: logging.apache.org\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0\nForwarded: for=192.0.2.60;proto=https",
+    "GET /remote/login?lang=en HTTP/1.1\nHost: vpn.clinica.lab\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0",
+    "GET /remote/fgt_lang?lang=es HTTP/1.1\nHost: vpn.clinica.lab\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0",
+    "POST /api/v2.0/cmdb/system/admin HTTP/1.1\nHost: waf.lab\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0\nAuthorization: eyJ1c2VybmFtZSI6ImFkbWluIn0=\nContent-Type: application/json\n\n{\"data\": {\"name\": \"ops\"}}",
+    "GET /_layouts/15/ToolPane.aspx?DisplayMode=Edit HTTP/1.1\nHost: intranet.lab\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0\nReferer: https://intranet.lab/sites/rrhh/SitePages/Home.aspx",
+    "GET /_layouts/15/SignOut.aspx HTTP/1.1\nHost: intranet.lab\nUser-Agent: Mozilla/5.0 Chrome/130.0.0.0",
+]
+# binary requests the office generators send: SMB2 negotiate and a read (gen.go)
+NORMAL_HEX = [
+    "000000a8fe534d4240000100000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000024000200010000007f000000000000000000000000000000000000000000000000000000000002021002",
+    "00000050fe534d424000010000000000080001000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000436f6e746162696c696461645c62616c616e63652e786c73780036353533360000",
 ]
 
 
@@ -99,8 +111,13 @@ def main():
             for c in s.get("match", []):
                 if c.get("buf") not in BUFS:
                     errors.append(f"{name}/{s.get('id')}: bad buffer {c.get('buf')}")
-                if ("contains" in c) == ("regex" in c):
-                    errors.append(f"{name}/{s.get('id')}: each condition has exactly one of contains or regex")
+                if sum(k in c for k in ("contains", "regex", "hex")) != 1:
+                    errors.append(f"{name}/{s.get('id')}: each condition has exactly one of contains, regex or hex")
+                if "hex" in c:
+                    try:
+                        bytes.fromhex(c["hex"])
+                    except ValueError:
+                        errors.append(f"{name}/{s.get('id')}: bad hex")
                 if "regex" in c:
                     try:
                         re.compile(c["regex"])
@@ -111,6 +128,11 @@ def main():
         gen = p.get("generator", {})
         port = gen.get("port", 80)
         for v in gen.get("variants", []):
+            if "request_hex" in v:  # a binary protocol: no Host header to check
+                req = bytes.fromhex(v["request_hex"]).decode("latin-1")
+                if not any(matches(s, req, port) for s in p.get("signatures", [])):
+                    errors.append(f"{name}/{v['name']}: trips none of its signatures")
+                continue
             req = fill(v["request"])
             host = re.search(r"\r\nHost: ([^\r]*)", req)
             if not host or host.group(1) != "web.lab":
@@ -120,8 +142,8 @@ def main():
             if not any(matches(s, req, port) for s in p.get("signatures", [])):
                 errors.append(f"{name}/{v['name']}: trips none of its signatures")
         packs.append(p)
-    for i, n in enumerate(NORMAL):
-        req = fill(n)
+    for i, n in enumerate(NORMAL + NORMAL_HEX):
+        req = bytes.fromhex(n).decode("latin-1") if i >= len(NORMAL) else fill(n)
         for p in packs:
             for s in p["signatures"]:
                 if matches(s, req):
@@ -131,7 +153,7 @@ def main():
         sys.exit(1)
     nsig = sum(len(p["signatures"]) for p in packs)
     nvar = sum(len(p["generator"]["variants"]) for p in packs)
-    print(f"threats: {len(packs)} packs, {nsig} signatures, {nvar} attack variants; {len(NORMAL)} normal requests stay quiet")
+    print(f"threats: {len(packs)} packs, {nsig} signatures, {nvar} attack variants; {len(NORMAL) + len(NORMAL_HEX)} normal requests stay quiet")
     if not check_only:
         out = os.path.join(ROOT, "web", "content", "threats.json")
         json.dump({"packs": packs}, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))

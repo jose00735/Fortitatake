@@ -98,6 +98,14 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.12.1 adds (four more threat packs, binary signatures)
+
+- **TP-2017-0144 (MS17-010, SMBv1):** the check scanners and worms send before EternalBlue, an SMB_COM_TRANSACTION with PeekNamedPipe on FID 0 to `\PIPE\` (the shape of nmap's `smb-vuln-ms17-010`). It's the first non-web pack, so signatures can now match raw bytes (`hex:` conditions) and packs can send binary requests (`request_hex:`). The lab NAS stand-in answers SMBv1 with access denied, as a host with SMBv1 off would.
+- **TP-2018-13379 (FortiOS SSL-VPN):** the `/remote/fgt_lang?lang=/../../../..//////////dev/cmdb/sslvpn_websession` traversal behind the 2020-2021 credential dumps, plain and percent-encoded.
+- **TP-2025-64446 (FortiWeb, in CISA's KEV catalog):** the POST from the admin API path back to `/cgi-bin/fwbcgi` with a base64 `CGIINFO` impersonation header, per watchTowr's analysis.
+- **TP-2025-53770 / 53771 (SharePoint "ToolShell", in CISA's KEV catalog):** POST to `/_layouts/15/ToolPane.aspx?DisplayMode=Edit` with `Referer: /_layouts/SignOut.aspx` and a placeholder web-part field (no deserialization payload), per the SANS ISC analysis.
+- The build check now covers 7 packs, 14 signatures and 13 attack variants against 17 normal requests (including SMB2 office traffic and ordinary SSL-VPN, FortiWeb API and SharePoint requests). Tested on the real engine: each new pack is blocked by a sensor (the three HTTPS ones only with deep inspection), and the SMB probe is blocked on a LAN-to-DMZ policy.
+
 ### What v0.12.0 adds (threat packs and a real inline IPS)
 
 - **Threat packs** (`content/threats/`, format in its README): one YAML file per CVE with our own dotted attack name, severity, targets, the IPS signatures and the generator requests. `python3 tools/build_threats.py` checks every pack: each attack variant trips its own signatures, ten ordinary office and admin requests trip none, and requests may only aim at `{{target_host}}`. A newer CVE is one new file. The packs are the only signatures the lab IPS knows.

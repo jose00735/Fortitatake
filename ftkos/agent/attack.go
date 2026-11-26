@@ -6,8 +6,8 @@ package main
 // stand-ins, so nothing here works against a real system.
 
 import (
-	"bufio"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,7 +37,15 @@ func attackRun(r req) (map[string]any, error) {
 		return nil, fmt.Errorf("bad target")
 	}
 	results := []map[string]any{}
-	for _, raw := range r.strs("requests") {
+	reqs := r.strs("requests")
+	for _, h := range r.strs("requests_hex") { // binary protocols
+		b, err := hex.DecodeString(h)
+		if err != nil {
+			return nil, fmt.Errorf("bad hex request")
+		}
+		reqs = append(reqs, string(b))
+	}
+	for _, raw := range reqs {
 		res := map[string]any{}
 		var c net.Conn
 		err := withNetns(ns, func() error {
@@ -71,9 +79,17 @@ func attackRun(r req) (map[string]any, error) {
 		conn.SetDeadline(time.Now().Add(to))
 		_, err = io.WriteString(conn, raw)
 		if err == nil {
-			var status string
-			status, err = bufio.NewReader(conn).ReadString('\n')
-			res["status"] = strings.TrimSpace(status)
+			buf := make([]byte, 4096)
+			var n int
+			n, err = conn.Read(buf)
+			if n > 0 {
+				if line, _, ok := strings.Cut(string(buf[:n]), "\n"); ok && strings.HasPrefix(line, "HTTP/") {
+					res["status"] = strings.TrimSpace(line)
+				} else {
+					res["status"] = fmt.Sprintf("%d bytes", n)
+				}
+				err = nil
+			}
 		}
 		if err != nil {
 			res["error"], res["kind"] = err.Error(), classify(err)

@@ -18,6 +18,9 @@ export function fillRequest(tpl, vars) {
   return t;
 }
 
+// binary payloads travel as latin-1 strings (one char per byte), as in tools/build_threats.py
+export const hexToStr = (h) => String(h).replace(/\s+/g, "").match(/../g).map((x) => String.fromCharCode(parseInt(x, 16))).join("");
+
 export function httpBuffers(p) {
   const i = p.indexOf("\r\n\r\n");
   const head = i < 0 ? p : p.slice(0, i), body = i < 0 ? "" : p.slice(i + 4);
@@ -31,6 +34,7 @@ export function httpBuffers(p) {
 const reCache = new Map();
 function condOk(c, b) {
   const s = b[c.buf] || "";
+  if (c.hex !== undefined) return s.includes(hexToStr(c.hex));
   if (c.regex !== undefined) {
     const k = c.regex + (c.nocase ? "/i" : "");
     if (!reCache.has(k)) reCache.set(k, new RegExp(c.regex, c.nocase ? "i" : ""));
@@ -82,7 +86,7 @@ export function sensorSigs(lab, fg, name) {
   for (const { sig, pack } of sigs) {
     for (const en of entries) {
       if (en.rule && en.rule.length) { if (!en.rule.includes(sig.id)) continue; }
-      else if (!(hit(en.severity, [pack.severity]) && hit(en.location, [pack.location || "server"]) && hit(en.os, (pack.target && pack.target.os) || []) && hit(en.application, (pack.target && pack.target.app) || []) && hit(en.protocol, ["HTTP"]) && hit(en.cve, pack.cve || []))) continue;
+      else if (!(hit(en.severity, [pack.severity]) && hit(en.location, [pack.location || "server"]) && hit(en.os, (pack.target && pack.target.os) || []) && hit(en.application, (pack.target && pack.target.app) || []) && hit(en.protocol, [pack.protocol || "HTTP"]) && hit(en.cve, pack.cve || []))) continue;
       const action = en.action === "default" ? defaultAction(pack) : en.action;
       out.push({ sig, pack, action });
       break;
@@ -198,7 +202,7 @@ export function attackTarget(lab, to) {
   return null;
 }
 export function attackRequests(pack, host, token) {
-  return pack.generator.variants.map((v) => ({ name: v.name, raw: fillRequest(v.request, { target: host, token }) }));
+  return pack.generator.variants.map((v) => (v.request_hex ? { name: v.name, raw: hexToStr(v.request_hex), hex: v.request_hex } : { name: v.name, raw: fillRequest(v.request, { target: host, token }) }));
 }
 
 // outcome per variant: blocked | reset | reached | failed, with the policy and signature when the IPS acted

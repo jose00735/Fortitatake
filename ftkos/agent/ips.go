@@ -17,6 +17,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -32,7 +33,9 @@ type ipsCond struct {
 	Buf      string `json:"buf"`
 	Contains string `json:"contains"`
 	Regex    string `json:"regex"`
-	Nocase   bool   `json:"nocase"`
+	Hex      string `json:"hex"`
+	hexb     string
+	Nocase   bool `json:"nocase"`
 	re       *regexp.Regexp
 }
 
@@ -138,6 +141,9 @@ func httpBufs(p string) map[string]string {
 
 func (c *ipsCond) ok(b map[string]string) bool {
 	s := b[c.Buf]
+	if c.Hex != "" {
+		return strings.Contains(s, c.hexb)
+	}
 	if c.re != nil {
 		return c.re.MatchString(s)
 	}
@@ -234,6 +240,9 @@ func (e *ipsEngine) inspect(r *ipsRule, pkt []byte) (uint32, uint32) {
 		}
 		payload = p
 	}
+	if payload == "" && !tlsSeen {
+		payload = s // a binary protocol (SMB and friends): signatures read the raw bytes
+	}
 	if payload == "" {
 		return nfAccept, 0
 	}
@@ -323,6 +332,13 @@ func ipsLoad(r req) (map[string]any, error) {
 	for _, s := range in.Sigs {
 		for i := range s.Match {
 			c := &s.Match[i]
+			if c.Hex != "" {
+				hb, err := hex.DecodeString(strings.ReplaceAll(c.Hex, " ", ""))
+				if err != nil {
+					return nil, fmt.Errorf("signature %d: bad hex", s.ID)
+				}
+				c.hexb = string(hb)
+			}
 			if c.Regex != "" {
 				pat := c.Regex
 				if c.Nocase {

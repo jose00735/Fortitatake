@@ -1,0 +1,34 @@
+id: TP-2017-0144
+cve: [CVE-2017-0143, CVE-2017-0144, CVE-2017-0145, CVE-2017-0146, CVE-2017-0148]
+name: MS.SMBv1.Trans.PeekNamedPipe.FID0.Probe
+severity: high
+target: {os: [Windows], app: [Microsoft SMBv1]}
+location: server
+protocol: SMB
+summary: >-
+  MS17-010 fixed the SMBv1 flaws behind EternalBlue, WannaCry and NotPetya. Scanners and worms check
+  for it the same way: on the IPC$ share they send an SMB_COM_TRANSACTION (0x25) whose setup is
+  PeekNamedPipe (0x23) on file ID 0, aimed at \PIPE\. An unpatched host answers
+  STATUS_INSUFF_SERVER_RESOURCES (0xC0000205), a patched one access denied or invalid handle. Seeing that
+  probe between user networks and servers means something is looking for its next victim.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2017-0144
+  - https://learn.microsoft.com/en-us/security-updates/securitybulletins/2017/ms17-010
+  - https://nmap.org/nsedoc/scripts/smb-vuln-ms17-010.html
+signatures:
+  - id: 9100031
+    name: SMBv1 transaction with PeekNamedPipe on FID 0 (MS17-010 check)
+    proto: tcp
+    ports: [445, 139]
+    match:
+      - {buf: raw, hex: "ff534d4225"}
+      - {buf: raw, hex: "02002300000007"}
+      - {buf: raw, contains: "\\PIPE\\"}
+generator:
+  port: 445
+  tls: false
+  variants:
+    - name: peeknamedpipe-fid0
+      request_hex: "0000004bff534d42250000000018c0070000000000000000000000000000fffe000840001000000000ffffffff000000000000000000004a0000004a0000000200230000000700005c504950455c00"
+server_effect: {process: none, when: allowed}
+lesson: Segment users from servers and put an IPS sensor on the policies between them; the real fix is the patch and SMBv1 turned off.

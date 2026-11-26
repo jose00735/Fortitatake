@@ -37,6 +37,9 @@ server_effect: {process: "java -> /bin/sh -c ...", when: allowed}
 lesson: one sentence
 ```
 
+Binary protocols: a condition can be `hex: "ff534d4225"` (bytes, in the raw buffer) and a variant
+`request_hex:` instead of `request:`; `protocol: SMB` (default HTTP) is what sensor protocol filters see.
+
 Buffers: `method`, `uri` (request target, percent-decoded once, dot segments kept as sent),
 `header` (all header lines), `body`, `raw` (the whole payload). `contains` is a literal;
 `regex` is a short regular expression over the buffer.
