@@ -33,7 +33,7 @@ topology:
         set dstaddr FEDR-01
         set action accept
         set schedule always
-        set service FortiEDR-8081
+        set service FortiEDR-Collector
         next
         end
   story:

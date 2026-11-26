@@ -54,6 +54,7 @@ export function compile(lab) {
   const extra = {}; // ns -> ip batch lines run after the topology (IPsec tunnels and the routes through them)
   const nft = {};
   const listen = [];
+  const edrLog = {};
   const where = {}; // ip -> device id (who owns an address)
   const segs = lab.segments.filter((s) => !s.cable && !s.vlink);
   const devs = [...lab.devices.values()].filter((d) => d.kind !== "fortiswitch");
@@ -107,7 +108,7 @@ export function compile(lab) {
 
   // ----- hosts and servers -----
   // collectors: keep: true makes the agent keep each log line that arrives
-  const COLLECT = { fortisiem: [{ proto: "udp", port: 514, keep: true }, { proto: "tcp", port: 514, keep: true }, { proto: "tcp", port: 443, keep: true }], fortiedr: [{ proto: "tcp", port: 8081 }, { proto: "tcp", port: 555 }, { proto: "tcp", port: 443 }] };
+  const COLLECT = { fortisiem: [{ proto: "udp", port: 514, keep: true }, { proto: "tcp", port: 514, keep: true }, { proto: "tcp", port: 443, keep: true }], fortiedr: [{ proto: "tcp", port: 8081 }, { proto: "tcp", port: 555, keep: true }, { proto: "tcp", port: 443 }] };
   for (const h of devs.filter((d) => ["host", "server", "fortisiem", "fortiedr"].includes(d.kind))) {
     const port = h.port || "eth0";
     if (!attached(h.id, port)) topo.dummies.push({ dev: h.id, if: port, down: true });
@@ -122,6 +123,8 @@ export function compile(lab) {
     for (const b of binds) if (b.proto === "tcp" && (b.port === 22 || b.port === 23) && !b.keep) Object.assign(b, { mode: b.port === 22 ? "ssh" : "telnet" }, b.port === 22 ? { banner: SSH_BANNER[h.os] || SSH_BANNER.linux } : {});
     listen.push({ ns: h.id, binds });
     if (!h.services.has("icmp")) nft[h.id] = "table ip ftk {\n chain ftk_in { type filter hook input priority 0; policy accept;\n  icmp type echo-request drop\n }\n}";
+    // FortiEDR collector (agent 0.13+): every new outbound flow goes to the kernel log for the collector
+    if (h.spec && h.spec.edr && agentAtLeast(lab, "0.13")) edrLog[h.id] = `table ip ftkedrlog {\n chain out { type filter hook output priority 0; policy accept;\n  ct state new log prefix "FTKE ${h.id} "\n }\n}`;
     // FortiEDR isolation: the host talks to its EDR manager and nothing else, enforced by its own kernel
     const iso = lab.edrIsolated && lab.edrIsolated(h);
     if (iso && iso.ip && iso.ip()) {
@@ -248,6 +251,7 @@ export function compile(lab) {
     const ap = adminPorts(fg);
     listen.push({ ns: fg.id, binds: [...new Set([ap.https[1], 80, ap.ssh[1], 23])].map((port) => ({ proto: "tcp", port, ...(port === ap.ssh[1] ? { mode: "ssh", banner: SSH_BANNER.fortios } : port === 23 && port !== ap.https[1] ? { mode: "telnet" } : {}) })).concat(out.dns ? [{ proto: "udp", port: 53 }] : []), names: out.dns ? Object.fromEntries([...lab.names].map(([n, ip]) => [n, intToIp(ip)])) : undefined });
   }
+  for (const [id, t] of Object.entries(edrLog)) nft[id] = nft[id] ? nft[id] + "\n" + t : t;
   trafficCompile(lab, { topo, listen });
   // IPS (agent 0.12+, a kernel with NFQUEUE): one queue per policy with a sensor, read by the agent
   const ips = {};
@@ -322,6 +326,8 @@ function fgtRules(lab, fg, intfs, notes) {
       const p = parsePrefix(fg.one("firewall address", a, "subnet"));
       return p ? [p.len === 0 ? null : prefixStr(p)].filter((x) => x !== undefined) : [];
     }
+    const ext = lab.externalAddrs && lab.externalAddrs(fg, name);
+    if (ext) return ext.map(intToIp);
     const g = fg.entry("firewall addrgrp", name);
     if (g) {
       const parts = fg.val("firewall addrgrp", g, "member").map((m) => addr(m, depth + 1));

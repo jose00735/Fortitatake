@@ -10,7 +10,7 @@ par: 80
 skills: [collector connectivity, event triage, flow analyzer, remediation, isolation, prevention mode]
 brief: |
   **SOW 2026-191, EDR phase.** FortiEDR (**FEDR-01**, 10.20.40.60) is deployed in **simulation** mode, as usual for
-  the first weeks. Collectors on DC-01, FIN-PC and HQ-PC report to it on **TCP 8081**.
+  the first weeks. Collectors on DC-01, FIN-PC and HQ-PC register on **TCP 8081** and send their events on **TCP 555**.
 
   The FortiEDR console takes GUI actions as commands: type `help` on FEDR-01.
 topology: {use: andes-secops}
@@ -28,7 +28,7 @@ parts:
         probe: {from: HQ-PC, to: 10.20.40.60, proto: tcp, port: 443, expect: fail}
     hints:
       - "DC-01 is on the same segment as FEDR-01, so it doesn't cross the FortiGate. HQ-PC and FIN-PC do."
-      - "A policy port2 → port4, HQ-LAN → FEDR-01, service FortiEDR-8081 (it exists)."
+      - "A policy port2 → port4, HQ-LAN → FEDR-01, service FortiEDR-Collector (it exists)."
     solution:
       FGT-BOG: |
         config firewall policy
@@ -40,13 +40,13 @@ parts:
         set dstaddr FEDR-01
         set action accept
         set schedule always
-        set service FortiEDR-8081
+        set service FortiEDR-Collector
         next
         end
       FEDR-01: |
         inventory
     explain: |
-      EDR collectors talk to the aggregator (TCP 8081 here); a missing firewall rule leaves endpoints unprotected
+      EDR collectors register with the aggregator on TCP 8081 and send events to the core on TCP 555; a missing firewall rule leaves endpoints unprotected
       without anyone noticing, because the endpoint looks fine. Check the inventory on day one and alert on
       disconnected collectors.
   - id: b

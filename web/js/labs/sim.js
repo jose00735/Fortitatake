@@ -127,6 +127,7 @@ export class Lab {
       }),
     }));
     this.ver = 1;
+    if (this.installIntel && def.intel !== false) this.installIntel(schemas && schemas.feeds); // threat-intel sinkholes (intel.js)
     this.loadVdoms();
     this.refreshSegments();
     this.haSyncAll();
@@ -329,6 +330,8 @@ export class Lab {
       if (t === "interface-subnet") { const i = this.fgtIntfs(fg).find((x) => x.name === fg.one("firewall address", a, "interface")); return !!(i && i.prefix && inPrefix(ip, i.prefix)); }
       return inPrefix(ip, parsePrefix(fg.one("firewall address", a, "subnet")));
     }
+    const ext = this.externalAddrs && this.externalAddrs(fg, name);
+    if (ext) return ext.includes(ip);
     const g = fg.entry("firewall addrgrp", name);
     if (g) {
       const hit = fg.val("firewall addrgrp", g, "member").some((m) => this.addrMatch(fg, m, ip, depth + 1));

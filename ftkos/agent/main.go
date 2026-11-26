@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.12.1"
+const agentVersion = "0.13.0"
 
 var started = time.Now()
 
@@ -209,6 +209,16 @@ func dispatch(r req) (map[string]any, error) {
 		return cgStat(r)
 	case "cg.set":
 		return cgSet(r)
+	case "edr.start":
+		return edrStart(r)
+	case "edr.emit":
+		return edrEmit(r)
+	case "edr.status":
+		return edrStatus(r)
+	case "edr.kill":
+		return edrKill(r)
+	case "edr.block":
+		return edrBlock(r)
 	case "ips.load":
 		return ipsLoad(r)
 	case "ips.log":

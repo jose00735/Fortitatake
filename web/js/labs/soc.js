@@ -196,7 +196,7 @@ Lab.prototype.siemTestRule = function (siem, name, stream) {
 };
 Lab.prototype.siemIncidents = function (siem) {
   const ev = this.siemEvents(siem);
-  const feed = new Set(((siem.spec.fortisiem && siem.spec.fortisiem.threat_feed) || []).map(String));
+  const feed = new Set([...((siem.spec.fortisiem && siem.spec.fortisiem.threat_feed) || []).map(String), ...((this.intel && this.intel.c2) || []).map((c) => c.ip)]); // its own list plus the lab's feed snapshot
   const out = [];
   const push = (rule, key, evs, attrs) => {
     const id = 7000 + Math.abs([...`${rule.name}|${key}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)) % 2000;
@@ -356,7 +356,9 @@ Lab.prototype.edrConsole = function (edr, line) {
   const c = (toks[0] || "").toLowerCase();
   if (!c) return "";
   const st = edrState(this, edr);
-  if (c === "help" || c === "?") return "FortiEDR Central Manager GUI actions:\n  inventory                         collectors and their state\n  policies | policy \"<name>\" prevention|simulation\n  events [host=<id>]                security events\n  event <id> | forensics <id>       details | flow analyzer (process tree)\n  classify <id> malicious|suspicious|pup|likely-safe|safe\n  exception <id> [all|host]          stop this process/rule pair from raising events\n  remediate <id> kill|delete|registry\n  isolate <host> | unisolate <host>";
+  if (c === "syslog") { const a = toks[1]; if (!a) return `Syslog export: ${st.syslog || "off"}`; st.syslog = /^(off|none)$/i.test(a) ? null : a; this.ver++; return st.syslog ? `Security events are now exported as syslog to ${st.syslog} (UDP 514).` : "Syslog export off."; }
+  if (c === "rules") return "(GUI: Security Settings > Security Policies > rules on live telemetry)\n" + (this.edrRulesText ? this.edrRulesText() : "");
+  if (c === "help" || c === "?") return "FortiEDR Central Manager GUI actions:\n  inventory                         collectors and their state\n  rules                             behaviour rules on live telemetry\n  syslog <FortiSIEM ip>|off         export security events\n  policies | policy \"<name>\" prevention|simulation\n  events [host=<id>]                security events\n  event <id> | forensics <id>       details | flow analyzer (process tree)\n  classify <id> malicious|suspicious|pup|likely-safe|safe\n  exception <id> [all|host]          stop this process/rule pair from raising events\n  remediate <id> kill|delete|registry\n  isolate <host> | unisolate <host>";
   if (c === "inventory") return `(GUI: Inventory > Collectors)\nHost              IP              OS        State          Group\n` + (this.edrCollectors(edr).map((x) => `${pad(x.h.hostname, 18)}${pad(intToIp(x.h.ip() || 0), 16)}${pad(x.h.os === "windows" ? "Windows" : "Linux", 10)}${pad(x.isolated ? "Isolated" : x.connected ? "Running" : "Disconnected", 15)}Default`).join("\n") || "No collectors registered.");
   if (c === "policies") return `(GUI: Security Settings > Security Policies, group Default)\n` + EDR_POLICIES.map((p) => `${pad(p, 26)}${st.modes[p]}`).join("\n");
   if (c === "policy") {
@@ -375,7 +377,7 @@ Lab.prototype.edrConsole = function (edr, line) {
   const id = Number(toks[1]);
   const e = evs.find((x) => x.id === id);
   if (["event", "forensics", "classify", "exception", "remediate"].includes(c) && !e) return `No event ${toks[1] || ""}.`;
-  if (c === "event") return `(GUI: Event ${e.id})\nDevice: ${e.hostname} · ${e.date} ${e.time}\nProcess: ${e.process} (${e.path || "?"})\nHash (SHA-1): ${e.hash || "-"} · Signed: ${e.signed || "no"}\nCommand line: ${e.cmd || "-"}\nPolicy: ${e.policy || "-"} · Rule: ${e.rule}\nAction: ${e.action} · Classification: ${e.classification}${e.dst ? `\nDestinations: ${e.dst}` : ""}${e.target ? `\nTarget: ${e.target}` : ""}`;
+  if (c === "event") return `(GUI: Event ${e.id})\nDevice: ${e.hostname} · ${e.date} ${e.time}\nProcess: ${e.process} (${e.path || "?"})${e.pid ? ` · PID ${e.pid}` : ""}${e.user ? ` · user ${e.user}` : ""}\nHash (SHA-1): ${e.hash || "-"} · Signed: ${e.signed || "no"}\nCommand line: ${e.cmd || "-"}\nPolicy: ${e.policy || "-"} · Rule: ${e.rule}${e.attack ? ` · ATT&CK ${e.attack}` : ""}\nAction: ${e.action} · Classification: ${e.classification}${e.detail ? `\nWhy: ${e.detail}` : ""}${e.dst ? `\nDestinations: ${e.dst}` : ""}${e.target ? `\nTarget: ${e.target}` : ""}${e.prevented ? `\nPrevention on the host: ${e.prevented}` : ""}${e.real ? "\nSource: real telemetry from the collector" : ""}`;
   if (c === "forensics") return `(GUI: Forensics > Flow Analyzer, event ${e.id})\n` + (e.chain || [e.parent, e.process].filter(Boolean)).map((p, i) => `${"   ".repeat(i)}${i ? "└─ " : ""}${p}`).join("\n") + `${e.dst ? `\n${"   ".repeat((e.chain || []).length || 2)}└─ connects to ${e.dst}` : ""}${e.target ? `\n${"   ".repeat((e.chain || []).length || 2)}└─ writes ${e.target}` : ""}`;
   if (c === "classify") { const v = { malicious: "Malicious", suspicious: "Suspicious", pup: "PUP", "likely-safe": "Likely Safe", safe: "Safe" }[(toks[2] || "").toLowerCase()]; if (!v) return "Usage: classify <id> malicious|suspicious|pup|likely-safe|safe"; st.cls.set(id, v); return `Event ${id} classified as ${v}.`; }
   if (c === "exception") { const scope = (toks[2] || "all").toLowerCase(); st.exceptions.push({ process: e.process, rule: e.rule, host: scope === "host" ? e.host : "*" }); this.ver++; return `Exception created: ${e.process} no longer triggers "${e.rule}" ${scope === "host" ? `on ${e.hostname}` : "on any collector"}.`; }

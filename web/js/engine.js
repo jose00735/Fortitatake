@@ -172,8 +172,24 @@ export async function engineView(main) {
     <div class="card eg-main"><div data-gauge></div><div class="eg-cols"><div data-phases></div><div data-details></div></div>
       <div data-error></div>
       <details class="eg-log"><summary>Raw build log</summary><pre data-log></pre></details></div>
-    <div data-link></div><div data-test></div><div data-builds></div>
+    <div data-link></div><div data-test></div><div data-builds></div><div data-feeds></div>
   </div>`));
+  // threat-intel feeds for the SecOps labs: downloaded by the app once a day, sinkholed in the labs
+  async function renderFeeds() {
+    const box = $("[data-feeds]", main);
+    let f = {};
+    try { f = await api("engine/feeds"); } catch { box.innerHTML = ""; return; }
+    const s = f.snapshot;
+    box.innerHTML = `<div class="card"><h3>Threat-intel feeds</h3>
+      <p class="small muted">Downloaded by this app once a day. Labs pick C2 addresses, domains and URLs from the newest snapshot; inside a lab they lead to sinkholes, never to the real hosts. Snapshots stay on this device.</p>
+      ${s ? `<table class="kv">${s.sources.map((x) => `<tr><th>${esc(x.name)}</th><td>${x.error ? `<span class="chip bad">${esc(x.error)}</span>` : `${x.count} entries`}<br><span class="small muted">${esc(x.terms)}</span></td></tr>`).join("")}<tr><th>Snapshot</th><td>${esc(s.date)} · ${s.c2.length} C2 addresses, ${s.domains.length} domains, ${s.urls.length} malware URLs, ${s.phish.length} phishing URLs</td></tr></table>` : `<p>No snapshot yet: labs use clearly labelled stand-ins until the first download.</p>`}
+      <div class="row"><button data-feedsnow>Download today's feeds now</button><span class="small muted" data-feedmsg></span></div></div>`;
+    $("[data-feedsnow]", box).onclick = async (e) => {
+      e.target.disabled = true; $("[data-feedmsg]", box).textContent = "Downloading…";
+      try { await api("engine/feeds", { method: "POST" }); renderFeeds(); } catch (err) { $("[data-feedmsg]", box).textContent = err.message; e.target.disabled = false; }
+    };
+  }
+  renderFeeds();
 
   async function refreshStatus() {
     try { status = await api("engine/status"); } catch { return; }

@@ -17,7 +17,7 @@ import (
 	"github.com/jose00735/fortitatake/internal/store"
 )
 
-var version = "v0.12.1"
+var version = "v0.13.0"
 
 //go:embed web
 var webFS embed.FS
@@ -44,6 +44,7 @@ func main() {
 	srv.Content = server.NewContent(ui, *dir)
 	srv.Android = runtime.GOOS == "android"
 	srv.Engine = ftkos.New(*dir, engineAssets(), version)
+	go srv.Engine.FeedLoop() // threat-intel snapshots for the SecOps labs, once a day
 	r := *role
 	if r == "auto" {
 		r = "hub"

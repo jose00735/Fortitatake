@@ -222,6 +222,7 @@ func topoClear() (map[string]any, error) {
 	stopAllListeners()
 	stopAllGens()
 	stopAllIPS()
+	edrStopAll()
 	stopAllServices()
 	stopAllCaptures()
 	t := time.Now()

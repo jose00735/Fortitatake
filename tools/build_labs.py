@@ -115,7 +115,7 @@ def lint(labs):
             if not p.get("explain"):
                 errs.append(f"{lid}/{p['id']}: no explanation")
             for dev in (p.get("solution") or {}):
-                if dev not in devs:
+                if dev not in devs and dev not in ("@edrtest", "@attack"):
                     errs.append(f"{lid}/{p['id']}: solution for unknown device {dev}")
             for c in p.get("checks", []):
                 t = [k for k in c if k in CHECK_TYPES]

@@ -1478,8 +1478,8 @@ andes-secops:
         next
         end
         config firewall service custom
-        edit FortiEDR-8081
-        set tcp-portrange 8081
+        edit FortiEDR-Collector
+        set tcp-portrange 8081 555
         next
         end
   add_devices:

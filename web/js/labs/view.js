@@ -1,4 +1,6 @@
 // Labs screens: the catalogue and the lab runner (ticket, topology, consoles, checks).
+import { openEdrGui } from "./edrgui.js";
+import { EDR_TESTS } from "./edrlive.js";
 import { ipsLogRec, ATTACKER_IP, attackSource, attackTarget, attackRequests, attackPort } from "./ips.js";
 import { trafficPlan, BASELINE_RATE, BASELINE_HOURS, virtualTime, summarize, fmtBytes } from "./traffic.js";
 import { h, $, $$, esc, md, inline, icon } from "../core.js";
@@ -25,7 +27,7 @@ async function loadCatalog() {
   return catalog;
 }
 async function loadSchemas() {
-  if (!schemas) schemas = Promise.all([...["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json())), fetch("content/threats.json").then((r) => r.json()).catch(() => ({ packs: [] }))]).then(([fortios, fortianalyzer, fortimanager, th]) => ({ fortios, fortianalyzer, fortimanager, threats: th.packs || [] }));
+  if (!schemas) schemas = Promise.all([...["fortios", "fortianalyzer", "fortimanager"].map((p) => fetch(`schema/${p}-8.0.2.json`).then((r) => r.json())), fetch("content/threats.json").then((r) => r.json()).catch(() => ({ packs: [] })), api("engine/feeds").catch(() => ({}))]).then(([fortios, fortianalyzer, fortimanager, th, fd]) => ({ fortios, fortianalyzer, fortimanager, threats: th.packs || [], feeds: (fd && fd.snapshot) || null }));
   return schemas;
 }
 const key = (id) => "ft-lab-" + id;
@@ -157,6 +159,7 @@ function mount(main, run, opts = {}) {
     const liveOn = typeof live !== "undefined" && (live.state === "live" || live.state === "apply");
     $(".lr-devtabs", el).innerHTML = devs.map((d) => `<button role="tab" aria-selected="${d.id === ui.dev}" data-dev="${esc(d.id)}" class="${d.id === ui.dev ? "on" : ""}">${esc(d.id)}${shOn(d.id) ? " $" : ""}${ui.unread.has(d.id) ? ' <i class="dot" aria-label="new output"></i>' : ""}</button>`).join("") +
       `<span class="lr-tools">` + (ui.pcap[ui.dev] && liveOn ? `<button class="lr-shellbtn" data-pcap title="The last diagnose sniffer packet capture on this FortiGate, for Wireshark">Download .pcap</button>` : "") +
+      (run.device(ui.dev) && run.device(ui.dev).kind === "fortiedr" ? `<button class="lr-shellbtn" data-edrgui title="The FortiEDR management console (Event Viewer, Forensics, Inventory, Security Settings)">Console</button>` : "") +
       `<button class="lr-shellbtn" data-attack ${(run.lab.threats || []).length ? "" : "hidden"} title="Send a threat pack's attack traffic at a lab server and see what your IPS does">Attacks</button>` +
       `<button class="lr-shellbtn${ui.traffic && ui.traffic.on ? " on" : ""}" data-traffic ${liveOn ? "" : "hidden"} title="Everyday office traffic on the real lab network: browsing, DNS, file share, mail, voice">Office traffic</button>` +
       `<button class="lr-shellbtn${shOn(ui.dev) ? " on" : ""}" data-shell ${liveOn ? "" : "hidden"} title="A real Linux shell inside this device, on the real lab network">${shOn(ui.dev) ? "Back to the console" : "Linux shell"}</button></span>`;
@@ -165,6 +168,7 @@ function mount(main, run, opts = {}) {
     const pb = $(".lr-devtabs [data-pcap]", el); if (pb) pb.onclick = () => downloadPcap(ui.dev);
     const tb = $(".lr-devtabs [data-traffic]", el); if (tb) tb.onclick = () => openTraffic();
     const ab = $(".lr-devtabs [data-attack]", el); if (ab) ab.onclick = () => openAttacks();
+    const eb = $(".lr-devtabs [data-edrgui]", el); if (eb) eb.onclick = () => { const id = ui.dev; openEdrGui({ run, edrId: id, exec: (dev, cmd) => { const o = run.exec(dev, cmd); store(run, k); return o; } }); };
   };
   const paint = () => {
     const sh = ui.sh[ui.dev];
@@ -352,6 +356,7 @@ function mount(main, run, opts = {}) {
       await pollWires();
       await trafficTick();
       await ipsTick();
+      await edrTick();
       // SecOps: logs from the kernel, shipped over the lab network, collected where they arrive
       if (!run.lab.realLog) run.lab.realLog = new RealLogs(run.lab, realCall);
       if (Date.now() - (live.logAt || 0) > 1500) { live.logAt = Date.now(); await run.lab.realLog.tick(real.net.c, real.net.generation); }
@@ -832,6 +837,39 @@ function mount(main, run, opts = {}) {
     }
   };
 
+  // ----- FortiEDR on real telemetry: start the collectors, read what reached each manager -----
+  const edrTick = async () => {
+    const mgrs = devs.filter((d) => d.kind === "fortiedr" && d.ip && d.ip());
+    if (!mgrs.length || !real.net || !real.net.agentVer || !/^0\.(1[3-9]|[2-9]\d)/.test(real.net.agentVer)) return;
+    if (Date.now() - (live.edrAt || 0) < 2000) return;
+    live.edrAt = Date.now();
+    ui.edr = ui.edr || { started: {}, since: {} };
+    for (const h of devs.filter((x) => x.spec && x.spec.edr)) {
+      const mgr = run.lab.dev(h.spec.edr.manager);
+      if (!mgr || !mgr.ip || !mgr.ip()) continue;
+      const k = `${real.net.generation}|${intToIp(mgr.ip())}`;
+      if (ui.edr.started[h.id] === k) continue;
+      const r = await realCall({ op: "edr.start", ns: h.id, manager: intToIp(mgr.ip()), port: 555 }).catch(() => null);
+      if (r) ui.edr.started[h.id] = k;
+    }
+    for (const mgr of mgrs) {
+      const lg = await realCall({ op: "listen.log", ns: mgr.id, since_seq: ui.edr.since[mgr.id] || 0 }).catch(() => null);
+      if (!lg) continue;
+      for (const hit of lg.hits || []) {
+        ui.edr.since[mgr.id] = Math.max(ui.edr.since[mgr.id] || 0, hit.seq);
+        if (hit.port !== 555 || !hit.data) continue;
+        let ev; try { ev = JSON.parse(hit.data); } catch (e) { continue; }
+        run.lab.edrIngest(mgr, ev);
+      }
+    }
+    for (const s of (run.lab.edrSyslog || []).splice(0)) await realCall({ op: "send", ns: s.from, proto: "udp", dst: s.to, port: 514, lines: [s.line] }).catch(() => {});
+    // Prevention mode: the manager acts on the real host
+    for (const a of (run.lab.edrActions || []).splice(0)) {
+      const r = a.kind === "kill" && a.pid ? await realCall({ op: "edr.kill", ns: a.host, pid: a.pid }).catch(() => null) : a.kind === "block" && a.ip ? await realCall({ op: "edr.block", ns: a.host, ip: a.ip }).catch(() => null) : null;
+      for (const h of devs) for (const e of h.edrlog || []) if (e.id === a.event) e.prevented = r && (r.killed || r.blocked) ? (a.kind === "kill" ? `process ${a.pid} terminated` : `connections to ${a.ip} blocked`) : "no action possible (process already gone)";
+    }
+  };
+
   // ----- attacks: a threat pack's requests from the lab Internet (or a lab device) at a target -----
   const openAttacks = () => {
     if (ui.atkPip) { ui.atkPip.focus(); return; }
@@ -840,6 +878,7 @@ function mount(main, run, opts = {}) {
     const tg = [...new Set([...run.lab.names.keys()].filter((n) => !/^(dns\.google|one\.one|www\.google|update\.microsoft)/.test(n)))];
     const tgts = [...tg.map((n) => ({ v: n, l: n })), ...devs.filter((d) => d.kind === "server" && d.ip && d.ip()).map((d) => ({ v: d.id, l: `${d.id} (${intToIp(d.ip())})` }))];
     const opt = (xs) => xs.map((x) => `<option value="${esc(x.v)}">${esc(x.l)}</option>`).join("");
+    const edrHosts = devs.filter((d) => d.spec && d.spec.edr);
     const pip = h(`<section class="lr-pip lr-traffic lr-attack" role="dialog" aria-label="Attacks" tabindex="-1" style="left:16px;bottom:16px">
       <header class="pip-head"><span class="pip-title">Attacks (threat packs)</span><span class="pip-state"></span><button data-a="close" aria-label="Close">\u2715</button></header>
       <div class="pip-cmd pip-ctl">
@@ -848,6 +887,7 @@ function mount(main, run, opts = {}) {
         <label>At <select data-a="dst">${opt(tgts)}</select></label>
         <label>Port <select data-a="port"><option value="">pack default</option><option>80</option><option>443</option><option>8443</option><option>10443</option></select></label>
         <button data-a="go">Launch</button></div>
+      ${edrHosts.length ? `<div class="pip-cmd pip-ctl"><label>Endpoint test on <select data-a="eh">${edrHosts.map((d) => `<option value="${esc(d.id)}">${esc(d.id)}</option>`).join("")}</select></label>${Object.entries(EDR_TESTS).map(([k2, t]) => `<button data-t="${k2}">${esc(t.label)}</button>`).join("")}</div>` : ""}
       <pre class="pip-sum"></pre>
       <pre class="pip-out" aria-live="polite"></pre>
     </section>`);
@@ -891,6 +931,20 @@ function mount(main, run, opts = {}) {
       run.log.push({ dev: "@attack", line: `${packId} ${from} ${to} ${port}` });
       store(run, k);
     };
+    $$("[data-t]", pip).forEach((b) => (b.onclick = async () => {
+      const host = $("[data-a=eh]", pip).value, kind = b.dataset.t, t = EDR_TESTS[kind];
+      say(`\n${localStamp(Date.now()).slice(11, 19)} endpoint test "${t.label}" on ${host}`);
+      if (live.state === "live" && real.on) {
+        try {
+          const sh = await realCall({ op: "shell.open", ns: host });
+          await realCall({ op: "shell.write", shell: sh.shell, data: t.cmd(run.lab) + "\n" }); // the shell stays open while the test runs (closing it would hang up its jobs)
+          setTimeout(() => realCall({ op: "shell.close", shell: sh.shell }).catch(() => {}), kind === "c2" ? 8000 : 130000);
+          say(`  running for real on ${host}; watch the FortiEDR console (${kind === "miner" ? "about 90 s" : kind === "beacon" ? "about 30 s" : "a few seconds"}). Rule: ${t.rule}.`);
+          run.log.push({ dev: "@edrtest", line: `${host} ${kind}` });
+        } catch (e) { say(`  [real network: ${e.message}]`); }
+      } else say("  " + run.exec("@edrtest", `${host} ${kind}`));
+      store(run, k);
+    }));
     const close = () => { pip.remove(); ui.atkPip = null; };
     $("[data-a=close]", pip).onclick = close;
     pip.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });

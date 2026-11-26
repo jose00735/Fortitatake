@@ -374,6 +374,8 @@ func (m *Manager) API(w http.ResponseWriter, r *http.Request, sub string) {
 	post := r.Method == http.MethodPost
 	bad := func(code int, err error) { writeJSON(w, code, map[string]string{"error": err.Error()}) }
 	switch {
+	case sub == "feeds":
+		m.feedsAPI(w, r)
 	case sub == "status" && !post:
 		writeJSON(w, 200, m.status())
 	case sub == "events" && !post:

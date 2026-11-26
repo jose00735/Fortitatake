@@ -145,6 +145,13 @@ function edrCheck(lab, c) {
   if (c.isolated !== undefined) { const is = st.isolated && st.isolated.has(c.host); return is === c.isolated ? { pass: true, detail: `${c.host} is ${is ? "" : "not "}isolated.` } : { pass: false, detail: `${c.host} is ${is ? "" : "not "}isolated.` }; }
   if (c.policy) { const m = (st.modes || {})[c.policy] || "Simulation"; return m === c.mode ? { pass: true, detail: `${c.policy} is in ${m} mode.` } : { pass: false, detail: `${c.policy} is in ${m} mode, not ${c.mode}.` }; }
   if (c.exception) { const ok = (st.exceptions || []).some((x) => x.process === c.exception && (!c.rule || x.rule === c.rule) && (!c.scope || (c.scope === "host" ? x.host !== "*" : x.host === "*"))); return ok ? { pass: true, detail: `An exception covers ${c.exception}.` } : { pass: false, detail: `No exception for ${c.exception}${c.rule ? ` on "${c.rule}"` : ""}.` }; }
+  if (c.syslog !== undefined) { const v = st.syslog || null; return v === c.syslog ? { pass: true, detail: `Security events go to ${v} as syslog.` } : { pass: false, detail: `Syslog export is ${v || "off"}.` }; }
+  if (c.rule && !c.exception) {
+    const e = lab.edrEvents(edr).filter((x) => x.rule === c.rule && (!c.host || x.host === c.host)).pop();
+    if (!e) return { pass: false, detail: `No "${c.rule}" event${c.host ? ` from ${c.host}` : ""} in ${c.dev}.` };
+    if (c.action && e.action !== c.action) return { pass: false, detail: `"${c.rule}" on ${e.hostname} was ${e.action}, not ${c.action}.` };
+    return { pass: true, detail: `"${c.rule}" on ${e.hostname}: ${e.process}, ${e.classification}, ${e.action}.` };
+  }
   if (c.event) { const e = lab.edrEvents(edr).find((x) => x.process === c.event); if (!e) return { pass: false, detail: `No event for ${c.event} in ${c.dev}.` }; if (c.classification && e.classification !== c.classification) return { pass: false, detail: `${c.event} is classified ${e.classification}.` }; if (c.handled && !e.handled) return { pass: false, detail: `${c.event} hasn't been remediated.` }; if (c.action && e.action !== c.action) return { pass: false, detail: `${c.event} was ${e.action}, not ${c.action}.` }; return { pass: true, detail: `${c.event}: ${e.classification}, ${e.action}${e.handled ? `, ${e.handled}` : ""}.` }; }
   return { pass: false, detail: "Unknown EDR check." };
 }

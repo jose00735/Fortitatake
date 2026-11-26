@@ -1,0 +1,106 @@
+id: S5.05
+track: secops
+modules: [M10.03, M10.04, M13.02]
+tier: 5
+order: 23
+kind: project
+title: "FortiEDR on live telemetry: a miner and a C2 beacon"
+customer: Andes Logistics
+par: 60
+skills: [collector paths (8081 and 555), behaviour rules, prevention mode, threat-feed matches, syslog to FortiSIEM]
+brief: |
+  **SOW 2026-191, EDR phase 2.** The collectors on DC-01, FIN-PC and HQ-PC now read what really happens on each host
+  (CPU and memory, processes, connections) and send it to **FEDR-01** (10.20.40.60): they register on **TCP 8081** and
+  send events on **TCP 555**. With the real network on, nothing here is scripted: an event appears only if the host
+  really did it and the event really reached the manager.
+
+  Open FEDR-01 and press **Console** for the management console (or type `help`). Run the endpoint tests from
+  **Attacks** (Endpoint test on …). The C2 addresses come from today's threat-feed snapshot and are sinkholed in the
+  lab Internet.
+topology: {use: andes-secops}
+parts:
+  - id: a
+    title: Collectors that register and report
+    tasks:
+      - "Make the HQ LAN collectors reach FEDR-01 on everything they need, and nothing else (FGT-BOG)."
+    checks:
+      - text: "FIN-PC's collector is connected"
+        edr: {dev: FEDR-01, collector: FIN-PC}
+      - text: "HQ-PC's collector is connected"
+        edr: {dev: FEDR-01, collector: HQ-PC}
+      - text: "Collector events (TCP 555) reach the manager"
+        probe: {from: FIN-PC, to: 10.20.40.60, proto: tcp, port: 555, expect: reach}
+      - text: "The HQ LAN still can't open the manager's web console"
+        probe: {from: HQ-PC, to: 10.20.40.60, proto: tcp, port: 443, expect: fail}
+    hints:
+      - "The service FortiEDR-Collector exists on FGT-BOG: `show firewall service custom FortiEDR-Collector`. Is it complete?"
+      - "A policy port2 → port4, HQ-LAN → FEDR-01, that service."
+    solution:
+      FGT-BOG: |
+        config firewall service custom
+        edit FortiEDR-Collector
+        set tcp-portrange 8081 555
+        next
+        end
+        config firewall policy
+        edit 5
+        set name "EDR-collectors"
+        set srcintf port2
+        set dstintf port4
+        set srcaddr HQ-LAN
+        set dstaddr FEDR-01
+        set action accept
+        set schedule always
+        set service FortiEDR-Collector
+        next
+        end
+    explain: |
+      Registration (8081) and event delivery (555) are different paths. A collector can show as connected while its
+      events never arrive, so the inventory alone isn't proof: check that events from a test endpoint reach the manager.
+  - id: b
+    title: Stop a miner
+    tasks:
+      - "Put Execution Prevention in Prevention mode on FEDR-01."
+      - "Run the endpoint test Miner (CPU) on FIN-PC and wait for the event (about 90 seconds on the real network)."
+    checks:
+      - text: "Execution Prevention is in Prevention mode"
+        edr: {dev: FEDR-01, policy: Execution Prevention, mode: Prevention}
+      - text: "The miner raised Suspicious Resource Usage on FIN-PC and was blocked"
+        edr: {dev: FEDR-01, rule: Suspicious Resource Usage, host: FIN-PC, action: Blocked}
+    hints:
+      - "Console > Security Settings, or `policy \"Execution Prevention\" prevention`."
+      - "The rule needs the CPU near the host's cap for 90 s: the collector reports every 2 s from the host's cgroup."
+    solution:
+      FEDR-01: |
+        policy "Execution Prevention" prevention
+      "@edrtest": |
+        FIN-PC miner
+    explain: |
+      In Prevention mode the manager kills the process on the host (on the real network you can watch it disappear from
+      the Linux shell's `ps`). Behaviour rules catch what signatures can't: a miner is often a legitimate binary.
+  - id: c
+    title: A C2 beacon, blocked and in FortiSIEM
+    tasks:
+      - "Send FortiEDR security events to FortiSIEM (FSIEM-01, 10.20.40.50) as syslog."
+      - "Put Exfiltration Prevention in Prevention mode."
+      - "Run the endpoint tests Contact a C2 address and Beacon to a C2 on HQ-PC."
+    checks:
+      - text: "Security events go to FortiSIEM"
+        edr: {dev: FEDR-01, syslog: 10.20.40.50}
+      - text: "The C2 contact was blocked"
+        edr: {dev: FEDR-01, rule: Connection To Known Malicious Address, host: HQ-PC, action: Blocked}
+      - text: "The beacon was spotted"
+        edr: {dev: FEDR-01, rule: Periodic Beaconing, host: HQ-PC}
+    hints:
+      - "Console > Security Settings > Syslog export, or `syslog 10.20.40.50`."
+      - "The C2 addresses are on the FortiGate's side too: a `config system external-resource` of type address pointing at a C2 feed can block them for every host, collector or not."
+    solution:
+      FEDR-01: |
+        syslog 10.20.40.50
+        policy "Exfiltration Prevention" prevention
+      "@edrtest": |
+        HQ-PC c2
+        HQ-PC beacon
+    explain: |
+      The feed match catches the first contact; the beacon rule catches the rhythm even when the address isn't in any
+      feed yet. Exported to FortiSIEM, the same event can open an incident next to the FortiGate's logs.

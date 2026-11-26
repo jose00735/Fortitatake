@@ -139,12 +139,14 @@ export class FortiGate {
   refNames(kind) {
     const scoped = this.multiVdom() && !(this.vctx && this.vctx.global);
     const names = (p) => this.entries(p).filter((e) => !scoped || p !== "system interface" || (e.attrs.get("vdom") || ["root"])[0] === this.vdomName).map((e) => e.key);
+    // external threat feeds of type address are usable wherever an address is
+    const extAddr = () => this.entries("system external-resource").filter((e) => (e.attrs.get("type") || [""])[0] === "address").map((e) => e.key);
     switch (kind) {
       case "intf": return [...names("system interface"), ...names("system zone"), ...this.sdwanZoneNames(), "any"];
       case "intfonly": return names("system interface");
       case "intfany": return [...names("system interface"), "any"];
-      case "addr": return [...names("firewall address"), ...names("firewall addrgrp")];
-      case "daddr": return [...names("firewall address"), ...names("firewall addrgrp"), ...names("firewall vip"), ...names("firewall vipgrp")];
+      case "addr": return [...names("firewall address"), ...names("firewall addrgrp"), ...extAddr()];
+      case "daddr": return [...names("firewall address"), ...names("firewall addrgrp"), ...names("firewall vip"), ...names("firewall vipgrp"), ...extAddr()];
       case "vip": return names("firewall vip");
       case "svc": return [...names("firewall service custom"), ...names("firewall service group")];
       case "sched": return [...names("firewall schedule recurring"), ...names("firewall schedule onetime"), ...names("firewall schedule group")];

@@ -6,6 +6,8 @@ import "./sdwan.js";
 import "./ha.js";
 import "./utm.js";
 import "./ips.js";
+import "./intel.js";
+import "./edrlive.js";
 import "./mgmt.js";
 import "./auth.js";
 import "./routing.js";
@@ -94,6 +96,11 @@ export class LabRun {
 
   // run a line on a device console; returns the text to print (async debug output appended)
   exec(devId, line, record = true) {
+    if (devId === "@edrtest") { // an endpoint test from the Attacks panel (simulated telemetry; live runs are real)
+      const [host, kind] = String(line).split(" ");
+      if (record) this.log.push({ dev: devId, line });
+      return this.lab.edrSimulate ? this.lab.edrSimulate(host, kind) : "";
+    }
     if (devId === "@attack") { // an attack run from the Attacks panel, replayed so its logs come back
       const [pack, from, to, port] = String(line).split(" ");
       const r = this.lab.attackSim(from, to, pack, port);
