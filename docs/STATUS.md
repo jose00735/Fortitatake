@@ -98,6 +98,13 @@
 | SD-WAN | S2.01 (3-part branch), S2.02 voice, S4.01–S4.02 tickets |
 | HA | H2.01 (3-part cluster + failover test), H4.01–H4.02 tickets |
 
+### What v0.10.2 adds (wire sniffer, man pages, sessions that stay visible)
+
+- **Click a link on the lab map to sniff it.** Each wire opens a small square window, like `diagnose sniffer packet <port> 'none' 4 0 l`: local timestamps, the port, in/out and the packet. It captures at the better-placed end (FortiGate, then router, then server, then PC); on a LAN switch it sees what crosses that device's port. Pause, Clear and close; drag it by the title bar and resize it from the corner; up to a few at once. On the real network it runs tcpdump in that device's namespace; in the simulator it taps the packet walk, including unanswered ARP requests.
+- **`man <command>` on every CLI.** Windows, Linux, IOS-style routers, FortiOS, FortiSIEM, FortiEDR, FortiAnalyzer, FortiManager and FortiSwitch each have pages with a synopsis, what the command does and worked examples. `man` alone lists the pages; `help` and `?` now list only command names (FortiGate keeps its own `?` behaviour).
+- **Fixed: a curl or wget from a lab PC left nothing in `diagnose sys session list`.** The command was answered by the simulator only. It now also runs on the real network, and the agent holds the TCP connection open (idle keep-alive, up to 60 s) so the session stays in the table the way a browser's would; the FortiOS-like conntrack timers close a finished connection within a second. **Needs FortiTatake OS rebuilt** (agent 0.10.2): with an older image the request still happens but closes at once.
+- **`diagnose debug flow trace start` without a count** traces one packet, as on FortiOS. The CLI now says so, because a PC that gets no answer from its first DNS server retries the second one and only the first try was being traced. In the reported case the first DNS server was the FortiGate itself, which had no `system dns-server` entry for that interface, so local-in dropped the query correctly and the retry to 8.8.8.8 was routed.
+
 ### What v0.10.1 adds (addressing on lab devices, a nano-style editor)
 
 - **Windows PCs:** `netsh interface ip set address name="Ethernet0" static <ip> <mask> [<gw>]` or `dhcp`, `netsh interface ip set|add|delete dns`, `netsh interface ip show config`, `netsh interface set interface ... admin=disable|enable`, `route add|delete 0.0.0.0 mask 0.0.0.0 <gw>`, `ipconfig /flushdns`, and the PowerShell cmdlets `Get-NetIPConfiguration`, `New-NetIPAddress`, `Remove-NetIPAddress`, `Set-DnsClientServerAddress`, `Set-NetIPInterface -Dhcp`, `New-/Remove-NetRoute` (default route), `Disable-/Enable-NetAdapter`.

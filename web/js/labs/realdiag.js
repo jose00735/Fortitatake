@@ -39,7 +39,7 @@ export function parseSnifferCmd(line) {
   const m = /^\s*diag(?:n|no|nos|nose)?\s+sniffer\s+packet(?:\s+(\S+))?(?:\s+(?:'([^']*)'|"([^"]*)"|(\S+)))?(?:\s+(\d+))?(?:\s+(\d+))?(?:\s+([al]))?\s*$/i.exec(line);
   if (!m) return null;
   const filter = (m[2] ?? m[3] ?? m[4] ?? "none").trim();
-  return { intf: m[1] || "any", filter: filter === "none" ? "" : filter, verbose: Number(m[5] || 1), count: Number(m[6] || 0), abs: m[7] === "a" };
+  return { intf: m[1] || "any", filter: filter === "none" ? "" : filter, verbose: Number(m[5] || 1), count: Number(m[6] || 0), abs: m[7] === "a", local: m[7] === "l" };
 }
 
 export const safeFilter = (f) => /^[A-Za-z0-9 .:/()!&|<>=\-]*$/.test(f) ? f : null;
@@ -48,12 +48,20 @@ export function snifferHeader(s) {
   return `Using Original Sniffing Mode\ninterfaces=[${s.intf}]\nfilters=[${s.filter}]`;
 }
 
+// "2026-11-25 21:05:12.123456" in the viewer's local time (the sniffer's l option)
+export function localStamp(ms) {
+  const d = new Date(ms), z = (n, w = 2) => String(n).padStart(w, "0");
+  const us = Math.round((ms % 1000) * 1000) % 1000000;
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}.${z(us, 6)}`;
+}
+
 export function snifferLine(s, p) {
   if (s.intf !== "any" && p.intf !== s.intf) return null;
   if (p.intf === "lo") return null;
   if (s.t0 === undefined) s.t0 = p.ts;
   let t;
-  if (s.abs) { const d = new Date(p.ts * 1000); t = d.toISOString().replace("T", " ").replace("Z", "").slice(0, 26); }
+  if (s.local) t = localStamp(p.ts * 1000);
+  else if (s.abs) { const d = new Date(p.ts * 1000); t = d.toISOString().replace("T", " ").replace("Z", "").slice(0, 26); }
   else t = (p.ts - s.t0).toFixed(6);
   return s.verbose >= 4 ? `${t} ${p.intf} ${p.dir} ${p.text}` : `${t} ${p.text}`;
 }

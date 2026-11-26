@@ -126,7 +126,7 @@ function diagCmd(lab, fg, r, raw) {
     return NOT_SIM;
   }
   if (match(r, ["debug", "flow", "show"])) return "";
-  if (match(r, ["debug", "flow", "trace", "start"])) { d.flowCount = Number(raw[4] || 1); d.traceId = 0; return ""; }
+  if (match(r, ["debug", "flow", "trace", "start"])) { d.flowCount = Number(raw[4] || 1); d.traceId = 0; return raw[4] ? "" : "(FortiTatake: no count given, so only the next packet is traced. A PC that gets no answer from its first DNS server retries the next one; use diagnose debug flow trace start 10 to see both.)"; }
   if (match(r, ["debug", "flow", "trace", "stop"])) { d.flowCount = 0; return ""; }
   if (match(r, ["sniffer", "packet"])) {
     const intf = raw[2] || "any";

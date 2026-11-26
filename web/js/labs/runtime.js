@@ -13,6 +13,7 @@ import "./switch.js";
 import "./soc.js";
 import { hostRun, routerRun } from "./diag.js";
 import { routerPrompt } from "./netcfg.js";
+import { manHelp } from "./manpages.js";
 import { runChecks } from "./grader.js";
 import { runChecksReal } from "./real.js";
 import { FortiGate } from "./fgt.js";
@@ -94,6 +95,8 @@ export class LabRun {
   exec(devId, line, record = true) {
     const d = this.lab.dev(devId);
     let out;
+    const mh = manHelp(d, line);
+    if (mh !== null) { if (record) this.log.push({ dev: devId, line }); return mh; }
     if (d instanceof FortiGate) {
       const m = this.lab.mgmtExec(d, line);
       out = m !== null && m !== undefined ? m : d.run(line);

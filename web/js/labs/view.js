@@ -6,12 +6,12 @@ import { RealNet } from "./real.js";
 import { RealLogs } from "./reallog.js";
 import { realHostCmd, realRouterCmd, realResolve } from "./realcli.js";
 import { parseRemoteCmd, connectError, connectedLines, passPrompt, closedLine, ServerSession } from "./remote.js";
-import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, fortiPing, traceRules, FlowTrace, parseConntrack, formatSessions, formatRoutes, routeHelpers } from "./realdiag.js";
+import { parseTcpdump, parseSnifferCmd, safeFilter, snifferHeader, snifferLine, localStamp, fortiPing, traceRules, FlowTrace, parseConntrack, formatSessions, formatRoutes, routeHelpers } from "./realdiag.js";
 import { intToIp, ipToInt, isIp } from "./net.js";
 import { api } from "../core.js";
 import { drawTopology } from "./topo.js";
 import { FortiGate } from "./fgt.js";
-import { isConfigLine } from "./netcfg.js";
+import { isConfigLine, hostsEntry } from "./netcfg.js";
 
 const TIERS = ["Console", "Fundamentals", "Core PS", "Advanced", "Break-fix", "SecOps", "Capstones"];
 const TRACK = { fortigate: "FortiGate", routing: "Routing", identity: "Identity", fortimanager: "FortiManager", fortianalyzer: "FortiAnalyzer", fortiswitch: "FortiSwitch", fortisiem: "FortiSIEM", fortiedr: "FortiEDR", secops: "SecOps", integration: "Multi-product", sdwan: "SD-WAN", vpn: "VPN", ha: "HA" };
@@ -182,6 +182,11 @@ function mount(main, run, opts = {}) {
   };
   const topo = () => {
     $(".lr-topo", el).innerHTML = drawTopology(run, ui.dev);
+    $$(".lr-topo .tp-wire", el).forEach((w) => {
+      const go = (e) => { e.stopPropagation(); openWire({ seg: w.dataset.seg, cap: w.dataset.cap, port: w.dataset.port, peer: w.dataset.peer, hub: w.dataset.hub === "1" }); };
+      w.onclick = go;
+      w.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } };
+    });
     $$(".lr-topo [data-dev].click", el).forEach((g) => {
       const go = () => { selectDev(g.dataset.dev); if (window.matchMedia("(max-width: 900px)").matches) setView("term"); };
       g.onclick = go;
@@ -338,6 +343,7 @@ function mount(main, run, opts = {}) {
       // sessions that arrive from a Linux shell (busybox telnet), or any open one
       if (Date.now() - (live.conAt || 0) > 1500) { live.conAt = Date.now(); await remPoll(); if (Object.keys(ui.hub).some((x) => ui.hub[x] instanceof ServerSession)) remFast(); }
       await syncTracers();
+      await pollWires();
       // SecOps: logs from the kernel, shipped over the lab network, collected where they arrive
       if (!run.lab.realLog) run.lab.realLog = new RealLogs(run.lab, realCall);
       if (Date.now() - (live.logAt || 0) > 1500) { live.logAt = Date.now(); await run.lab.realLog.tick(real.net.c, real.net.generation); }
@@ -440,6 +446,29 @@ function mount(main, run, opts = {}) {
       if (a.startsWith("-")) continue;
       const m = a.match(/^[a-z]+:\/\/([^/:]+)/i);
       return m ? m[1] : a.split(/[/:]/)[0];
+    }
+    return null;
+  };
+  // curl / wget / Test-NetConnection / nc -> one real probe { proto, dst, port, host, path }
+  const realProbe = (line, name, ip) => {
+    if (!ip) return null;
+    const t = line.trim(), w = t.split(/\s+/), c = w[0].toLowerCase();
+    if (c === "curl" || c === "wget") {
+      const u = w.slice(1).find((a) => !a.startsWith("-") && /[.:]/.test(a)) || "";
+      const m = u.match(/^(?:(https?):\/\/)?([^/:]+)(?::(\d+))?(\/\S*)?/i);
+      if (!m) return null;
+      const proto = (m[1] || "http").toLowerCase();
+      return { proto, dst: ip, port: Number(m[3] || (proto === "https" ? 443 : 80)), host: name && !isIp(name) ? name : "", path: m[4] || "/" };
+    }
+    if (c === "tnc" || c === "test-netconnection") {
+      const pi = w.findIndex((a) => /^-port$/i.test(a));
+      const port = pi >= 0 ? Number(w[pi + 1]) : 0;
+      return port ? { proto: "tcp", dst: ip, port } : { proto: "icmp", dst: ip, count: 1 };
+    }
+    if (c === "nc") {
+      const args = w.slice(1).filter((a) => !a.startsWith("-"));
+      const port = Number(args[1]);
+      return port ? { proto: w.some((a) => /^-\w*u/.test(a)) ? "udp" : "tcp", dst: ip, port } : null;
     }
     return null;
   };
@@ -605,6 +634,78 @@ function mount(main, run, opts = {}) {
     }, 250);
   };
 
+  // ----- click a wire: a live sniffer in a square picture-in-picture window -----
+  ui.wires = ui.wires || {};
+  const openWire = (w) => {
+    const key = `${w.cap}|${w.port}|${w.seg}`;
+    if (ui.wires[key]) { ui.wires[key].pip.focus(); return; }
+    const n = Object.keys(ui.wires).length;
+    const pip = h(`<section class="lr-pip" role="dialog" aria-label="Sniffer on ${esc(w.cap)} ${esc(w.port)}" tabindex="-1" style="right:${16 + n * 28}px;bottom:${16 + n * 28}px">
+      <header class="pip-head"><span class="pip-title">${esc(w.cap)} ${esc(w.port)} \u2194 ${esc(w.peer)}</span><span class="pip-state"></span>
+        <button data-a="pause" aria-label="Pause">Pause</button><button data-a="clear" aria-label="Clear">Clear</button><button data-a="close" aria-label="Close">\u2715</button></header>
+      <div class="pip-cmd">${esc(run.device(w.cap) instanceof FortiGate ? run.prompt(w.cap) : w.cap + " # ")}diagnose sniffer packet ${esc(w.port)} 'none' 4 0 l</div>
+      <pre class="pip-out" aria-live="off"></pre>
+    </section>`);
+    document.body.appendChild(pip);
+    const out = $(".pip-out", pip), st = $(".pip-state", pip);
+    const wd = { ...w, pip, lines: [], paused: false, n: 0, s: { intf: w.port, verbose: 4, count: 0, local: true } };
+    ui.wires[key] = wd;
+    if (!ui.wireNav) { ui.wireNav = true; window.addEventListener("hashchange", () => { ui.wireNav = false; for (const x of Object.values(ui.wires)) x.close(); }, { once: true }); }
+    const render = () => { out.textContent = wd.lines.join("\n"); out.scrollTop = out.scrollHeight; };
+    wd.add = (line) => { wd.n++; if (wd.paused) return; wd.lines.push(line); if (wd.lines.length > 400) wd.lines.splice(0, wd.lines.length - 400); render(); };
+    const close = () => {
+      pip.remove(); delete ui.wires[key];
+      if (run.lab.taps) run.lab.taps.delete(key);
+      if (wd.shell) { realCall({ op: "shell.signal", shell: wd.shell }).catch(() => {}); realCall({ op: "shell.close", shell: wd.shell }).catch(() => {}); }
+    };
+    wd.close = close;
+    $$(".pip-head [data-a]", pip).forEach((b) => (b.onclick = () => {
+      if (b.dataset.a === "close") close();
+      else if (b.dataset.a === "clear") { wd.lines = []; render(); }
+      else { wd.paused = !wd.paused; b.textContent = wd.paused ? "Resume" : "Pause"; }
+    }));
+    pip.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    // drag by the header
+    const head = $(".pip-head", pip);
+    head.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button")) return;
+      const r = pip.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+      head.setPointerCapture(e.pointerId);
+      const mv = (ev) => { pip.style.left = Math.max(0, Math.min(window.innerWidth - r.width, ev.clientX - dx)) + "px"; pip.style.top = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy)) + "px"; pip.style.right = "auto"; pip.style.bottom = "auto"; };
+      const up = () => { head.removeEventListener("pointermove", mv); head.removeEventListener("pointerup", up); };
+      head.addEventListener("pointermove", mv); head.addEventListener("pointerup", up);
+    });
+    if (live.state === "live" && real.on) {
+      st.textContent = "real network";
+      (async () => {
+        try {
+          const r = await realCall({ op: "shell.open", ns: w.cap });
+          if (!ui.wires[key]) { realCall({ op: "shell.close", shell: r.shell }).catch(() => {}); return; }
+          wd.shell = r.shell; wd.next = 0; wd.partial = "";
+          await realCall({ op: "shell.write", shell: r.shell, data: `tcpdump -Z root -l -n -S -tt -i any 2>/dev/null; exit\n` });
+        } catch (e) { wd.add(`[FortiTatake OS: ${e.message}]`); }
+      })();
+    } else {
+      st.textContent = "simulator";
+      run.lab.taps = run.lab.taps || new Map();
+      run.lab.taps.set(key, { seg: w.seg, cap: w.cap, hub: w.hub, push: (e) => wd.add(`${localStamp(Date.now())} ${w.port} ${e.dir} ${e.text}`) });
+    }
+    wd.add(`Using Original Sniffing Mode\ninterfaces=[${w.port}]\nfilters=[none]`);
+    pip.focus();
+  };
+  const pollWires = async () => {
+    for (const wd of Object.values(ui.wires)) {
+      if (!wd.shell) continue;
+      const r = await realCall({ op: "shell.read", shell: wd.shell, since: wd.next }).catch(() => null);
+      if (!r) continue;
+      wd.next = r.next;
+      const lines = (wd.partial + (r.data || "")).split("\n");
+      wd.partial = lines.pop();
+      for (const l of lines) { const pk = parseTcpdump(l); const txt = pk && snifferLine(wd.s, pk); if (txt) wd.add(txt); }
+      if (!r.alive) { wd.add(`\n${wd.n} packets received by filter\n0 packets dropped by kernel`); wd.shell = null; }
+    }
+  };
+
   // wait until the real network matches the lab (after an address or route change)
   const catchUp = async () => {
     for (let i = 0; i < 60 && real.on && real.net && real.net.stateKey(run.lab) !== real.net.key; i++) {
@@ -707,9 +808,22 @@ function mount(main, run, opts = {}) {
       paint();
       (async () => {
         const name = nameArg(line);
-        if (name && !isIp(name)) await realResolve(realCall, run.lab, d, name).catch(() => null);
-        print(dev, run.exec(dev, line));
+        let ip = name && isIp(name) ? name : null;
+        if (name && !ip) { const he = hostsEntry(d, name); if (he !== null) ip = intToIp(he); else { const r = await realResolve(realCall, run.lab, d, name).catch(() => null); if (r && !r.err) ip = r.ip; } }
+        const simOut = run.exec(dev, line);
         run.drain();
+        // the same connection on the real network, so the FortiGate's session table, logs and sniffer see it
+        const pr = realProbe(line, name, ip);
+        let note = "";
+        if (pr) {
+          await catchUp();
+          try {
+            const r = await realCall({ op: "probe", ns: dev, ...pr, timeout_ms: 4000, hold_ms: 60000 }, 8000);
+            const simOk = !/fail|refused|timed out|could not|unable|not recognized|no route|denied|unreachable|reset/i.test(simOut || "");
+            if (r && r.pass === false && simOk) note = `\n[real network: ${pr.proto.toUpperCase()} to ${pr.dst}:${pr.port} ${r.error || "failed"}${r.detail ? ` (${r.detail})` : ""}]`;
+          } catch (e) { /* the simulator's answer stands */ }
+        }
+        print(dev, (simOut || "") + note);
         if (dev === ui.dev) paint(); else { ui.unread.add(dev); devTabs(); }
       })();
       return true;

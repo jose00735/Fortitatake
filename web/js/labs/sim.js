@@ -454,6 +454,16 @@ export class Lab {
     const id = 20000 + (d.traceId * 7) % 9000;
     for (const [fn, ln, msg] of lines) fg.async.push(`id=${id} trace_id=${d.traceId} func=${fn} line=${ln} msg="${msg}"`);
   }
+  // wire taps (click a link on the map): every hop that crosses a segment reaches the taps on it
+  emitTap(prev, next, port, pkt) {
+    const seg = this.segOf(next.id, port);
+    if (!seg) return;
+    for (const t of this.taps.values()) {
+      if (t.seg !== seg.id) continue;
+      if (t.hub && prev.id !== t.cap && next.id !== t.cap) continue;
+      t.push({ dir: next.id === t.cap ? "in" : "out", text: describePkt(pkt) });
+    }
+  }
   sniff(fg, intf, dir, pkt) {
     if (this.quiet) return;
     const s = fg.dbg.sniffer;
@@ -478,7 +488,9 @@ export class Lab {
       const step = this.process(at, port, p, res, hop === 0);
       if (!step) return res;
       if (step.delivered) { res.delivered = { dev: at.id, pkt: step.pkt }; return res; }
+      const prev = at;
       ({ dev: at, port, pkt: p } = step);
+      if (this.taps && this.taps.size && !this.quiet) this.emitTap(prev, at, port, p);
     }
     if (!res.drop) res.drop = { dev: at && at.id, reason: "loop" };
     return res;
@@ -495,7 +507,12 @@ export class Lab {
   }
   forwardOnSeg(seg, nh, pkt, res, devId, why) {
     const a = this.arp(seg, nh);
-    if (!a) { res.drop = { dev: devId, reason: why || `no ARP reply from ${intToIp(nh)}` }; return null; }
+    if (!a) {
+      res.drop = { dev: devId, reason: why || `no ARP reply from ${intToIp(nh)}` };
+      // an unanswered ARP is still a broadcast on the wire: the taps on this segment see it
+      if (seg && this.taps && this.taps.size && !this.quiet) for (const t of this.taps.values()) if (t.seg === seg.id && (t.cap === devId || t.hub)) t.push({ dir: t.cap === devId ? "out" : "in", text: `arp who-has ${intToIp(nh)} tell ${intToIp(pkt.src)}` });
+      return null;
+    }
     return { dev: a.dev, port: a.port, pkt };
   }
   hostProcess(h, inPort, pkt, res, origin) {
@@ -853,11 +870,14 @@ export class Lab {
     const step = this.forwardOnSeg(outI.seg, nh, rp, res, fg.id);
     if (!step) return res;
     let at = step.dev, port = step.port, p = step.pkt;
+    if (this.taps && this.taps.size && !this.quiet) this.emitTap(fg, at, port, p);
     for (let hop = 0; hop < 24 && at; hop++) {
       const st = this.process(at, port, p, res, false);
       if (!st) return res;
       if (st.delivered) { res.delivered = { dev: at.id, pkt: st.pkt }; return res; }
+      const prev = at;
       ({ dev: at, port, pkt: p } = st);
+      if (this.taps && this.taps.size && !this.quiet) this.emitTap(prev, at, port, p);
     }
     return res;
   }

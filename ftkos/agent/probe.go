@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
@@ -39,7 +40,7 @@ func probe(r req) (map[string]any, error) {
 				c.Close()
 			}
 		case "http", "https":
-			res = httpProbe(proto, dst, port, r.str("host"), r.str("path"), to)
+			res = httpProbe(proto, dst, port, r.str("host"), r.str("path"), to, time.Duration(r.num("hold_ms", 0))*time.Millisecond)
 		case "dns":
 			res = dnsProbe(dst, r.str("name"), to)
 		case "udp":
@@ -88,7 +89,7 @@ func classify(err error) string {
 	return "error"
 }
 
-func httpProbe(proto, dst string, port int, host, path string, to time.Duration) map[string]any {
+func httpProbe(proto, dst string, port int, host, path string, to, hold time.Duration) map[string]any {
 	t := time.Now()
 	if port == 0 {
 		port = 80
@@ -106,7 +107,12 @@ func httpProbe(proto, dst string, port int, host, path string, to time.Duration)
 	if err != nil {
 		return result(t, err)
 	}
-	defer c.Close()
+	held := false
+	defer func() {
+		if !held {
+			c.Close()
+		}
+	}()
 	c.SetDeadline(time.Now().Add(to))
 	var conn net.Conn = c
 	m := map[string]any{}
@@ -122,7 +128,11 @@ func httpProbe(proto, dst string, port int, host, path string, to time.Duration)
 		m["tls_suite"] = tls.CipherSuiteName(st.CipherSuite)
 		conn = tc
 	}
-	fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/8\r\nConnection: close\r\n\r\n", path, host)
+	cn := "close"
+	if hold > 0 {
+		cn = "keep-alive"
+	}
+	fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: curl/8\r\nConnection: %s\r\n\r\n", path, host, cn)
 	br := bufio.NewReader(conn)
 	line, err := br.ReadString('\n')
 	if err != nil {
@@ -136,6 +146,14 @@ func httpProbe(proto, dst string, port int, host, path string, to time.Duration)
 	body := make([]byte, 4096)
 	n, _ := br.Read(body)
 	r["head"] = string(body[:n])
+	if hold > 0 { // keep the connection open, idle, like a browser's keep-alive
+		held = true
+		go func() {
+			conn.SetDeadline(time.Now().Add(hold))
+			io.Copy(io.Discard, conn)
+			conn.Close()
+		}()
+	}
 	return r
 }
 

@@ -253,11 +253,27 @@ func origDst(c net.Conn) (string, int) {
 	return ip, port
 }
 
+// httpReply answers one request, or keeps answering for a minute when the client asks for keep-alive
+// (a browser holds its connection open, so the FortiGate's session table shows the web session).
 func httpReply(c net.Conn, dst string) {
 	buf := make([]byte, 4096)
-	c.Read(buf)
 	body := "FortiTatake lab server at " + dst + "\n"
-	fmt.Fprintf(c, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
+	for {
+		k, err := c.Read(buf)
+		if err != nil || k == 0 {
+			return
+		}
+		keep := strings.Contains(strings.ToLower(string(buf[:k])), "connection: keep-alive")
+		conn := "close"
+		if keep {
+			conn = "keep-alive"
+		}
+		fmt.Fprintf(c, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: %s\r\n\r\n%s", len(body), conn, body)
+		if !keep {
+			return
+		}
+		c.SetDeadline(time.Now().Add(65 * time.Second))
+	}
 }
 
 func serveUDP(n *nsListen, c net.PacketConn, port int, keep bool) {

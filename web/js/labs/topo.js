@@ -47,6 +47,14 @@ export function drawTopology(run, sel) {
   const pos = (id) => L[id] || [480, 280];
   const links = [];
   const portLabels = [];
+  const wires = []; // wide invisible hit lines: click a link to sniff it
+  const capPort = (m) => { const d = lab.dev(m.dev); if (!d || d.kind === "cloud" || d.kind === "fortiswitch") return null; return ["host", "server", "fortisiem", "fortiedr"].includes(d.kind) ? m.port || d.port || "eth0" : m.port; };
+  const rank = (m) => { const d = lab.dev(m.dev); return !d ? 9 : d instanceof FortiGate ? 0 : d.kind === "router" ? 1 : d.kind === "server" ? 2 : d.kind === "host" ? 3 : d.kind === "fortiswitch" || d.kind === "cloud" ? 9 : 4; };
+  const wire = (x1, y1, x2, y2, seg, m, peer, hub = false) => {
+    const port = capPort(m);
+    if (!port) return;
+    wires.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="tp-wire" data-seg="${esc(seg.id)}" data-hub="${hub ? 1 : 0}" data-cap="${esc(m.dev)}" data-port="${esc(port)}" data-peer="${esc(peer)}" tabindex="0" role="button" aria-label="Sniff the link ${esc(m.dev)} ${esc(port)} to ${esc(peer)}"><title>Sniff ${esc(m.dev)} ${esc(port)} \u2194 ${esc(peer)}</title></line>`);
+  };
   // parallel links between the same two devices are drawn side by side
   const pairKey = (a, b) => [a, b].sort().join("|");
   const pairTotal = new Map(), pairSeen = new Map();
@@ -79,6 +87,7 @@ export function drawTopology(run, sel) {
         const p = pos(m.dev);
         const st = statusOf(m);
         links.unshift(`<line x1="${p[0]}" y1="${p[1]}" x2="${hub[0]}" y2="${hub[1]}" class="tp-link ${st}"/>`);
+        wire(p[0], p[1], hub[0], hub[1], seg, m, seg.label || "LAN switch", true);
         if (m.port && lab.dev(m.dev) instanceof FortiGate) portLabels.push(portLabel(p, hub, m.port + (m.vlan ? `.${m.vlan}` : ""), st, "fortigate", 1, "switch"));
       }
     } else if (mem.length === 2) {
@@ -93,6 +102,7 @@ export function drawTopology(run, sel) {
       }
       const st = [statusOf(a), statusOf(b)].includes("down") ? "down" : [statusOf(a), statusOf(b)].includes("noip") ? "noip" : "up";
       links.unshift(`<line x1="${pa[0]}" y1="${pa[1]}" x2="${pb[0]}" y2="${pb[1]}" class="tp-link ${st}"/>`);
+      { const [m, o] = rank(a) <= rank(b) ? [a, b] : [b, a]; wire(pa[0], pa[1], pb[0], pb[1], seg, m, `${o.dev}${capPort(o) ? " " + capPort(o) : ""}`); }
       for (const [m, p, q, o] of [[a, pa, pb, b], [b, pb, pa, a]]) {
         if (!m.port || lab.dev(m.dev).kind === "cloud" || m.port === "eth0") continue;
         const dv = lab.dev(m.dev);
@@ -116,7 +126,7 @@ export function drawTopology(run, sel) {
   const xs = lab.order.map((id) => pos(id)[0]), ys = lab.order.map((id) => pos(id)[1]);
   const vx = Math.min(0, Math.min(...xs) - 90), vy = Math.min(0, Math.min(...ys) - 60);
   const vw = Math.max(960, Math.max(...xs) + 90) - vx, vh = Math.max(560, Math.max(...ys) + 55) - vy;
-  return `<svg viewBox="${vx} ${vy} ${vw} ${vh}" class="topo" role="img" aria-label="Network topology">${links.join("")}${portLabels.join("")}${nodes.join("")}</svg>`;
+  return `<svg viewBox="${vx} ${vy} ${vw} ${vh}" class="topo" role="img" aria-label="Network topology">${links.join("")}${wires.join("")}${portLabels.join("")}${nodes.join("")}</svg>`;
 }
 function avg(ps) { return [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length]; }
 function extent(kind, dx, dy) {

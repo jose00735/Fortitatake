@@ -515,3 +515,15 @@ button.danger { color: var(--bad); border-color: var(--bad); }
 .lr-editor.notepad .ed-keys button { background: #eee; color: #111; }
 .lr-editor .ed-status button { background: var(--term-ink); color: var(--term-bg); border: 0; font: 600 .78rem var(--mono); padding: 2px 8px; margin-left: 4px; }
 .lr-editor.notepad .ed-status button { background: #e5e5e5; color: #111; }
+/* click a link on the lab map: a live sniffer in a square picture-in-picture window */
+.tp-wire { stroke: transparent; stroke-width: 14; stroke-linecap: round; cursor: pointer; pointer-events: stroke; }
+.tp-wire:hover, .tp-wire:focus-visible { stroke: var(--accent); stroke-opacity: .28; outline: none; }
+.lr-pip { position: fixed; z-index: 60; width: min(380px, 92vw); height: min(380px, 70vh); display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); background: var(--term-bg); color: var(--term-ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); overflow: hidden; resize: both; min-width: 240px; min-height: 200px; max-width: 96vw; font: .74rem/1.4 var(--mono); }
+.lr-pip:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lr-pip .pip-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; background: var(--term-ink); color: var(--term-bg); cursor: move; touch-action: none; user-select: none; }
+.lr-pip .pip-title { flex: 1 1 auto; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lr-pip .pip-state { flex: none; font-size: .68rem; opacity: .75; white-space: nowrap; }
+.lr-pip .pip-head button { flex: none; }
+.lr-pip .pip-head button { padding: 2px 7px; font: .7rem var(--mono); background: transparent; color: inherit; border: 1px solid currentColor; min-height: 0; }
+.lr-pip .pip-cmd { padding: 4px 10px; color: var(--term-prompt); border-bottom: 1px solid rgba(255, 255, 255, .08); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lr-pip .pip-out { margin: 0; padding: 6px 10px; overflow: auto; white-space: pre; background: transparent; color: inherit; font: inherit; border: 0; }
